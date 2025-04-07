@@ -1,0 +1,18 @@
+server:
+  port: 8081
+spring:
+  datasource:
+    url: jdbc:postgresql://pos-db.cstsoiwu043r.us-east-1.rds.amazonaws.com:5432/pos_db
+    username: postgres
+    password: Pos2024Appdb!
+  jpa:
+    hibernate:
+      ddl-auto: none
+    show-sql: true
+    properties:
+      hibernate.format_sql: true
+  application:
+    name: ms-order-product
+products:
+  service:
+    url: http://localhost:8080
