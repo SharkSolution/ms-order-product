@@ -1,0 +1,12 @@
+{
+  "AWSEBDockerrunVersion": "1",
+  "Image": {
+    "Name": "654479365413.dkr.ecr.us-east-1.amazonaws.com/ms-order-product:latest",
+    "Update": "true"
+  },
+  "Ports": [
+    {
+      "ContainerPort": 8081
+    }
+  ]
+}
