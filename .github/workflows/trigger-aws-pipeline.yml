@@ -1,19 +1,19 @@
-name: Trigger AWS Pipeline on Merge to master
+name: Trigger AWS CodePipeline on Merge to Master
 
 on:
   push:
     branches:
-      - master
+      - main
 
 jobs:
   trigger-pipeline:
     runs-on: ubuntu-latest
     steps:
-      - name: Trigger AWS CodePipeline
-        uses: aws-actions/aws-codepipeline-action@v1
-        with:
-          name: ms-order-product-pipeline
-          region: us-east-1
+      - name: Trigger CodePipeline via AWS CLI
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: us-east-1
+        run: |
+          pip install awscli --upgrade --quiet
+          aws codepipeline start-pipeline-execution --name ms-order-product-pipeline --region us-east-1
