@@ -3,7 +3,7 @@ name: Trigger AWS CodePipeline on Merge to Master
 on:
   push:
     branches:
-      - main
+      - master
 
 jobs:
   trigger-pipeline:
