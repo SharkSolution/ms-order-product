@@ -27,6 +27,14 @@ public class OrderController {
         .body(Map.of("message", "Orden creada con éxito"));
   }
 
+  @PutMapping("/{orderId}")
+  public ResponseEntity<Map<String, String>> updateOrder(
+          @PathVariable Long orderId,
+          @RequestBody OrderRequestRecord dto) {
+    orderService.updateOrder(orderId, dto);
+    return ResponseEntity.ok(Map.of("message", "Orden actualizada con éxito"));
+  }
+
   @GetMapping("/cocina")
   public List<OrderResponseRecord> getKitchenOrders() {
     return orderService.getKitchenOrders();
@@ -42,5 +50,11 @@ public class OrderController {
       @PathVariable Long orderId, @RequestParam String status) {
     orderService.updateStatus(orderId, status);
     return ResponseEntity.ok(Map.of("message", "Estado actualizado correctamente"));
+  }
+
+  @GetMapping("/{orderId}")
+  public ResponseEntity<OrderResponseRecord> getOrderById(@PathVariable Long orderId) {
+    OrderResponseRecord order = orderService.getOrderById(orderId);
+    return ResponseEntity.ok(order);
   }
 }

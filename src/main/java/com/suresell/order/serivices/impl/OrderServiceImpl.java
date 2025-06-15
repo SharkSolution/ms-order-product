@@ -32,7 +32,7 @@ public class OrderServiceImpl implements OrderService {
   @Transactional
   public void createOrUpdateOrder(OrderRequestRecord dto) {
     Optional<Order> existingOrderOpt =
-        orderRepository.findByTableNumberAndStatus(dto.tableNumber(), "pendiente");
+        orderRepository.findByTableNumberAndStatus(dto.tableNumber(), "Pendiente");
 
     Order order;
     if (existingOrderOpt.isPresent()) {
@@ -65,7 +65,7 @@ public class OrderServiceImpl implements OrderService {
     } else {
       order = new Order();
       order.setTableNumber(dto.tableNumber());
-      order.setStatus("pendiente");
+      order.setStatus("Pendiente");
       order.setCreatedAt(LocalDateTime.now());
 
       List<OrderItem> items =
@@ -97,7 +97,7 @@ public class OrderServiceImpl implements OrderService {
 
   @Override
   public List<OrderResponseRecord> getKitchenOrders() {
-    return orderRepository.findByStatus("pendiente").stream()
+    return orderRepository.findByStatus("Pendiente").stream()
         .map(
             order ->
                 new OrderResponseRecord(
@@ -124,9 +124,35 @@ public class OrderServiceImpl implements OrderService {
 
   @Override
   public List<OrderResponseRecord> getAllOrders() {
-    return orderRepository.findAll().stream()
-            .map(orderMapper::toOrderResponse)
-            .toList();
+    return orderRepository.findAll().stream().map(orderMapper::toOrderResponse).toList();
+  }
+
+  @Override
+  public OrderResponseRecord getOrderById(Long orderId) {
+    Order order =
+        orderRepository
+            .findById(orderId)
+            .orElseThrow(() -> new RuntimeException("Orden no encontrada con ID: " + orderId));
+
+    return new OrderResponseRecord(
+        order.getIdOrder(),
+        order.getTableNumber(),
+        order.getCreatedAt(),
+        order.getSubtotal(),
+        order.getTax(),
+        order.getTotal(),
+        order.getStatus(),
+        order.getItems().stream()
+            .map(
+                item ->
+                    new OrderItemResponseRecord(
+                        item.getProductId(),
+                        productClient.getProductName(item.getProductId()),
+                        item.getQuantity(),
+                        item.getUnitPrice(),
+                        item.getTotalPrice(),
+                        item.getInstructions()))
+            .toList());
   }
 
   @Override
@@ -136,6 +162,40 @@ public class OrderServiceImpl implements OrderService {
             .findById(orderId)
             .orElseThrow(() -> new RuntimeException("Order not found"));
     order.setStatus(newStatus);
+    orderRepository.save(order);
+  }
+
+  @Override
+  @Transactional
+  public void updateOrder(Long orderId, OrderRequestRecord dto) {
+    Order order = orderRepository.findById(orderId)
+            .orElseThrow(() -> new RuntimeException("Orden no encontrada con ID: " + orderId));
+
+    order.setTableNumber(dto.tableNumber());
+
+    order.getItems().clear();
+
+    List<OrderItem> newItems = dto.items().stream()
+            .map(itemDto -> {
+              OrderItem item = new OrderItem();
+              item.setOrder(order);
+              item.setProductId(itemDto.productId());
+              item.setQuantity(itemDto.quantity());
+              item.setUnitPrice(itemDto.unitPrice());
+              item.setTotalPrice(itemDto.quantity() * itemDto.unitPrice());
+              item.setInstructions(itemDto.instructions());
+              return item;
+            })
+            .toList();
+
+    order.getItems().addAll(newItems);
+
+    int subtotal = order.getItems().stream().mapToInt(OrderItem::getTotalPrice).sum();
+    int tax = (int) (subtotal * 0.10);
+    order.setSubtotal(subtotal);
+    order.setTax(tax);
+    order.setTotal(subtotal + tax);
+
     orderRepository.save(order);
   }
 }

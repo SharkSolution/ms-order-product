@@ -15,4 +15,4 @@ spring:
     name: ms-order-product
 products:
   service:
-    url: http://ms-products-and-categories-env.eba-xdybp9rz.us-east-1.elasticbeanstalk.com
+    url: http://localhost:8082
