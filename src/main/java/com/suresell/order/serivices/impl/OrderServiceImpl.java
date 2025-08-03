@@ -1,5 +1,6 @@
 package com.suresell.order.serivices.impl;
 
+import com.suresell.order.exception.MesaDuplicadaException;
 import com.suresell.order.mapper.OrderMapper;
 import com.suresell.order.model.record.OrderItemRequestRecord;
 import com.suresell.order.model.record.OrderItemResponseRecord;
@@ -33,6 +34,13 @@ public class OrderServiceImpl implements OrderService {
   public void createOrUpdateOrder(OrderRequestRecord dto) {
     Optional<Order> existingOrderOpt =
         orderRepository.findByTableNumberAndStatus(dto.tableNumber(), "Pendiente");
+
+    if (existingOrderOpt.isPresent()) {
+      throw new MesaDuplicadaException(
+        "Ya existe una orden pendiente para la mesa " + dto.tableNumber(),
+        "MESA_DUPLICADA"
+      );
+    }
 
     Order order;
     if (existingOrderOpt.isPresent()) {
