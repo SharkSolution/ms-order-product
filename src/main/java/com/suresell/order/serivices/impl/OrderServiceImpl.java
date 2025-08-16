@@ -206,4 +206,14 @@ public class OrderServiceImpl implements OrderService {
 
     orderRepository.save(order);
   }
+
+  @Override
+  public List<OrderResponseRecord> getSalesReport() {
+    List<Order> orders = orderRepository.findAll();
+    List<OrderResponseRecord> report = new ArrayList<>();
+    for (Order order : orders) {
+      report.add(orderMapper.toOrderResponse(order));
+    }
+    return report;
+  }
 }
