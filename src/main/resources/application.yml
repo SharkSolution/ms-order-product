@@ -2,7 +2,7 @@ server:
   port: 8081
 spring:
   datasource:
-    url: jdbc:postgresql://pos-db.cstsoiwu043r.us-east-1.rds.amazonaws.com:5432/pos_db
+    url: jdbc:postgresql://posdbinstance.cstsoiwu043r.us-east-1.rds.amazonaws.com:5432/pos_db
     username: postgres
     password: Pos2024Appdb!
   jpa:
@@ -15,4 +15,4 @@ spring:
     name: ms-order-product
 products:
   service:
-    url: http://ms-products-and-categories-env.eba-xdybp9rz.us-east-1.elasticbeanstalk.com
+    url: http://ms-products-and-categories-env-env.eba-rg8iefb4.us-east-1.elasticbeanstalk.com
