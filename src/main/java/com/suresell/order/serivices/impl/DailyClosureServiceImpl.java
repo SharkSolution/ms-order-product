@@ -34,6 +34,7 @@ import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.List;
 import java.util.UUID;
+import java.util.Optional;
 import lombok.Generated;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -55,15 +56,16 @@ implements DailyClosureService {
     private static final String STATUS_NEGATIVE_DIFF = "NEGATIVE_DIFF";
     @Transactional(readOnly=true)
     public ClosurePreviewResponse getClosurePreview() {
-        log.info("Generando preview de cierre de caja - Sin filtro de tiempo");
+        log.info("Generando preview de cierre de caja - Todas las \u00f3rdenes pagadas");
 
         List<Object[]> results = this.orderRepository.findTotalByPaymentMethodAndStatus(OrderStatus.pagado);
+        Optional<LocalDateTime> minCreatedAt = this.orderRepository.findMinCreatedAtByStatus(OrderStatus.pagado);
+        Integer countOrders = this.orderRepository.countByStatus(OrderStatus.pagado);
 
         BigDecimal totalCash = BigDecimal.ZERO;
         BigDecimal totalCard = BigDecimal.ZERO;
         BigDecimal totalNequi = BigDecimal.ZERO;
         BigDecimal totalQr = BigDecimal.ZERO;
-        int totalOrders = 0; // Will be set to 0 as this query does not provide order count directly
 
         for (Object[] result : results) {
             String paymentMethod = (String) result[0];
@@ -90,13 +92,14 @@ implements DailyClosureService {
         }
 
         BigDecimal totalExpected = totalCash.add(totalCard).add(totalNequi).add(totalQr);
-
         LocalDateTime currentTime = LocalDateTime.now();
-        // The openingTime will be LocalDateTime.MIN as per the new requirement of no date filtering for this preview
-        LocalDateTime openingTime = LocalDateTime.MIN;
 
-        log.info("Preview generado: CASH={}, CARD={}, NEQUI={}, QR={}, TOTAL_EXPECTED={}, TOTAL_ORDERS={}",
-                 totalCash, totalCard, totalNequi, totalQr, totalExpected, totalOrders);
+        // Use the earliest creation time of a paid order, or LocalDateTime.MIN if no paid orders exist
+        LocalDateTime openingTime = minCreatedAt.orElse(LocalDateTime.MIN);
+        int totalOrders = countOrders != null ? countOrders : 0; // Use the actual count
+
+        log.info("Preview generado: CASH={}, CARD={}, NEQUI={}, QR={}, TOTAL_EXPECTED={}, TOTAL_ORDERS={}, OpeningTime={}",
+                 totalCash, totalCard, totalNequi, totalQr, totalExpected, totalOrders, openingTime);
 
         return new ClosurePreviewResponse(openingTime, currentTime, totalCash, totalCard, totalNequi, totalQr, totalExpected, totalOrders, "Preview de cierre generado correctamente (Todas las \u00f3rdenes pagadas)");
     }
