@@ -12,7 +12,6 @@
  *  lombok.Generated
  */
 package com.suresell.order.model.entity;
-
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
@@ -23,7 +22,6 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.UUID;
 import lombok.Generated;
-
 @Entity
 @Table(name="daily_closures", indexes={@Index(name="idx_user_name", columnList="user_name"), @Index(name="idx_closing_time", columnList="closing_time")})
 public class DailyClosure {
@@ -58,7 +56,6 @@ public class DailyClosure {
     private String status;
     @Column(name="notes", columnDefinition="TEXT")
     private String notes;
-
     @PrePersist
     public void prePersist() {
         if (this.id == null) {
@@ -68,157 +65,126 @@ public class DailyClosure {
             this.closingTime = LocalDateTime.now();
         }
     }
-
     @Generated
     public UUID getId() {
         return this.id;
     }
-
     @Generated
     public String getUserName() {
         return this.userName;
     }
-
     @Generated
     public LocalDateTime getOpeningTime() {
         return this.openingTime;
     }
-
     @Generated
     public LocalDateTime getClosingTime() {
         return this.closingTime;
     }
-
     @Generated
     public BigDecimal getTotalExpectedCash() {
         return this.totalExpectedCash;
     }
-
     @Generated
     public BigDecimal getTotalExpectedCard() {
         return this.totalExpectedCard;
     }
-
     @Generated
     public BigDecimal getTotalExpectedNequi() {
         return this.totalExpectedNequi;
     }
-
     @Generated
     public BigDecimal getTotalExpectedQr() {
         return this.totalExpectedQr;
     }
-
     @Generated
     public BigDecimal getTotalCountedCash() {
         return this.totalCountedCash;
     }
-
     @Generated
     public BigDecimal getTotalCountedCard() {
         return this.totalCountedCard;
     }
-
     @Generated
     public BigDecimal getTotalCountedNequi() {
         return this.totalCountedNequi;
     }
-
     @Generated
     public BigDecimal getTotalCountedQr() {
         return this.totalCountedQr;
     }
-
     @Generated
     public BigDecimal getDifferenceAmount() {
         return this.differenceAmount;
     }
-
     @Generated
     public String getStatus() {
         return this.status;
     }
-
     @Generated
     public String getNotes() {
         return this.notes;
     }
-
     @Generated
     public void setId(UUID id) {
         this.id = id;
     }
-
     @Generated
     public void setUserName(String userName) {
         this.userName = userName;
     }
-
     @Generated
     public void setOpeningTime(LocalDateTime openingTime) {
         this.openingTime = openingTime;
     }
-
     @Generated
     public void setClosingTime(LocalDateTime closingTime) {
         this.closingTime = closingTime;
     }
-
     @Generated
     public void setTotalExpectedCash(BigDecimal totalExpectedCash) {
         this.totalExpectedCash = totalExpectedCash;
     }
-
     @Generated
     public void setTotalExpectedCard(BigDecimal totalExpectedCard) {
         this.totalExpectedCard = totalExpectedCard;
     }
-
     @Generated
     public void setTotalExpectedNequi(BigDecimal totalExpectedNequi) {
         this.totalExpectedNequi = totalExpectedNequi;
     }
-
     @Generated
     public void setTotalExpectedQr(BigDecimal totalExpectedQr) {
         this.totalExpectedQr = totalExpectedQr;
     }
-
     @Generated
     public void setTotalCountedCash(BigDecimal totalCountedCash) {
         this.totalCountedCash = totalCountedCash;
     }
-
     @Generated
     public void setTotalCountedCard(BigDecimal totalCountedCard) {
         this.totalCountedCard = totalCountedCard;
     }
-
     @Generated
     public void setTotalCountedNequi(BigDecimal totalCountedNequi) {
         this.totalCountedNequi = totalCountedNequi;
     }
-
     @Generated
     public void setTotalCountedQr(BigDecimal totalCountedQr) {
         this.totalCountedQr = totalCountedQr;
     }
-
     @Generated
     public void setDifferenceAmount(BigDecimal differenceAmount) {
         this.differenceAmount = differenceAmount;
     }
-
     @Generated
     public void setStatus(String status) {
         this.status = status;
     }
-
     @Generated
     public void setNotes(String notes) {
         this.notes = notes;
     }
-
     @Generated
     public boolean equals(Object o) {
         if (o == this) {
@@ -305,12 +271,10 @@ public class DailyClosure {
         String other$notes = other.getNotes();
         return !(this$notes == null ? other$notes != null : !this$notes.equals(other$notes));
     }
-
     @Generated
     protected boolean canEqual(Object other) {
         return other instanceof DailyClosure;
     }
-
     @Generated
     public int hashCode() {
         int PRIME = 59;
@@ -347,16 +311,13 @@ public class DailyClosure {
         result = result * 59 + ($notes == null ? 43 : $notes.hashCode());
         return result;
     }
-
     @Generated
     public String toString() {
         return "DailyClosure(id=" + String.valueOf(this.getId()) + ", userName=" + this.getUserName() + ", openingTime=" + String.valueOf(this.getOpeningTime()) + ", closingTime=" + String.valueOf(this.getClosingTime()) + ", totalExpectedCash=" + String.valueOf(this.getTotalExpectedCash()) + ", totalExpectedCard=" + String.valueOf(this.getTotalExpectedCard()) + ", totalExpectedNequi=" + String.valueOf(this.getTotalExpectedNequi()) + ", totalExpectedQr=" + String.valueOf(this.getTotalExpectedQr()) + ", totalCountedCash=" + String.valueOf(this.getTotalCountedCash()) + ", totalCountedCard=" + String.valueOf(this.getTotalCountedCard()) + ", totalCountedNequi=" + String.valueOf(this.getTotalCountedNequi()) + ", totalCountedQr=" + String.valueOf(this.getTotalCountedQr()) + ", differenceAmount=" + String.valueOf(this.getDifferenceAmount()) + ", status=" + this.getStatus() + ", notes=" + this.getNotes() + ")";
     }
-
     @Generated
     public DailyClosure() {
     }
-
     @Generated
     public DailyClosure(UUID id, String userName, LocalDateTime openingTime, LocalDateTime closingTime, BigDecimal totalExpectedCash, BigDecimal totalExpectedCard, BigDecimal totalExpectedNequi, BigDecimal totalExpectedQr, BigDecimal totalCountedCash, BigDecimal totalCountedCard, BigDecimal totalCountedNequi, BigDecimal totalCountedQr, BigDecimal differenceAmount, String status, String notes) {
         this.id = id;
@@ -376,4 +337,3 @@ public class DailyClosure {
         this.notes = notes;
     }
 }
-

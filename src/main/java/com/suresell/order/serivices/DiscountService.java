@@ -22,7 +22,6 @@
  *  org.springframework.transaction.annotation.Transactional
  */
 package com.suresell.order.serivices;
-
 import com.suresell.order.model.entity.CouponProduct;
 import com.suresell.order.model.entity.DiscountCoupon;
 import com.suresell.order.model.entity.DiscountUsage;
@@ -50,7 +49,6 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-
 @Service
 public class DiscountService {
     private static final Logger logger = LoggerFactory.getLogger(DiscountService.class);
@@ -62,9 +60,7 @@ public class DiscountService {
     private CouponProductRepository couponProductRepository;
     @Autowired
     private AdminPasswordValidator passwordValidator;
-
     public ApplyDiscountResult applyDiscount(ApplyDiscountCommand command) {
-        List couponProducts;
         LocalDate orderDate;
         logger.info("Aplicando cup\u00f3n: {}", (Object)command.code());
         if (command.code() == null || command.code().trim().isEmpty()) {
@@ -99,10 +95,11 @@ public class DiscountService {
                 return this.createInvalidResult("El cup\u00f3n no es v\u00e1lido para " + currentDay.toString());
             }
         }
-        if ((couponProducts = coupon.getProducts()) == null || couponProducts.isEmpty()) {
+        List<CouponProduct> couponProducts = coupon.getProducts();
+        if (couponProducts == null || couponProducts.isEmpty()) {
             return this.createInvalidResult("El cup\u00f3n no tiene productos asociados");
         }
-        Set eligibleProductIds = couponProducts.stream().map(CouponProduct::getProductId).collect(Collectors.toSet());
+        Set eligibleProductIds = couponProducts.stream().map(cp -> cp.getProductId()).collect(Collectors.toSet());
         BigDecimal baseAmount = BigDecimal.ZERO;
         List appliedProductIds = command.items().stream().filter(item -> item.productIdLong() != null && eligibleProductIds.contains(item.productIdLong())).peek(item -> logger.debug("Producto elegible: {} (ID: {})", (Object)item.productName(), (Object)item.productIdLong())).map(item -> item).map(item -> item.productIdLong()).collect(Collectors.toList());
         for (OrderItemDto item2 : command.items()) {
@@ -125,7 +122,6 @@ public class DiscountService {
         logger.info("Cup\u00f3n aplicado exitosamente. Descuento: ${}", (Object)discountAmount);
         return new ApplyDiscountResult(Boolean.valueOf(true), coupon.getCode(), coupon.getDiscountPercentage(), discountAmount, newSubtotal, (String)message, appliedProductIds);
     }
-
     @Transactional
     public void linkOrderWithCoupon(LinkOrderCouponCommand command) {
         logger.info("Registrando uso de cup\u00f3n {} para orden {}", (Object)command.code(), (Object)command.orderId());
@@ -152,14 +148,12 @@ public class DiscountService {
         usage.setSubtotalBeforeDiscount(command.subtotalBeforeDiscount());
         usage.setDiscountAmount(command.discountAmount());
         usage.setTotalAfterDiscount(command.totalAfterDiscount());
-        this.usageRepository.save((Object)usage);
+        this.usageRepository.save(usage);
         logger.info("Uso de cup\u00f3n registrado exitosamente para orden {}", (Object)command.orderId());
     }
-
     private ApplyDiscountResult createInvalidResult(String message) {
         return new ApplyDiscountResult(Boolean.valueOf(false), null, null, BigDecimal.ZERO, BigDecimal.ZERO, message, List.of());
     }
-
     public List<DiscountCoupon> getActiveCoupons() {
         logger.debug("Obteniendo cupones activos");
         LocalDate today = LocalDate.now();
@@ -170,7 +164,6 @@ public class DiscountService {
             return coupon.getValidFrom() == null || !today.isBefore(coupon.getValidFrom());
         }).collect(Collectors.toList());
     }
-
     @Transactional
     public DiscountCoupon createCoupon(String adminPassword, DiscountCoupon coupon, List<ProductDiscountDto> products) {
         logger.info("Creando nuevo cup\u00f3n: {}", (Object)coupon.getCode());
@@ -179,24 +172,23 @@ public class DiscountService {
             throw new IllegalArgumentException("Ya existe un cup\u00f3n con el c\u00f3digo: " + coupon.getCode());
         }
         this.validateCouponData(coupon, products);
-        DiscountCoupon savedCoupon = (DiscountCoupon)this.couponRepository.save((Object)coupon);
+        DiscountCoupon savedCoupon = this.couponRepository.save(coupon);
         if (products != null && !products.isEmpty()) {
             for (ProductDiscountDto productDto : products) {
                 CouponProduct couponProduct = new CouponProduct();
                 couponProduct.setCoupon(savedCoupon);
                 couponProduct.setProductId(productDto.productId());
                 couponProduct.setProductName(productDto.productName());
-                this.couponProductRepository.save((Object)couponProduct);
+                this.couponProductRepository.save(couponProduct);
             }
         }
         return savedCoupon;
     }
-
     @Transactional
     public DiscountCoupon updateCoupon(String adminPassword, Long id, DiscountCoupon updatedData, List<ProductDiscountDto> products) {
         logger.info("Actualizando cup\u00f3n ID: {}", (Object)id);
         this.passwordValidator.validateAdminPasswordOrThrow(adminPassword);
-        DiscountCoupon existing = (DiscountCoupon)this.couponRepository.findById((Object)id).orElseThrow(() -> new IllegalArgumentException("Cup\u00f3n no encontrado con ID: " + id));
+        DiscountCoupon existing = this.couponRepository.findById(id).orElseThrow(() -> new IllegalArgumentException("Cup\u00f3n no encontrado con ID: " + id));
         existing.setCode(updatedData.getCode());
         existing.setName(updatedData.getName());
         existing.setDescription(updatedData.getDescription());
@@ -213,21 +205,19 @@ public class DiscountService {
                 couponProduct.setCoupon(existing);
                 couponProduct.setProductId(productDto.productId());
                 couponProduct.setProductName(productDto.productName());
-                this.couponProductRepository.save((Object)couponProduct);
+                this.couponProductRepository.save(couponProduct);
             }
         }
-        return (DiscountCoupon)this.couponRepository.save((Object)existing);
+        return this.couponRepository.save(existing);
     }
-
     @Transactional
     public DiscountCoupon deactivateCoupon(String adminPassword, Long id) {
         logger.info("Desactivando cup\u00f3n ID: {}", (Object)id);
         this.passwordValidator.validateAdminPasswordOrThrow(adminPassword);
-        DiscountCoupon coupon = (DiscountCoupon)this.couponRepository.findById((Object)id).orElseThrow(() -> new IllegalArgumentException("Cup\u00f3n no encontrado con ID: " + id));
+        DiscountCoupon coupon = this.couponRepository.findById(id).orElseThrow(() -> new IllegalArgumentException("Cup\u00f3n no encontrado con ID: " + id));
         coupon.setIsActive(Boolean.valueOf(false));
-        return (DiscountCoupon)this.couponRepository.save((Object)coupon);
+        return this.couponRepository.save(coupon);
     }
-
     public List<DiscountCoupon> listAllCoupons(String adminPassword, String status) {
         logger.info("Listando cupones con filtro: {}", (Object)status);
         this.passwordValidator.validateAdminPasswordOrThrow(adminPassword);
@@ -246,22 +236,20 @@ public class DiscountService {
         }
         return this.couponRepository.findAll();
     }
-
     @Transactional
     public void deleteCoupon(String adminPassword, Long id) {
         logger.info("Eliminando cup\u00f3n ID: {}", (Object)id);
         this.passwordValidator.validateAdminPasswordOrThrow(adminPassword);
-        DiscountCoupon coupon = (DiscountCoupon)this.couponRepository.findById((Object)id).orElseThrow(() -> new IllegalArgumentException("Cup\u00f3n no encontrado con ID: " + id));
+        DiscountCoupon coupon = this.couponRepository.findById(id).orElseThrow(() -> new IllegalArgumentException("Cup\u00f3n no encontrado con ID: " + id));
         List usages = this.usageRepository.findByCouponId(id);
         if (!usages.isEmpty()) {
             logger.warn("No se puede eliminar el cup\u00f3n {} porque tiene {} usos registrados", (Object)coupon.getCode(), (Object)usages.size());
             throw new IllegalStateException("No se puede eliminar el cup\u00f3n porque tiene " + usages.size() + " uso(s) registrado(s). Considere desactivarlo en su lugar.");
         }
         this.couponProductRepository.deleteByCouponId(id);
-        this.couponRepository.delete((Object)coupon);
+        this.couponRepository.delete(coupon);
         logger.info("Cup\u00f3n {} eliminado exitosamente", (Object)coupon.getCode());
     }
-
     private void validateCouponData(DiscountCoupon coupon, List<ProductDiscountDto> products) {
         if (coupon.getCode() == null || coupon.getCode().trim().isEmpty()) {
             throw new IllegalArgumentException("El c\u00f3digo del cup\u00f3n es requerido");
@@ -290,4 +278,3 @@ public class DiscountService {
         }
     }
 }
-

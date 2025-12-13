@@ -29,7 +29,6 @@
  *  org.springframework.web.bind.annotation.RestController
  */
 package com.suresell.order.controller;
-
 import com.suresell.order.model.record.ClosurePreviewResponse;
 import com.suresell.order.model.record.ClosureRequest;
 import com.suresell.order.model.record.ClosureResponse;
@@ -60,7 +59,6 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
-
 @RestController
 @RequestMapping(value={"/api/closures"})
 public class DailyClosureController {
@@ -68,7 +66,6 @@ public class DailyClosureController {
     private static final Logger log = LoggerFactory.getLogger(DailyClosureController.class);
     private final DailyClosureService closureService;
     private final DailyClosureExcelExporter excelExporter;
-
     @GetMapping(value={"/export/excel"})
     public ResponseEntity<Resource> exportClosuresToExcel() {
         log.info("GET /api/closures/export/excel - Solicitud de exportaci\u00f3n de cierres a Excel");
@@ -83,27 +80,25 @@ public class DailyClosureController {
             String filename = "historial_cierres_caja_" + String.valueOf(LocalDate.now()) + ".xlsx";
             headers.add("Content-Disposition", "attachment; filename=" + filename);
             log.info("Exportaci\u00f3n a Excel generada exitosamente. Archivo: {}", (Object)filename);
-            return ((ResponseEntity.BodyBuilder)ResponseEntity.ok().headers(headers)).contentType(MediaType.parseMediaType((String)"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")).body((Object)new InputStreamResource((InputStream)in));
+            return ((ResponseEntity.BodyBuilder)((ResponseEntity.BodyBuilder)ResponseEntity.ok().headers(headers)).contentType(MediaType.parseMediaType((String)"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))).body(new InputStreamResource(in));
         }
         catch (IOException e) {
             log.error("Error al generar el archivo Excel de cierres: {}", (Object)e.getMessage(), (Object)e);
             return ResponseEntity.status((HttpStatusCode)HttpStatus.INTERNAL_SERVER_ERROR).build();
         }
     }
-
     @GetMapping(value={"/preview"})
     public ResponseEntity<ClosurePreviewResponse> getClosurePreview() {
         log.info("GET /api/closures/preview - Obteniendo preview de cierre");
         try {
             ClosurePreviewResponse preview = this.closureService.getClosurePreview();
-            return ResponseEntity.ok((Object)preview);
+            return ResponseEntity.ok(preview);
         }
         catch (Exception e) {
             log.error("Error generando preview de cierre: {}", (Object)e.getMessage(), (Object)e);
             throw new RuntimeException("Error al generar preview de cierre: " + e.getMessage());
         }
     }
-
     @PostMapping
     public ResponseEntity<?> executeClosure(@Valid @RequestBody ClosureRequest request) {
         log.info("POST /api/closures - Ejecutando cierre para cajero: {}", (Object)request.userName());
@@ -121,31 +116,27 @@ public class DailyClosureController {
             return ResponseEntity.status((HttpStatusCode)HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("error", "Error interno del servidor", "message", "No se pudo ejecutar el cierre: " + e.getMessage()));
         }
     }
-
     @GetMapping(value={"/history"})
     public ResponseEntity<List<ClosureResponse>> getAllClosures() {
         log.info("GET /api/closures/history - Obteniendo historial de cierres");
         try {
             List closures = this.closureService.getAllClosures();
-            return ResponseEntity.ok((Object)closures);
+            return ResponseEntity.ok(closures);
         }
         catch (Exception e) {
             log.error("Error obteniendo historial de cierres: {}", (Object)e.getMessage(), (Object)e);
             throw new RuntimeException("Error al obtener historial de cierres: " + e.getMessage());
         }
     }
-
     @ExceptionHandler(value={MethodArgumentNotValidException.class})
     public ResponseEntity<Map<String, Object>> handleValidationExceptions(MethodArgumentNotValidException ex) {
         HashMap errors = new HashMap();
         ex.getBindingResult().getFieldErrors().forEach(error -> errors.put(error.getField(), error.getDefaultMessage()));
         return ResponseEntity.status((HttpStatusCode)HttpStatus.BAD_REQUEST).body(Map.of("error", "Errores de validaci\u00f3n", "fields", errors));
     }
-
     @Generated
     public DailyClosureController(DailyClosureService closureService, DailyClosureExcelExporter excelExporter) {
         this.closureService = closureService;
         this.excelExporter = excelExporter;
     }
 }
-

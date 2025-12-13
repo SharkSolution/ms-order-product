@@ -5,20 +5,9 @@
  *  com.suresell.order.model.record.ClosurePreviewResponse
  */
 package com.suresell.order.model.record;
-
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
-
 public record ClosurePreviewResponse(LocalDateTime openingTime, LocalDateTime currentTime, BigDecimal totalExpectedCash, BigDecimal totalExpectedCard, BigDecimal totalExpectedNequi, BigDecimal totalExpectedQr, BigDecimal totalExpected, int totalOrders, String message) {
-    private final LocalDateTime openingTime;
-    private final LocalDateTime currentTime;
-    private final BigDecimal totalExpectedCash;
-    private final BigDecimal totalExpectedCard;
-    private final BigDecimal totalExpectedNequi;
-    private final BigDecimal totalExpectedQr;
-    private final BigDecimal totalExpected;
-    private final int totalOrders;
-    private final String message;
 
     public ClosurePreviewResponse(LocalDateTime openingTime, LocalDateTime currentTime, BigDecimal totalExpectedCash, BigDecimal totalExpectedCard, BigDecimal totalExpectedNequi, BigDecimal totalExpectedQr, BigDecimal totalExpected, int totalOrders, String message) {
         this.openingTime = openingTime;
@@ -31,41 +20,31 @@ public record ClosurePreviewResponse(LocalDateTime openingTime, LocalDateTime cu
         this.totalOrders = totalOrders;
         this.message = message;
     }
-
     public LocalDateTime openingTime() {
         return this.openingTime;
     }
-
     public LocalDateTime currentTime() {
         return this.currentTime;
     }
-
     public BigDecimal totalExpectedCash() {
         return this.totalExpectedCash;
     }
-
     public BigDecimal totalExpectedCard() {
         return this.totalExpectedCard;
     }
-
     public BigDecimal totalExpectedNequi() {
         return this.totalExpectedNequi;
     }
-
     public BigDecimal totalExpectedQr() {
         return this.totalExpectedQr;
     }
-
     public BigDecimal totalExpected() {
         return this.totalExpected;
     }
-
     public int totalOrders() {
         return this.totalOrders;
     }
-
     public String message() {
         return this.message;
     }
 }
-

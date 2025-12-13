@@ -5,10 +5,7 @@
  *  com.suresell.order.model.enums.PagerColor
  */
 package com.suresell.order.model.enums;
-
 public enum PagerColor {
     AMARILLO,
     AZUL;
-
 }
-

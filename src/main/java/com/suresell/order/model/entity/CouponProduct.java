@@ -13,7 +13,6 @@
  *  lombok.Generated
  */
 package com.suresell.order.model.entity;
-
 import com.suresell.order.model.entity.DiscountCoupon;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
@@ -22,7 +21,6 @@ import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import lombok.Generated;
-
 @Entity
 public class CouponProduct {
     @Id
@@ -33,47 +31,38 @@ public class CouponProduct {
     private DiscountCoupon coupon;
     private String productId;
     private String productName;
-
     @Generated
     public Long getId() {
         return this.id;
     }
-
     @Generated
     public DiscountCoupon getCoupon() {
         return this.coupon;
     }
-
     @Generated
     public String getProductId() {
         return this.productId;
     }
-
     @Generated
     public String getProductName() {
         return this.productName;
     }
-
     @Generated
     public void setId(Long id) {
         this.id = id;
     }
-
     @Generated
     public void setCoupon(DiscountCoupon coupon) {
         this.coupon = coupon;
     }
-
     @Generated
     public void setProductId(String productId) {
         this.productId = productId;
     }
-
     @Generated
     public void setProductName(String productName) {
         this.productName = productName;
     }
-
     @Generated
     public boolean equals(Object o) {
         if (o == this) {
@@ -105,12 +94,10 @@ public class CouponProduct {
         String other$productName = other.getProductName();
         return !(this$productName == null ? other$productName != null : !this$productName.equals(other$productName));
     }
-
     @Generated
     protected boolean canEqual(Object other) {
         return other instanceof CouponProduct;
     }
-
     @Generated
     public int hashCode() {
         int PRIME = 59;
@@ -125,16 +112,13 @@ public class CouponProduct {
         result = result * 59 + ($productName == null ? 43 : $productName.hashCode());
         return result;
     }
-
     @Generated
     public String toString() {
         return "CouponProduct(id=" + this.getId() + ", coupon=" + String.valueOf(this.getCoupon()) + ", productId=" + this.getProductId() + ", productName=" + this.getProductName() + ")";
     }
-
     @Generated
     public CouponProduct() {
     }
-
     @Generated
     public CouponProduct(Long id, DiscountCoupon coupon, String productId, String productName) {
         this.id = id;
@@ -143,4 +127,3 @@ public class CouponProduct {
         this.productName = productName;
     }
 }
-

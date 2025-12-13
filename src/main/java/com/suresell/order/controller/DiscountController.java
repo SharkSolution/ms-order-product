@@ -30,7 +30,6 @@
  *  org.springframework.web.bind.annotation.RestController
  */
 package com.suresell.order.controller;
-
 import com.suresell.order.exception.AdminPasswordException;
 import com.suresell.order.model.entity.DiscountCoupon;
 import com.suresell.order.model.record.AdminActionRequest;
@@ -58,14 +57,12 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
-
 @RestController
 @RequestMapping(value={"/api/discounts"})
 public class DiscountController {
     private static final Logger logger = LoggerFactory.getLogger(DiscountController.class);
     @Autowired
     private DiscountService discountService;
-
     @PostMapping(value={"/apply"})
     public ResponseEntity<ApplyDiscountResult> applyDiscount(@RequestBody ApplyDiscountCommand command) {
         logger.info("POST /api/discounts/apply - Aplicando cup\u00f3n: {}", (Object)command.code());
@@ -76,7 +73,7 @@ public class DiscountController {
             } else {
                 logger.warn("Cup\u00f3n no v\u00e1lido: {} - Raz\u00f3n: {}", (Object)command.code(), (Object)result.message());
             }
-            return ResponseEntity.ok((Object)result);
+            return ResponseEntity.ok(result);
         }
         catch (IllegalArgumentException e) {
             logger.warn("Datos inv\u00e1lidos para aplicar descuento: {}", (Object)e.getMessage());
@@ -87,7 +84,6 @@ public class DiscountController {
             return ResponseEntity.status((HttpStatusCode)HttpStatus.INTERNAL_SERVER_ERROR).build();
         }
     }
-
     @PostMapping(value={"/link-order"})
     public ResponseEntity<Map<String, Object>> linkOrderWithCoupon(@RequestBody LinkOrderCouponCommand command) {
         logger.info("POST /api/discounts/link-order - Registrando cup\u00f3n {} para orden {}", (Object)command.code(), (Object)command.orderId());
@@ -109,7 +105,6 @@ public class DiscountController {
             return ResponseEntity.status((HttpStatusCode)HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("error", "Error interno del servidor"));
         }
     }
-
     @GetMapping(value={"/active"})
     public ResponseEntity<?> getActiveCoupons() {
         logger.info("GET /api/discounts/active - Obteniendo cupones activos");
@@ -122,7 +117,6 @@ public class DiscountController {
             return ResponseEntity.status((HttpStatusCode)HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("error", "Error interno del servidor"));
         }
     }
-
     @PostMapping
     public ResponseEntity<?> createCoupon(@RequestBody CreateCouponRequest request) {
         logger.info("POST /api/discounts - Creando cup\u00f3n: {}", (Object)request.code());
@@ -152,7 +146,6 @@ public class DiscountController {
             return ResponseEntity.status((HttpStatusCode)HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("error", "Error interno del servidor"));
         }
     }
-
     @PutMapping(value={"/{id}"})
     public ResponseEntity<?> updateCoupon(@PathVariable Long id, @RequestBody UpdateCouponRequest request) {
         logger.info("PUT /api/discounts/{} - Actualizando cup\u00f3n", (Object)id);
@@ -182,7 +175,6 @@ public class DiscountController {
             return ResponseEntity.status((HttpStatusCode)HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("error", "Error interno del servidor"));
         }
     }
-
     @PatchMapping(value={"/{id}/deactivate"})
     public ResponseEntity<?> deactivateCoupon(@PathVariable Long id, @RequestBody AdminActionRequest request) {
         logger.info("PATCH /api/discounts/{}/deactivate - Desactivando cup\u00f3n", (Object)id);
@@ -203,7 +195,6 @@ public class DiscountController {
             return ResponseEntity.status((HttpStatusCode)HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("error", "Error interno del servidor"));
         }
     }
-
     @GetMapping
     public ResponseEntity<?> listAllCoupons(@RequestParam String adminPassword, @RequestParam(defaultValue="all") String status) {
         logger.info("GET /api/discounts - Listando cupones con filtro: {}", (Object)status);
@@ -219,7 +210,6 @@ public class DiscountController {
             return ResponseEntity.status((HttpStatusCode)HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("error", "Error interno del servidor"));
         }
     }
-
     @DeleteMapping(value={"/{id}"})
     public ResponseEntity<?> deleteCoupon(@PathVariable Long id, @RequestParam String adminPassword) {
         logger.info("DELETE /api/discounts/{} - Eliminando cup\u00f3n", (Object)id);
@@ -245,4 +235,3 @@ public class DiscountController {
         }
     }
 }
-

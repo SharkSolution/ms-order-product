@@ -19,7 +19,6 @@
  *  lombok.Generated
  */
 package com.suresell.order.model.entity;
-
 import com.suresell.order.model.entity.DiscountCoupon;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -36,7 +35,6 @@ import jakarta.persistence.UniqueConstraint;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import lombok.Generated;
-
 @Entity
 @Table(name="discount_usages", uniqueConstraints={@UniqueConstraint(name="uk_order_coupon", columnNames={"order_id", "coupon_id"})}, indexes={@Index(name="idx_usage_order", columnList="order_id"), @Index(name="idx_usage_coupon", columnList="coupon_id"), @Index(name="idx_usage_created", columnList="created_at")})
 public class DiscountUsage {
@@ -58,94 +56,76 @@ public class DiscountUsage {
     private BigDecimal totalAfterDiscount;
     @Column(name="created_at", nullable=false)
     private LocalDateTime createdAt;
-
     @PrePersist
     public void prePersist() {
         if (this.createdAt == null) {
             this.createdAt = LocalDateTime.now();
         }
     }
-
     @Generated
     public Long getId() {
         return this.id;
     }
-
     @Generated
     public Long getOrderId() {
         return this.orderId;
     }
-
     @Generated
     public DiscountCoupon getCoupon() {
         return this.coupon;
     }
-
     @Generated
     public String getDiscountCode() {
         return this.discountCode;
     }
-
     @Generated
     public BigDecimal getSubtotalBeforeDiscount() {
         return this.subtotalBeforeDiscount;
     }
-
     @Generated
     public BigDecimal getDiscountAmount() {
         return this.discountAmount;
     }
-
     @Generated
     public BigDecimal getTotalAfterDiscount() {
         return this.totalAfterDiscount;
     }
-
     @Generated
     public LocalDateTime getCreatedAt() {
         return this.createdAt;
     }
-
     @Generated
     public void setId(Long id) {
         this.id = id;
     }
-
     @Generated
     public void setOrderId(Long orderId) {
         this.orderId = orderId;
     }
-
     @Generated
     public void setCoupon(DiscountCoupon coupon) {
         this.coupon = coupon;
     }
-
     @Generated
     public void setDiscountCode(String discountCode) {
         this.discountCode = discountCode;
     }
-
     @Generated
     public void setSubtotalBeforeDiscount(BigDecimal subtotalBeforeDiscount) {
         this.subtotalBeforeDiscount = subtotalBeforeDiscount;
     }
-
     @Generated
     public void setDiscountAmount(BigDecimal discountAmount) {
         this.discountAmount = discountAmount;
     }
-
     @Generated
     public void setTotalAfterDiscount(BigDecimal totalAfterDiscount) {
         this.totalAfterDiscount = totalAfterDiscount;
     }
-
     @Generated
     public void setCreatedAt(LocalDateTime createdAt) {
         this.createdAt = createdAt;
     }
-
     @Generated
     public boolean equals(Object o) {
         if (o == this) {
@@ -197,12 +177,10 @@ public class DiscountUsage {
         LocalDateTime other$createdAt = other.getCreatedAt();
         return !(this$createdAt == null ? other$createdAt != null : !((Object)this$createdAt).equals(other$createdAt));
     }
-
     @Generated
     protected boolean canEqual(Object other) {
         return other instanceof DiscountUsage;
     }
-
     @Generated
     public int hashCode() {
         int PRIME = 59;
@@ -225,16 +203,13 @@ public class DiscountUsage {
         result = result * 59 + ($createdAt == null ? 43 : ((Object)$createdAt).hashCode());
         return result;
     }
-
     @Generated
     public String toString() {
         return "DiscountUsage(id=" + this.getId() + ", orderId=" + this.getOrderId() + ", coupon=" + String.valueOf(this.getCoupon()) + ", discountCode=" + this.getDiscountCode() + ", subtotalBeforeDiscount=" + String.valueOf(this.getSubtotalBeforeDiscount()) + ", discountAmount=" + String.valueOf(this.getDiscountAmount()) + ", totalAfterDiscount=" + String.valueOf(this.getTotalAfterDiscount()) + ", createdAt=" + String.valueOf(this.getCreatedAt()) + ")";
     }
-
     @Generated
     public DiscountUsage() {
     }
-
     @Generated
     public DiscountUsage(Long id, Long orderId, DiscountCoupon coupon, String discountCode, BigDecimal subtotalBeforeDiscount, BigDecimal discountAmount, BigDecimal totalAfterDiscount, LocalDateTime createdAt) {
         this.id = id;
@@ -247,4 +222,3 @@ public class DiscountUsage {
         this.createdAt = createdAt;
     }
 }
-

@@ -5,15 +5,8 @@
  *  com.suresell.order.model.record.LinkOrderCouponCommand
  */
 package com.suresell.order.model.record;
-
 import java.math.BigDecimal;
-
 public record LinkOrderCouponCommand(Long orderId, String code, BigDecimal subtotalBeforeDiscount, BigDecimal discountAmount, BigDecimal totalAfterDiscount) {
-    private final Long orderId;
-    private final String code;
-    private final BigDecimal subtotalBeforeDiscount;
-    private final BigDecimal discountAmount;
-    private final BigDecimal totalAfterDiscount;
 
     public LinkOrderCouponCommand(Long orderId, String code, BigDecimal subtotalBeforeDiscount, BigDecimal discountAmount, BigDecimal totalAfterDiscount) {
         this.orderId = orderId;
@@ -22,25 +15,19 @@ public record LinkOrderCouponCommand(Long orderId, String code, BigDecimal subto
         this.discountAmount = discountAmount;
         this.totalAfterDiscount = totalAfterDiscount;
     }
-
     public Long orderId() {
         return this.orderId;
     }
-
     public String code() {
         return this.code;
     }
-
     public BigDecimal subtotalBeforeDiscount() {
         return this.subtotalBeforeDiscount;
     }
-
     public BigDecimal discountAmount() {
         return this.discountAmount;
     }
-
     public BigDecimal totalAfterDiscount() {
         return this.totalAfterDiscount;
     }
 }
-

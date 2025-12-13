@@ -27,7 +27,6 @@
  *  org.springframework.web.bind.annotation.RestController
  */
 package com.suresell.order.controller;
-
 import com.suresell.order.model.record.OrderItemResponseRecord;
 import com.suresell.order.model.record.OrderRequestRecord;
 import com.suresell.order.model.record.OrderResponseRecord;
@@ -53,34 +52,28 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
-
 @RestController
 @RequestMapping(value={"/orders"})
 public class OrderController {
     private final OrderService orderService;
-
     @PostMapping(value={"/create"})
     public ResponseEntity<Map<String, String>> createOrder(@RequestBody @Valid OrderRequestRecord dto) {
         this.orderService.createOrUpdateOrder(dto);
         return ResponseEntity.status((HttpStatusCode)HttpStatus.CREATED).body(Map.of("message", "Orden creada con \u00e9xito"));
     }
-
     @PutMapping(value={"/{orderId}"})
     public ResponseEntity<Map<String, String>> updateOrder(@PathVariable Long orderId, @RequestBody @Valid OrderRequestRecord dto) {
         this.orderService.updateOrder(orderId, dto);
         return ResponseEntity.ok(Map.of("message", "Orden actualizada con \u00e9xito"));
     }
-
     @GetMapping(value={"/cocina"})
     public List<OrderResponseRecord> getKitchenOrders() {
         return this.orderService.getKitchenOrders();
     }
-
     @GetMapping(value={"/historial"})
     public List<OrderResponseRecord> getAllOrders() {
         return this.orderService.getAllOrders();
     }
-
     @PatchMapping(value={"/{orderId}/status"})
     public ResponseEntity<Map<String, String>> updateStatus(@PathVariable Long orderId, @RequestParam String status) {
         try {
@@ -94,7 +87,6 @@ public class OrderController {
             return ResponseEntity.status((HttpStatusCode)HttpStatus.NOT_FOUND).body(Map.of("error", e.getMessage()));
         }
     }
-
     @PatchMapping(value={"/{orderId}/payment-method"})
     public ResponseEntity<Map<String, String>> updatePaymentMethod(@PathVariable Long orderId, @RequestParam String paymentMethod) {
         try {
@@ -108,16 +100,14 @@ public class OrderController {
             return ResponseEntity.status((HttpStatusCode)HttpStatus.NOT_FOUND).body(Map.of("error", e.getMessage()));
         }
     }
-
     @GetMapping(value={"/{orderId}"})
     public ResponseEntity<OrderResponseRecord> getOrderById(@PathVariable Long orderId) {
         OrderResponseRecord order = this.orderService.getOrderById(orderId);
-        return ResponseEntity.ok((Object)order);
+        return ResponseEntity.ok(order);
     }
-
     @GetMapping(value={"/report"})
     public ResponseEntity<?> getSalesReport(@RequestParam(defaultValue="json") String format) throws Exception {
-        List report = this.orderService.getSalesReport();
+        List<OrderResponseRecord> report = (List<OrderResponseRecord>) this.orderService.getSalesReport();
         if ("excel".equalsIgnoreCase(format)) {
             try (XSSFWorkbook workbook = new XSSFWorkbook();){
                 Sheet sheet = workbook.createSheet("Ventas");
@@ -154,7 +144,6 @@ public class OrderController {
         }
         return ResponseEntity.ok((Object)report);
     }
-
     @PatchMapping(value={"/{orderId}/apply-discount"})
     public ResponseEntity<?> applyDiscountToOrder(@PathVariable Long orderId, @RequestParam String discountCode) {
         try {
@@ -171,7 +160,6 @@ public class OrderController {
             return ResponseEntity.status((HttpStatusCode)HttpStatus.NOT_FOUND).body(Map.of("error", e.getMessage()));
         }
     }
-
     @PatchMapping(value={"/{orderId}/deliver"})
     public ResponseEntity<Map<String, String>> markAsDelivered(@PathVariable Long orderId) {
         try {
@@ -185,10 +173,8 @@ public class OrderController {
             return ResponseEntity.status((HttpStatusCode)HttpStatus.NOT_FOUND).body(Map.of("error", e.getMessage()));
         }
     }
-
     @Generated
     public OrderController(OrderService orderService) {
         this.orderService = orderService;
     }
 }
-

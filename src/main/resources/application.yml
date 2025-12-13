@@ -2,9 +2,9 @@ server:
   port: 8081
 spring:
   datasource:
-    url: jdbc:postgresql://localhost:5432/pos_db
-    username: andrewramirez
-    password: sul4m1995*
+    url: jdbc:postgresql://database-surresell.c740uem2quei.us-east-2.rds.amazonaws.com:5432/pos_db
+    username: postgres
+    password: postgres
   jpa:
     properties:
       hibernate.format_sql: true
@@ -13,3 +13,6 @@ spring:
 products:
   service:
     url: http://localhost:8082
+coupon:
+  admin:
+    password: Admin2025*

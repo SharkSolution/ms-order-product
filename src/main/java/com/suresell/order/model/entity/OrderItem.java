@@ -16,7 +16,6 @@
  *  lombok.Generated
  */
 package com.suresell.order.model.entity;
-
 import com.suresell.order.model.entity.Order;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -28,7 +27,6 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import lombok.Generated;
-
 @Entity
 @Table(name="order_items")
 public class OrderItem {
@@ -47,77 +45,62 @@ public class OrderItem {
     @Column(name="total_price")
     private int totalPrice;
     private String instructions;
-
     @Generated
     public Long getIdOrderItem() {
         return this.idOrderItem;
     }
-
     @Generated
     public Order getOrder() {
         return this.order;
     }
-
     @Generated
     public String getProductId() {
         return this.productId;
     }
-
     @Generated
     public int getQuantity() {
         return this.quantity;
     }
-
     @Generated
     public int getUnitPrice() {
         return this.unitPrice;
     }
-
     @Generated
     public int getTotalPrice() {
         return this.totalPrice;
     }
-
     @Generated
     public String getInstructions() {
         return this.instructions;
     }
-
     @Generated
     public void setIdOrderItem(Long idOrderItem) {
         this.idOrderItem = idOrderItem;
     }
-
     @Generated
     public void setOrder(Order order) {
         this.order = order;
     }
-
     @Generated
     public void setProductId(String productId) {
         this.productId = productId;
     }
-
     @Generated
     public void setQuantity(int quantity) {
         this.quantity = quantity;
     }
-
     @Generated
     public void setUnitPrice(int unitPrice) {
         this.unitPrice = unitPrice;
     }
-
     @Generated
     public void setTotalPrice(int totalPrice) {
         this.totalPrice = totalPrice;
     }
-
     @Generated
     public void setInstructions(String instructions) {
         this.instructions = instructions;
     }
-
     @Generated
     public boolean equals(Object o) {
         if (o == this) {
@@ -158,12 +141,10 @@ public class OrderItem {
         String other$instructions = other.getInstructions();
         return !(this$instructions == null ? other$instructions != null : !this$instructions.equals(other$instructions));
     }
-
     @Generated
     protected boolean canEqual(Object other) {
         return other instanceof OrderItem;
     }
-
     @Generated
     public int hashCode() {
         int PRIME = 59;
@@ -181,16 +162,13 @@ public class OrderItem {
         result = result * 59 + ($instructions == null ? 43 : $instructions.hashCode());
         return result;
     }
-
     @Generated
     public String toString() {
         return "OrderItem(idOrderItem=" + this.getIdOrderItem() + ", order=" + String.valueOf(this.getOrder()) + ", productId=" + this.getProductId() + ", quantity=" + this.getQuantity() + ", unitPrice=" + this.getUnitPrice() + ", totalPrice=" + this.getTotalPrice() + ", instructions=" + this.getInstructions() + ")";
     }
-
     @Generated
     public OrderItem() {
     }
-
     @Generated
     public OrderItem(Long idOrderItem, Order order, String productId, int quantity, int unitPrice, int totalPrice, String instructions) {
         this.idOrderItem = idOrderItem;
@@ -202,4 +180,3 @@ public class OrderItem {
         this.instructions = instructions;
     }
 }
-

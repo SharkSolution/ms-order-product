@@ -5,10 +5,7 @@
  *  com.suresell.order.model.enums.DiscountType
  */
 package com.suresell.order.model.enums;
-
 public enum DiscountType {
     PERCENTAGE,
     FIXED;
-
 }
-

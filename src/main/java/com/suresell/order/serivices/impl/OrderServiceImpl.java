@@ -25,7 +25,6 @@
  *  org.springframework.stereotype.Service
  */
 package com.suresell.order.serivices.impl;
-
 import com.suresell.order.exception.PagerOcupadoException;
 import com.suresell.order.mapper.OrderMapper;
 import com.suresell.order.model.entity.Order;
@@ -51,7 +50,6 @@ import java.util.List;
 import java.util.Optional;
 import lombok.Generated;
 import org.springframework.stereotype.Service;
-
 @Service
 public class OrderServiceImpl
 implements OrderService {
@@ -59,20 +57,19 @@ implements OrderService {
     private final ProductClient productClient;
     private final OrderMapper orderMapper;
     private final DiscountService discountService;
-
     @Transactional
     public void createOrUpdateOrder(OrderRequestRecord dto) {
         if (!List.of("CASH", "CARD", "NEQUI", "QR").contains(dto.paymentMethod())) {
             throw new IllegalArgumentException("M\u00e9todo de pago inv\u00e1lido. Debe ser: CASH, CARD, NEQUI o QR");
         }
-        Optional existingPagerOrder = this.orderRepository.findByPagerColorAndPagerNumberAndStatusAndDeliveredAt(dto.pagerColor(), dto.pagerNumber(), OrderStatus.PAGADO, "No");
+        Optional existingPagerOrder = this.orderRepository.findByPagerColorAndPagerNumberAndStatusAndDeliveredAt(dto.pagerColor(), dto.pagerNumber(), OrderStatus.pagado, "No");
         if (existingPagerOrder.isPresent()) {
             throw new PagerOcupadoException(String.format("El pager %s #%d ya est\u00e1 en uso por la orden #%d", dto.pagerColor(), dto.pagerNumber(), ((Order)existingPagerOrder.get()).getIdOrder()), "PAGER_OCUPADO");
         }
         Order order = new Order();
         order.setPagerColor(dto.pagerColor());
         order.setPagerNumber(dto.pagerNumber());
-        order.setStatus(OrderStatus.PAGADO);
+        order.setStatus(OrderStatus.pagado);
         order.setDeliveredAt("No");
         order.setPaymentMethod(dto.paymentMethod());
         order.setCreatedAt(LocalDateTime.now());
@@ -114,29 +111,25 @@ implements OrderService {
             }
         }
         order.setTotal(total);
-        Order savedOrder = (Order)this.orderRepository.save((Object)order);
+        Order savedOrder = this.orderRepository.save(order);
         if (savedOrder.getDiscountCode() != null) {
             LinkOrderCouponCommand linkCommand = new LinkOrderCouponCommand(savedOrder.getIdOrder(), savedOrder.getDiscountCode(), BigDecimal.valueOf(savedOrder.getSubtotal()), BigDecimal.valueOf(savedOrder.getDiscountAmount().intValue()), BigDecimal.valueOf(savedOrder.getTotal()));
             this.discountService.linkOrderWithCoupon(linkCommand);
         }
     }
-
     public List<OrderResponseRecord> getKitchenOrders() {
-        return this.orderRepository.findActiveOrders().stream().map(order -> new OrderResponseRecord(order.getIdOrder(), order.getPagerColor(), order.getPagerNumber(), order.getCreatedAt(), order.getSubtotal(), order.getTotal(), order.getStatus().getDisplayName(), order.getPaymentMethod(), order.getDiscountCode(), order.getDiscountPercentage(), order.getDiscountAmount(), order.getDeliveredAt(), order.getItems().stream().map(item -> new OrderItemResponseRecord(item.getProductId(), this.productClient.getProductName(item.getProductId()), item.getQuantity(), item.getUnitPrice(), item.getTotalPrice(), item.getInstructions())).toList())).toList();
+        return this.orderRepository.findActiveOrders(OrderStatus.pagado).stream().map(order -> new OrderResponseRecord(order.getIdOrder(), order.getPagerColor(), order.getPagerNumber(), order.getCreatedAt(), order.getSubtotal(), order.getTotal(), order.getStatus().getDisplayName(), order.getPaymentMethod(), order.getDiscountCode(), order.getDiscountPercentage(), order.getDiscountAmount(), order.getDeliveredAt(), order.getItems().stream().map(item -> new OrderItemResponseRecord(item.getProductId(), this.productClient.getProductName(item.getProductId()), item.getQuantity(), item.getUnitPrice(), item.getTotalPrice(), item.getInstructions())).toList())).toList();
     }
-
     public List<OrderResponseRecord> getAllOrders() {
         return this.orderRepository.findAll().stream().map(arg_0 -> ((OrderMapper)this.orderMapper).toOrderResponse(arg_0)).toList();
     }
-
     public OrderResponseRecord getOrderById(Long orderId) {
-        Order order = (Order)this.orderRepository.findById((Object)orderId).orElseThrow(() -> new RuntimeException("Orden no encontrada con ID: " + orderId));
+        Order order = (Order)this.orderRepository.findById(orderId).orElseThrow(() -> new RuntimeException("Orden no encontrada con ID: " + orderId));
         return new OrderResponseRecord(order.getIdOrder(), order.getPagerColor(), order.getPagerNumber(), order.getCreatedAt(), order.getSubtotal(), order.getTotal(), order.getStatus().getDisplayName(), order.getPaymentMethod(), order.getDiscountCode(), order.getDiscountPercentage(), order.getDiscountAmount(), order.getDeliveredAt(), order.getItems().stream().map(item -> new OrderItemResponseRecord(item.getProductId(), this.productClient.getProductName(item.getProductId()), item.getQuantity(), item.getUnitPrice(), item.getTotalPrice(), item.getInstructions())).toList());
     }
-
     public void updateStatus(Long orderId, String newStatus) {
         OrderStatus status;
-        Order order = (Order)this.orderRepository.findById((Object)orderId).orElseThrow(() -> new RuntimeException("Order not found"));
+        Order order = (Order)this.orderRepository.findById(orderId).orElseThrow(() -> new RuntimeException("Order not found"));
         try {
             status = OrderStatus.fromString((String)newStatus);
         }
@@ -144,14 +137,13 @@ implements OrderService {
             throw new IllegalArgumentException("Estado inv\u00e1lido: " + newStatus + ". Estado permitido: PAGADO");
         }
         order.setStatus(status);
-        this.orderRepository.save((Object)order);
+        this.orderRepository.save(order);
     }
-
     @Transactional
     public void updateOrder(Long orderId, OrderRequestRecord dto) {
         Optional existingPagerOrder;
-        Order order = (Order)this.orderRepository.findById((Object)orderId).orElseThrow(() -> new RuntimeException("Orden no encontrada con ID: " + orderId));
-        if (!(order.getPagerColor().equals((Object)dto.pagerColor()) && order.getPagerNumber().equals(dto.pagerNumber()) || !(existingPagerOrder = this.orderRepository.findByPagerColorAndPagerNumberAndStatusAndDeliveredAt(dto.pagerColor(), dto.pagerNumber(), OrderStatus.PAGADO, "No")).isPresent() || ((Order)existingPagerOrder.get()).getIdOrder().equals(orderId))) {
+        Order order = (Order)this.orderRepository.findById(orderId).orElseThrow(() -> new RuntimeException("Orden no encontrada con ID: " + orderId));
+        if (!(order.getPagerColor().equals((Object)dto.pagerColor()) && order.getPagerNumber().equals(dto.pagerNumber()) || !(existingPagerOrder = this.orderRepository.findByPagerColorAndPagerNumberAndStatusAndDeliveredAt(dto.pagerColor(), dto.pagerNumber(), OrderStatus.pagado, "No")).isPresent() || ((Order)existingPagerOrder.get()).getIdOrder().equals(orderId))) {
             throw new PagerOcupadoException(String.format("El pager %s #%d ya est\u00e1 en uso", dto.pagerColor(), dto.pagerNumber()), "PAGER_OCUPADO");
         }
         order.setPagerColor(dto.pagerColor());
@@ -203,31 +195,28 @@ implements OrderService {
             order.setDiscountPercentage(null);
         }
         order.setTotal(total);
-        this.orderRepository.save((Object)order);
+        this.orderRepository.save(order);
     }
-
     public List<OrderResponseRecord> getSalesReport() {
-        List orders = this.orderRepository.findAll();
+        List<Order> orders = this.orderRepository.findAll();
         ArrayList<OrderResponseRecord> report = new ArrayList<OrderResponseRecord>();
         for (Order order : orders) {
             report.add(this.orderMapper.toOrderResponse(order));
         }
         return report;
     }
-
     @Transactional
     public void updatePaymentMethod(Long orderId, String paymentMethod) {
-        Order order = (Order)this.orderRepository.findById((Object)orderId).orElseThrow(() -> new RuntimeException("Orden no encontrada con ID: " + orderId));
+        Order order = (Order)this.orderRepository.findById(orderId).orElseThrow(() -> new RuntimeException("Orden no encontrada con ID: " + orderId));
         if (!List.of("CASH", "CARD", "NEQUI", "QR").contains(paymentMethod)) {
             throw new IllegalArgumentException("M\u00e9todo de pago inv\u00e1lido. Debe ser: CASH, CARD, NEQUI o QR");
         }
         order.setPaymentMethod(paymentMethod);
-        this.orderRepository.save((Object)order);
+        this.orderRepository.save(order);
     }
-
     @Transactional
     public OrderResponseRecord applyDiscountToOrder(Long orderId, String discountCode) {
-        Order order = (Order)this.orderRepository.findById((Object)orderId).orElseThrow(() -> new RuntimeException("Orden no encontrada con ID: " + orderId));
+        Order order = (Order)this.orderRepository.findById(orderId).orElseThrow(() -> new RuntimeException("Orden no encontrada con ID: " + orderId));
         if (order.getDiscountCode() != null) {
             throw new IllegalStateException("La orden ya tiene un descuento aplicado: " + order.getDiscountCode());
         }
@@ -255,25 +244,23 @@ implements OrderService {
         }
         int total = discountResult.newSubtotal().intValue();
         order.setTotal(total);
-        Order savedOrder = (Order)this.orderRepository.save((Object)order);
+        Order savedOrder = this.orderRepository.save(order);
         LinkOrderCouponCommand linkCommand = new LinkOrderCouponCommand(savedOrder.getIdOrder(), savedOrder.getDiscountCode(), BigDecimal.valueOf(savedOrder.getSubtotal()), BigDecimal.valueOf(savedOrder.getDiscountAmount().intValue()), BigDecimal.valueOf(savedOrder.getTotal()));
         this.discountService.linkOrderWithCoupon(linkCommand);
         return this.orderMapper.toOrderResponse(savedOrder);
     }
-
     @Transactional
     public void markAsDelivered(Long orderId) {
-        Order order = (Order)this.orderRepository.findById((Object)orderId).orElseThrow(() -> new RuntimeException("Orden no encontrada con ID: " + orderId));
+        Order order = (Order)this.orderRepository.findById(orderId).orElseThrow(() -> new RuntimeException("Orden no encontrada con ID: " + orderId));
         if ("Si".equals(order.getDeliveredAt())) {
             throw new IllegalStateException("La orden ya fue marcada como entregada");
         }
-        if (order.getStatus() != OrderStatus.PAGADO) {
+        if (order.getStatus() != OrderStatus.pagado) {
             throw new IllegalStateException("Solo se pueden marcar como entregadas las \u00f3rdenes en estado PAGADO. Estado actual: " + String.valueOf(order.getStatus()));
         }
         order.setDeliveredAt("Si");
-        this.orderRepository.save((Object)order);
+        this.orderRepository.save(order);
     }
-
     @Generated
     public OrderServiceImpl(OrderRepository orderRepository, ProductClient productClient, OrderMapper orderMapper, DiscountService discountService) {
         this.orderRepository = orderRepository;
@@ -282,4 +269,3 @@ implements OrderService {
         this.discountService = discountService;
     }
 }
-

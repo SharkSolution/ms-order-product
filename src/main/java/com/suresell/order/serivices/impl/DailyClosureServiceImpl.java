@@ -19,7 +19,6 @@
  *  org.springframework.transaction.annotation.Transactional
  */
 package com.suresell.order.serivices.impl;
-
 import com.suresell.order.model.entity.DailyClosure;
 import com.suresell.order.model.entity.Order;
 import com.suresell.order.model.enums.OrderStatus;
@@ -40,7 +39,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-
 @Service
 public class DailyClosureServiceImpl
 implements DailyClosureService {
@@ -55,22 +53,53 @@ implements DailyClosureService {
     private static final String STATUS_BALANCED = "BALANCED";
     private static final String STATUS_POSITIVE_DIFF = "POSITIVE_DIFF";
     private static final String STATUS_NEGATIVE_DIFF = "NEGATIVE_DIFF";
-
     @Transactional(readOnly=true)
     public ClosurePreviewResponse getClosurePreview() {
-        log.info("Generando preview de cierre de caja");
-        LocalDateTime openingTime = this.determineOpeningTime();
-        LocalDateTime currentTime = LocalDateTime.now();
-        List orders = this.getOrdersForPeriod(openingTime, currentTime);
-        log.info("\u00d3rdenes encontradas para el per\u00edodo: {} (desde {} hasta {})", new Object[]{orders.size(), openingTime, currentTime});
-        BigDecimal totalCash = this.calculateTotalByPaymentMethod(orders, PAYMENT_CASH);
-        BigDecimal totalCard = this.calculateTotalByPaymentMethod(orders, PAYMENT_CARD);
-        BigDecimal totalNequi = this.calculateTotalByPaymentMethod(orders, PAYMENT_NEQUI);
-        BigDecimal totalQr = this.calculateTotalByPaymentMethod(orders, PAYMENT_QR);
-        BigDecimal totalExpected = totalCash.add(totalCard).add(totalNequi).add(totalQr);
-        return new ClosurePreviewResponse(openingTime, currentTime, totalCash, totalCard, totalNequi, totalQr, totalExpected, orders.size(), "Preview de cierre generado correctamente");
-    }
+        log.info("Generando preview de cierre de caja - Sin filtro de tiempo");
 
+        List<Object[]> results = this.orderRepository.findTotalByPaymentMethodAndStatus(OrderStatus.pagado);
+
+        BigDecimal totalCash = BigDecimal.ZERO;
+        BigDecimal totalCard = BigDecimal.ZERO;
+        BigDecimal totalNequi = BigDecimal.ZERO;
+        BigDecimal totalQr = BigDecimal.ZERO;
+        int totalOrders = 0; // Will be set to 0 as this query does not provide order count directly
+
+        for (Object[] result : results) {
+            String paymentMethod = (String) result[0];
+            // SUM returns Long for Integer/int fields in HQL/JPQL, need to cast to BigDecimal
+            BigDecimal sumTotal = BigDecimal.valueOf(((Long) result[1]).doubleValue());
+
+            switch (paymentMethod) {
+                case PAYMENT_CASH:
+                    totalCash = sumTotal;
+                    break;
+                case PAYMENT_CARD:
+                    totalCard = sumTotal;
+                    break;
+                case PAYMENT_NEQUI:
+                    totalNequi = sumTotal;
+                    break;
+                case PAYMENT_QR:
+                    totalQr = sumTotal;
+                    break;
+                default:
+                    log.warn("M\u00e9todo de pago desconocido encontrado: {}", paymentMethod);
+                    break;
+            }
+        }
+
+        BigDecimal totalExpected = totalCash.add(totalCard).add(totalNequi).add(totalQr);
+
+        LocalDateTime currentTime = LocalDateTime.now();
+        // The openingTime will be LocalDateTime.MIN as per the new requirement of no date filtering for this preview
+        LocalDateTime openingTime = LocalDateTime.MIN;
+
+        log.info("Preview generado: CASH={}, CARD={}, NEQUI={}, QR={}, TOTAL_EXPECTED={}, TOTAL_ORDERS={}",
+                 totalCash, totalCard, totalNequi, totalQr, totalExpected, totalOrders);
+
+        return new ClosurePreviewResponse(openingTime, currentTime, totalCash, totalCard, totalNequi, totalQr, totalExpected, totalOrders, "Preview de cierre generado correctamente (Todas las \u00f3rdenes pagadas)");
+    }
     @Transactional
     public ClosureResponse executeClosure(ClosureRequest request) {
         log.info("Ejecutando cierre de caja para cajero: {}", (Object)request.userName());
@@ -105,30 +134,26 @@ implements DailyClosureService {
         closure.setDifferenceAmount(difference);
         closure.setStatus(status);
         closure.setNotes(request.notes());
-        DailyClosure savedClosure = (DailyClosure)this.closureRepository.save((Object)closure);
+        DailyClosure savedClosure = this.closureRepository.save(closure);
         log.info("Cierre ejecutado exitosamente. ID: {}, Cajero: {}, Status: {}, Diferencia: {}", new Object[]{savedClosure.getId(), savedClosure.getUserName(), status, difference});
         return new ClosureResponse(savedClosure.getId(), savedClosure.getUserName(), savedClosure.getOpeningTime(), savedClosure.getClosingTime(), expectedCash, expectedCard, expectedNequi, expectedQr, totalExpected, countedCash, countedCard, countedNequi, countedQr, totalCounted, difference, status, savedClosure.getNotes(), this.generateClosureMessage(status, difference));
     }
-
     private LocalDateTime determineOpeningTime() {
         return this.closureRepository.findLastClosure().map(DailyClosure::getClosingTime).orElseGet(() -> {
-            log.info("No se encontr\u00f3 cierre anterior. Usando inicio del d\u00eda");
-            return LocalDateTime.of(LocalDate.now(), LocalTime.MIN);
+            log.info("No se encontr\u00f3 cierre anterior. Usando LocalDateTime.MIN para incluir todo el historial.");
+            return LocalDateTime.MIN;
         });
     }
-
     private List<Order> getOrdersForPeriod(LocalDateTime from, LocalDateTime to) {
-        return this.orderRepository.findAll().stream().filter(order -> OrderStatus.PAGADO.equals((Object)order.getStatus())).filter(order -> order.getPaymentMethod() != null).filter(order -> {
+        return this.orderRepository.findAll().stream().filter(order -> OrderStatus.pagado.equals(order.getStatus())).filter(order -> order.getPaymentMethod() != null).filter(order -> {
             LocalDateTime orderTime = order.getCreatedAt();
             return !orderTime.isBefore(from) && !orderTime.isAfter(to);
         }).toList();
     }
-
     private BigDecimal calculateTotalByPaymentMethod(List<Order> orders, String paymentMethod) {
         long total = orders.stream().filter(order -> paymentMethod.equalsIgnoreCase(order.getPaymentMethod())).mapToLong(Order::getTotal).sum();
         return BigDecimal.valueOf(total);
     }
-
     private String determineStatus(BigDecimal difference) {
         int comparison = difference.compareTo(BigDecimal.ZERO);
         if (comparison == 0) {
@@ -139,7 +164,6 @@ implements DailyClosureService {
         }
         return STATUS_NEGATIVE_DIFF;
     }
-
     private String generateClosureMessage(String status, BigDecimal difference) {
         return switch (status) {
             case STATUS_BALANCED -> "\u2705 Cierre cuadrado. No hay diferencias.";
@@ -148,15 +172,13 @@ implements DailyClosureService {
             default -> "Cierre ejecutado";
         };
     }
-
     @Transactional(readOnly=true)
     public List<ClosureResponse> getAllClosures() {
         log.info("Obteniendo historial completo de cierres de caja");
-        List closures = this.closureRepository.findAllClosuresOrderByDateDesc();
+        List<DailyClosure> closures = this.closureRepository.findAllClosuresOrderByDateDesc();
         log.info("Cierres encontrados: {}", (Object)closures.size());
         return closures.stream().map(arg_0 -> this.mapToClosureResponse(arg_0)).toList();
     }
-
     private ClosureResponse mapToClosureResponse(DailyClosure closure) {
         BigDecimal expectedCash = closure.getTotalExpectedCash() != null ? closure.getTotalExpectedCash() : BigDecimal.ZERO;
         BigDecimal expectedCard = closure.getTotalExpectedCard() != null ? closure.getTotalExpectedCard() : BigDecimal.ZERO;
@@ -170,11 +192,9 @@ implements DailyClosureService {
         BigDecimal totalCounted = countedCash.add(countedCard).add(countedNequi).add(countedQr);
         return new ClosureResponse(closure.getId(), closure.getUserName(), closure.getOpeningTime(), closure.getClosingTime(), expectedCash, expectedCard, expectedNequi, expectedQr, totalExpected, countedCash, countedCard, countedNequi, countedQr, totalCounted, closure.getDifferenceAmount(), closure.getStatus(), closure.getNotes(), this.generateClosureMessage(closure.getStatus(), closure.getDifferenceAmount()));
     }
-
     @Generated
     public DailyClosureServiceImpl(DailyClosureRepository closureRepository, OrderRepository orderRepository) {
         this.closureRepository = closureRepository;
         this.orderRepository = orderRepository;
     }
 }
-

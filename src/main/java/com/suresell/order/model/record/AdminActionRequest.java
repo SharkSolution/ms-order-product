@@ -5,16 +5,12 @@
  *  com.suresell.order.model.record.AdminActionRequest
  */
 package com.suresell.order.model.record;
-
 public record AdminActionRequest(String adminPassword) {
-    private final String adminPassword;
 
     public AdminActionRequest(String adminPassword) {
         this.adminPassword = adminPassword;
     }
-
     public String adminPassword() {
         return this.adminPassword;
     }
 }
-

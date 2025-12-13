@@ -8,7 +8,6 @@
  *  org.springframework.stereotype.Service
  */
 package com.suresell.order.serivices.export;
-
 import com.suresell.order.model.record.ClosureResponse;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -17,7 +16,6 @@ import java.io.OutputStream;
 import java.util.List;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.springframework.stereotype.Service;
-
 @Service
 public class DailyClosureExcelExporter {
     public ByteArrayInputStream export(List<ClosureResponse> closures) throws IOException {
@@ -29,4 +27,3 @@ public class DailyClosureExcelExporter {
         }
     }
 }
-

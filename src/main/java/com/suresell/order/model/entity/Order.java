@@ -21,7 +21,6 @@
  *  lombok.Generated
  */
 package com.suresell.order.model.entity;
-
 import com.suresell.order.model.entity.OrderItem;
 import com.suresell.order.model.enums.OrderStatus;
 import com.suresell.order.model.enums.PagerColor;
@@ -40,7 +39,6 @@ import jakarta.persistence.Table;
 import java.time.LocalDateTime;
 import java.util.List;
 import lombok.Generated;
-
 @Entity
 @Table(name="orders")
 public class Order {
@@ -72,7 +70,6 @@ public class Order {
     private Integer discountAmount;
     @OneToMany(mappedBy="order", cascade={CascadeType.ALL}, orphanRemoval=true)
     private List<OrderItem> items;
-
     @PrePersist
     @PreUpdate
     private void validatePagerNumber() {
@@ -80,137 +77,110 @@ public class Order {
             throw new IllegalArgumentException("El n\u00famero de pager debe estar entre 1 y 16");
         }
     }
-
     @Generated
     public Long getIdOrder() {
         return this.idOrder;
     }
-
     @Generated
     public PagerColor getPagerColor() {
         return this.pagerColor;
     }
-
     @Generated
     public Integer getPagerNumber() {
         return this.pagerNumber;
     }
-
     @Generated
     public LocalDateTime getCreatedAt() {
         return this.createdAt;
     }
-
     @Generated
     public String getDeliveredAt() {
         return this.deliveredAt;
     }
-
     @Generated
     public int getSubtotal() {
         return this.subtotal;
     }
-
     @Generated
     public int getTotal() {
         return this.total;
     }
-
     @Generated
     public OrderStatus getStatus() {
         return this.status;
     }
-
     @Generated
     public String getPaymentMethod() {
         return this.paymentMethod;
     }
-
     @Generated
     public String getDiscountCode() {
         return this.discountCode;
     }
-
     @Generated
     public Double getDiscountPercentage() {
         return this.discountPercentage;
     }
-
     @Generated
     public Integer getDiscountAmount() {
         return this.discountAmount;
     }
-
     @Generated
     public List<OrderItem> getItems() {
         return this.items;
     }
-
     @Generated
     public void setIdOrder(Long idOrder) {
         this.idOrder = idOrder;
     }
-
     @Generated
     public void setPagerColor(PagerColor pagerColor) {
         this.pagerColor = pagerColor;
     }
-
     @Generated
     public void setPagerNumber(Integer pagerNumber) {
         this.pagerNumber = pagerNumber;
     }
-
     @Generated
     public void setCreatedAt(LocalDateTime createdAt) {
         this.createdAt = createdAt;
     }
-
     @Generated
     public void setDeliveredAt(String deliveredAt) {
         this.deliveredAt = deliveredAt;
     }
-
     @Generated
     public void setSubtotal(int subtotal) {
         this.subtotal = subtotal;
     }
-
     @Generated
     public void setTotal(int total) {
         this.total = total;
     }
-
     @Generated
     public void setStatus(OrderStatus status) {
         this.status = status;
     }
-
     @Generated
     public void setPaymentMethod(String paymentMethod) {
         this.paymentMethod = paymentMethod;
     }
-
     @Generated
     public void setDiscountCode(String discountCode) {
         this.discountCode = discountCode;
     }
-
     @Generated
     public void setDiscountPercentage(Double discountPercentage) {
         this.discountPercentage = discountPercentage;
     }
-
     @Generated
     public void setDiscountAmount(Integer discountAmount) {
         this.discountAmount = discountAmount;
     }
-
     @Generated
     public void setItems(List<OrderItem> items) {
         this.items = items;
     }
-
     @Generated
     public boolean equals(Object o) {
         if (o == this) {
@@ -283,12 +253,10 @@ public class Order {
         List other$items = other.getItems();
         return !(this$items == null ? other$items != null : !((Object)this$items).equals(other$items));
     }
-
     @Generated
     protected boolean canEqual(Object other) {
         return other instanceof Order;
     }
-
     @Generated
     public int hashCode() {
         int PRIME = 59;
@@ -319,16 +287,13 @@ public class Order {
         result = result * 59 + ($items == null ? 43 : ((Object)$items).hashCode());
         return result;
     }
-
     @Generated
     public String toString() {
         return "Order(idOrder=" + this.getIdOrder() + ", pagerColor=" + String.valueOf(this.getPagerColor()) + ", pagerNumber=" + this.getPagerNumber() + ", createdAt=" + String.valueOf(this.getCreatedAt()) + ", deliveredAt=" + this.getDeliveredAt() + ", subtotal=" + this.getSubtotal() + ", total=" + this.getTotal() + ", status=" + String.valueOf(this.getStatus()) + ", paymentMethod=" + this.getPaymentMethod() + ", discountCode=" + this.getDiscountCode() + ", discountPercentage=" + this.getDiscountPercentage() + ", discountAmount=" + this.getDiscountAmount() + ", items=" + String.valueOf(this.getItems()) + ")";
     }
-
     @Generated
     public Order() {
     }
-
     @Generated
     public Order(Long idOrder, PagerColor pagerColor, Integer pagerNumber, LocalDateTime createdAt, String deliveredAt, int subtotal, int total, OrderStatus status, String paymentMethod, String discountCode, Double discountPercentage, Integer discountAmount, List<OrderItem> items) {
         this.idOrder = idOrder;
@@ -346,4 +311,3 @@ public class Order {
         this.items = items;
     }
 }
-

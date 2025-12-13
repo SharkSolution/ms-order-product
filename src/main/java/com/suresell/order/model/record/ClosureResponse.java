@@ -5,30 +5,10 @@
  *  com.suresell.order.model.record.ClosureResponse
  */
 package com.suresell.order.model.record;
-
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.UUID;
-
 public record ClosureResponse(UUID id, String userName, LocalDateTime openingTime, LocalDateTime closingTime, BigDecimal totalExpectedCash, BigDecimal totalExpectedCard, BigDecimal totalExpectedNequi, BigDecimal totalExpectedQr, BigDecimal totalExpected, BigDecimal totalCountedCash, BigDecimal totalCountedCard, BigDecimal totalCountedNequi, BigDecimal totalCountedQr, BigDecimal totalCounted, BigDecimal differenceAmount, String status, String notes, String message) {
-    private final UUID id;
-    private final String userName;
-    private final LocalDateTime openingTime;
-    private final LocalDateTime closingTime;
-    private final BigDecimal totalExpectedCash;
-    private final BigDecimal totalExpectedCard;
-    private final BigDecimal totalExpectedNequi;
-    private final BigDecimal totalExpectedQr;
-    private final BigDecimal totalExpected;
-    private final BigDecimal totalCountedCash;
-    private final BigDecimal totalCountedCard;
-    private final BigDecimal totalCountedNequi;
-    private final BigDecimal totalCountedQr;
-    private final BigDecimal totalCounted;
-    private final BigDecimal differenceAmount;
-    private final String status;
-    private final String notes;
-    private final String message;
 
     public ClosureResponse(UUID id, String userName, LocalDateTime openingTime, LocalDateTime closingTime, BigDecimal totalExpectedCash, BigDecimal totalExpectedCard, BigDecimal totalExpectedNequi, BigDecimal totalExpectedQr, BigDecimal totalExpected, BigDecimal totalCountedCash, BigDecimal totalCountedCard, BigDecimal totalCountedNequi, BigDecimal totalCountedQr, BigDecimal totalCounted, BigDecimal differenceAmount, String status, String notes, String message) {
         this.id = id;
@@ -50,77 +30,58 @@ public record ClosureResponse(UUID id, String userName, LocalDateTime openingTim
         this.notes = notes;
         this.message = message;
     }
-
     public UUID id() {
         return this.id;
     }
-
     public String userName() {
         return this.userName;
     }
-
     public LocalDateTime openingTime() {
         return this.openingTime;
     }
-
     public LocalDateTime closingTime() {
         return this.closingTime;
     }
-
     public BigDecimal totalExpectedCash() {
         return this.totalExpectedCash;
     }
-
     public BigDecimal totalExpectedCard() {
         return this.totalExpectedCard;
     }
-
     public BigDecimal totalExpectedNequi() {
         return this.totalExpectedNequi;
     }
-
     public BigDecimal totalExpectedQr() {
         return this.totalExpectedQr;
     }
-
     public BigDecimal totalExpected() {
         return this.totalExpected;
     }
-
     public BigDecimal totalCountedCash() {
         return this.totalCountedCash;
     }
-
     public BigDecimal totalCountedCard() {
         return this.totalCountedCard;
     }
-
     public BigDecimal totalCountedNequi() {
         return this.totalCountedNequi;
     }
-
     public BigDecimal totalCountedQr() {
         return this.totalCountedQr;
     }
-
     public BigDecimal totalCounted() {
         return this.totalCounted;
     }
-
     public BigDecimal differenceAmount() {
         return this.differenceAmount;
     }
-
     public String status() {
         return this.status;
     }
-
     public String notes() {
         return this.notes;
     }
-
     public String message() {
         return this.message;
     }
 }
-

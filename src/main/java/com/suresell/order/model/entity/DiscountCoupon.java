@@ -18,7 +18,6 @@
  *  lombok.Generated
  */
 package com.suresell.order.model.entity;
-
 import com.suresell.order.model.entity.CouponProduct;
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
@@ -37,7 +36,6 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import lombok.Generated;
-
 @Entity
 @Table(name="discount_coupons", indexes={@Index(name="idx_discount_code", columnList="code", unique=true), @Index(name="idx_discount_active", columnList="is_active"), @Index(name="idx_discount_valid_dates", columnList="valid_from,valid_to")})
 public class DiscountCoupon {
@@ -66,7 +64,6 @@ public class DiscountCoupon {
     private LocalDateTime createdAt;
     @Column(name="updated_at", nullable=false)
     private LocalDateTime updatedAt;
-
     @PrePersist
     public void prePersist() {
         LocalDateTime now = LocalDateTime.now();
@@ -80,142 +77,114 @@ public class DiscountCoupon {
             this.isActive = true;
         }
     }
-
     @PreUpdate
     public void preUpdate() {
         this.updatedAt = LocalDateTime.now();
     }
-
     public void addProduct(CouponProduct product) {
         this.products.add(product);
         product.setCoupon(this);
     }
-
     public void removeProduct(CouponProduct product) {
         this.products.remove(product);
         product.setCoupon(null);
     }
-
     @Generated
     public Long getId() {
         return this.id;
     }
-
     @Generated
     public String getCode() {
         return this.code;
     }
-
     @Generated
     public String getName() {
         return this.name;
     }
-
     @Generated
     public String getDescription() {
         return this.description;
     }
-
     @Generated
     public BigDecimal getDiscountPercentage() {
         return this.discountPercentage;
     }
-
     @Generated
     public List<CouponProduct> getProducts() {
         return this.products;
     }
-
     @Generated
     public LocalDate getValidFrom() {
         return this.validFrom;
     }
-
     @Generated
     public LocalDate getValidTo() {
         return this.validTo;
     }
-
     @Generated
     public String getValidWeekdays() {
         return this.validWeekdays;
     }
-
     @Generated
     public Boolean getIsActive() {
         return this.isActive;
     }
-
     @Generated
     public LocalDateTime getCreatedAt() {
         return this.createdAt;
     }
-
     @Generated
     public LocalDateTime getUpdatedAt() {
         return this.updatedAt;
     }
-
     @Generated
     public void setId(Long id) {
         this.id = id;
     }
-
     @Generated
     public void setCode(String code) {
         this.code = code;
     }
-
     @Generated
     public void setName(String name) {
         this.name = name;
     }
-
     @Generated
     public void setDescription(String description) {
         this.description = description;
     }
-
     @Generated
     public void setDiscountPercentage(BigDecimal discountPercentage) {
         this.discountPercentage = discountPercentage;
     }
-
     @Generated
     public void setProducts(List<CouponProduct> products) {
         this.products = products;
     }
-
     @Generated
     public void setValidFrom(LocalDate validFrom) {
         this.validFrom = validFrom;
     }
-
     @Generated
     public void setValidTo(LocalDate validTo) {
         this.validTo = validTo;
     }
-
     @Generated
     public void setValidWeekdays(String validWeekdays) {
         this.validWeekdays = validWeekdays;
     }
-
     @Generated
     public void setIsActive(Boolean isActive) {
         this.isActive = isActive;
     }
-
     @Generated
     public void setCreatedAt(LocalDateTime createdAt) {
         this.createdAt = createdAt;
     }
-
     @Generated
     public void setUpdatedAt(LocalDateTime updatedAt) {
         this.updatedAt = updatedAt;
     }
-
     @Generated
     public boolean equals(Object o) {
         if (o == this) {
@@ -287,12 +256,10 @@ public class DiscountCoupon {
         LocalDateTime other$updatedAt = other.getUpdatedAt();
         return !(this$updatedAt == null ? other$updatedAt != null : !((Object)this$updatedAt).equals(other$updatedAt));
     }
-
     @Generated
     protected boolean canEqual(Object other) {
         return other instanceof DiscountCoupon;
     }
-
     @Generated
     public int hashCode() {
         int PRIME = 59;
@@ -323,16 +290,13 @@ public class DiscountCoupon {
         result = result * 59 + ($updatedAt == null ? 43 : ((Object)$updatedAt).hashCode());
         return result;
     }
-
     @Generated
     public String toString() {
         return "DiscountCoupon(id=" + this.getId() + ", code=" + this.getCode() + ", name=" + this.getName() + ", description=" + this.getDescription() + ", discountPercentage=" + String.valueOf(this.getDiscountPercentage()) + ", products=" + String.valueOf(this.getProducts()) + ", validFrom=" + String.valueOf(this.getValidFrom()) + ", validTo=" + String.valueOf(this.getValidTo()) + ", validWeekdays=" + this.getValidWeekdays() + ", isActive=" + this.getIsActive() + ", createdAt=" + String.valueOf(this.getCreatedAt()) + ", updatedAt=" + String.valueOf(this.getUpdatedAt()) + ")";
     }
-
     @Generated
     public DiscountCoupon() {
     }
-
     @Generated
     public DiscountCoupon(Long id, String code, String name, String description, BigDecimal discountPercentage, List<CouponProduct> products, LocalDate validFrom, LocalDate validTo, String validWeekdays, Boolean isActive, LocalDateTime createdAt, LocalDateTime updatedAt) {
         this.id = id;
@@ -349,4 +313,3 @@ public class DiscountCoupon {
         this.updatedAt = updatedAt;
     }
 }
-

@@ -11,21 +11,18 @@
  *  org.springframework.web.client.RestTemplate
  */
 package com.suresell.order.rest_client.impl;
-
 import com.suresell.order.model.record.ProductResponse;
 import com.suresell.order.rest_client.ProductClient;
 import lombok.Generated;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
-
 @Service
 public class ProductClientImpl
 implements ProductClient {
     @Value(value="${products.service.url}")
     private String productServiceUrl;
     private final RestTemplate restTemplate;
-
     public String getProductName(String productId) {
         try {
             ProductResponse product = this.getProductDetails(productId);
@@ -35,7 +32,6 @@ implements ProductClient {
             return "Producto desconocido";
         }
     }
-
     public String getProductCategory(String productId) {
         try {
             String url = this.productServiceUrl + "/products/get/" + productId;
@@ -46,7 +42,6 @@ implements ProductClient {
             return null;
         }
     }
-
     public ProductResponse getProductDetails(String productId) {
         try {
             String url = this.productServiceUrl + "/products/get/" + productId;
@@ -56,10 +51,8 @@ implements ProductClient {
             return null;
         }
     }
-
     @Generated
     public ProductClientImpl(RestTemplate restTemplate) {
         this.restTemplate = restTemplate;
     }
 }
-

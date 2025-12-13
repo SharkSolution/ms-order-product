@@ -5,11 +5,8 @@
  *  com.suresell.order.model.enums.AppliesToType
  */
 package com.suresell.order.model.enums;
-
 public enum AppliesToType {
     PRODUCT,
     CATEGORY,
     ORDER;
-
 }
-
