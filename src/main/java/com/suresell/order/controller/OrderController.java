@@ -161,9 +161,13 @@ public class OrderController {
         }
     }
     @PatchMapping(value={"/{orderId}/deliver"})
-    public ResponseEntity<Map<String, String>> markAsDelivered(@PathVariable Long orderId) {
+    public ResponseEntity<Map<String, String>> markAsDelivered(@PathVariable Long orderId, @RequestBody Map<String, Integer> requestBody) {
         try {
-            this.orderService.markAsDelivered(orderId);
+            Integer elapsedSeconds = requestBody.get("elapsedSeconds");
+            if (elapsedSeconds == null) {
+                return ResponseEntity.status((HttpStatusCode)HttpStatus.BAD_REQUEST).body(Map.of("error", "El campo 'elapsedSeconds' es requerido en el cuerpo de la solicitud."));
+            }
+            this.orderService.markAsDelivered(orderId, elapsedSeconds);
             return ResponseEntity.ok(Map.of("message", "Orden marcada como entregada y pager liberado"));
         }
         catch (IllegalStateException e) {

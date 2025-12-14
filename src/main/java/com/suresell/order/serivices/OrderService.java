@@ -20,5 +20,5 @@ public interface OrderService {
     public List<OrderResponseRecord> getSalesReport();
     public void updatePaymentMethod(Long var1, String var2);
     public OrderResponseRecord applyDiscountToOrder(Long var1, String var2);
-    public void markAsDelivered(Long var1);
+    public void markAsDelivered(Long var1, Integer var2);
 }

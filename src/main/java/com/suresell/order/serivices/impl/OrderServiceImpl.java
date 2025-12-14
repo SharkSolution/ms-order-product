@@ -118,14 +118,14 @@ implements OrderService {
         }
     }
     public List<OrderResponseRecord> getKitchenOrders() {
-        return this.orderRepository.findActiveOrders(OrderStatus.pagado).stream().map(order -> new OrderResponseRecord(order.getIdOrder(), order.getPagerColor(), order.getPagerNumber(), order.getCreatedAt(), order.getSubtotal(), order.getTotal(), order.getStatus().getDisplayName(), order.getPaymentMethod(), order.getDiscountCode(), order.getDiscountPercentage(), order.getDiscountAmount(), order.getDeliveredAt(), order.getItems().stream().map(item -> new OrderItemResponseRecord(item.getProductId(), this.productClient.getProductName(item.getProductId()), item.getQuantity(), item.getUnitPrice(), item.getTotalPrice(), item.getInstructions())).toList())).toList();
+        return this.orderRepository.findActiveOrders(OrderStatus.pagado).stream().map(order -> new OrderResponseRecord(order.getIdOrder(), order.getPagerColor(), order.getPagerNumber(), order.getCreatedAt(), order.getSubtotal(), order.getTotal(), order.getStatus().getDisplayName(), order.getPaymentMethod(), order.getDiscountCode(), order.getDiscountPercentage(), order.getDiscountAmount(), order.getDeliveredAt(), order.getElapsedSecondsToDeliver(), order.getItems().stream().map(item -> new OrderItemResponseRecord(item.getProductId(), this.productClient.getProductName(item.getProductId()), item.getQuantity(), item.getUnitPrice(), item.getTotalPrice(), item.getInstructions())).toList())).toList();
     }
     public List<OrderResponseRecord> getAllOrders() {
         return this.orderRepository.findAll().stream().map(arg_0 -> ((OrderMapper)this.orderMapper).toOrderResponse(arg_0)).toList();
     }
     public OrderResponseRecord getOrderById(Long orderId) {
         Order order = (Order)this.orderRepository.findById(orderId).orElseThrow(() -> new RuntimeException("Orden no encontrada con ID: " + orderId));
-        return new OrderResponseRecord(order.getIdOrder(), order.getPagerColor(), order.getPagerNumber(), order.getCreatedAt(), order.getSubtotal(), order.getTotal(), order.getStatus().getDisplayName(), order.getPaymentMethod(), order.getDiscountCode(), order.getDiscountPercentage(), order.getDiscountAmount(), order.getDeliveredAt(), order.getItems().stream().map(item -> new OrderItemResponseRecord(item.getProductId(), this.productClient.getProductName(item.getProductId()), item.getQuantity(), item.getUnitPrice(), item.getTotalPrice(), item.getInstructions())).toList());
+        return new OrderResponseRecord(order.getIdOrder(), order.getPagerColor(), order.getPagerNumber(), order.getCreatedAt(), order.getSubtotal(), order.getTotal(), order.getStatus().getDisplayName(), order.getPaymentMethod(), order.getDiscountCode(), order.getDiscountPercentage(), order.getDiscountAmount(), order.getDeliveredAt(), order.getElapsedSecondsToDeliver(), order.getItems().stream().map(item -> new OrderItemResponseRecord(item.getProductId(), this.productClient.getProductName(item.getProductId()), item.getQuantity(), item.getUnitPrice(), item.getTotalPrice(), item.getInstructions())).toList());
     }
     public void updateStatus(Long orderId, String newStatus) {
         OrderStatus status;
@@ -247,10 +247,11 @@ implements OrderService {
         Order savedOrder = this.orderRepository.save(order);
         LinkOrderCouponCommand linkCommand = new LinkOrderCouponCommand(savedOrder.getIdOrder(), savedOrder.getDiscountCode(), BigDecimal.valueOf(savedOrder.getSubtotal()), BigDecimal.valueOf(savedOrder.getDiscountAmount().intValue()), BigDecimal.valueOf(savedOrder.getTotal()));
         this.discountService.linkOrderWithCoupon(linkCommand);
-        return this.orderMapper.toOrderResponse(savedOrder);
+        return new OrderResponseRecord(savedOrder.getIdOrder(), savedOrder.getPagerColor(), savedOrder.getPagerNumber(), savedOrder.getCreatedAt(), savedOrder.getSubtotal(), savedOrder.getTotal(), savedOrder.getStatus().getDisplayName(), savedOrder.getPaymentMethod(), savedOrder.getDiscountCode(), savedOrder.getDiscountPercentage(), savedOrder.getDiscountAmount(), savedOrder.getDeliveredAt(), savedOrder.getElapsedSecondsToDeliver(), savedOrder.getItems().stream().map(item -> new OrderItemResponseRecord(item.getProductId(), this.productClient.getProductName(item.getProductId()), item.getQuantity(), item.getUnitPrice(), item.getTotalPrice(), item.getInstructions())).toList());
     }
+    @Override
     @Transactional
-    public void markAsDelivered(Long orderId) {
+    public void markAsDelivered(Long orderId, Integer elapsedSeconds) {
         Order order = (Order)this.orderRepository.findById(orderId).orElseThrow(() -> new RuntimeException("Orden no encontrada con ID: " + orderId));
         if ("Si".equals(order.getDeliveredAt())) {
             throw new IllegalStateException("La orden ya fue marcada como entregada");
@@ -259,6 +260,7 @@ implements OrderService {
             throw new IllegalStateException("Solo se pueden marcar como entregadas las \u00f3rdenes en estado PAGADO. Estado actual: " + String.valueOf(order.getStatus()));
         }
         order.setDeliveredAt("Si");
+        order.setElapsedSecondsToDeliver(elapsedSeconds);
         this.orderRepository.save(order);
     }
     @Generated

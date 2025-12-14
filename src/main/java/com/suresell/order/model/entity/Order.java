@@ -68,6 +68,8 @@ public class Order {
     private Double discountPercentage;
     @Column(name="discount_amount")
     private Integer discountAmount;
+    @Column(name="elapsed_seconds_to_deliver")
+    private Integer elapsedSecondsToDeliver;
     @OneToMany(mappedBy="order", cascade={CascadeType.ALL}, orphanRemoval=true)
     private List<OrderItem> items;
     @PrePersist
@@ -126,6 +128,10 @@ public class Order {
         return this.discountAmount;
     }
     @Generated
+    public Integer getElapsedSecondsToDeliver() {
+        return this.elapsedSecondsToDeliver;
+    }
+    @Generated
     public List<OrderItem> getItems() {
         return this.items;
     }
@@ -178,6 +184,10 @@ public class Order {
         this.discountAmount = discountAmount;
     }
     @Generated
+    public void setElapsedSecondsToDeliver(Integer elapsedSecondsToDeliver) {
+        this.elapsedSecondsToDeliver = elapsedSecondsToDeliver;
+    }
+    @Generated
     public void setItems(List<OrderItem> items) {
         this.items = items;
     }
@@ -217,6 +227,11 @@ public class Order {
         Integer this$discountAmount = this.getDiscountAmount();
         Integer other$discountAmount = other.getDiscountAmount();
         if (this$discountAmount == null ? other$discountAmount != null : !((Object)this$discountAmount).equals(other$discountAmount)) {
+            return false;
+        }
+        Integer this$elapsedSecondsToDeliver = this.getElapsedSecondsToDeliver();
+        Integer other$elapsedSecondsToDeliver = other.getElapsedSecondsToDeliver();
+        if (this$elapsedSecondsToDeliver == null ? other$elapsedSecondsToDeliver != null : !((Object)this$elapsedSecondsToDeliver).equals(other$elapsedSecondsToDeliver)) {
             return false;
         }
         PagerColor this$pagerColor = this.getPagerColor();
@@ -271,6 +286,8 @@ public class Order {
         result = result * 59 + ($discountPercentage == null ? 43 : ((Object)$discountPercentage).hashCode());
         Integer $discountAmount = this.getDiscountAmount();
         result = result * 59 + ($discountAmount == null ? 43 : ((Object)$discountAmount).hashCode());
+        Integer $elapsedSecondsToDeliver = this.getElapsedSecondsToDeliver();
+        result = result * 59 + ($elapsedSecondsToDeliver == null ? 43 : ((Object)$elapsedSecondsToDeliver).hashCode());
         PagerColor $pagerColor = this.getPagerColor();
         result = result * 59 + ($pagerColor == null ? 43 : $pagerColor.hashCode());
         LocalDateTime $createdAt = this.getCreatedAt();
@@ -289,13 +306,13 @@ public class Order {
     }
     @Generated
     public String toString() {
-        return "Order(idOrder=" + this.getIdOrder() + ", pagerColor=" + String.valueOf(this.getPagerColor()) + ", pagerNumber=" + this.getPagerNumber() + ", createdAt=" + String.valueOf(this.getCreatedAt()) + ", deliveredAt=" + this.getDeliveredAt() + ", subtotal=" + this.getSubtotal() + ", total=" + this.getTotal() + ", status=" + String.valueOf(this.getStatus()) + ", paymentMethod=" + this.getPaymentMethod() + ", discountCode=" + this.getDiscountCode() + ", discountPercentage=" + this.getDiscountPercentage() + ", discountAmount=" + this.getDiscountAmount() + ", items=" + String.valueOf(this.getItems()) + ")";
+        return "Order(idOrder=" + this.getIdOrder() + ", pagerColor=" + String.valueOf(this.getPagerColor()) + ", pagerNumber=" + this.getPagerNumber() + ", createdAt=" + String.valueOf(this.getCreatedAt()) + ", deliveredAt=" + this.getDeliveredAt() + ", subtotal=" + this.getSubtotal() + ", total=" + this.getTotal() + ", status=" + String.valueOf(this.getStatus()) + ", paymentMethod=" + this.getPaymentMethod() + ", discountCode=" + this.getDiscountCode() + ", discountPercentage=" + this.getDiscountPercentage() + ", discountAmount=" + this.getDiscountAmount() + ", elapsedSecondsToDeliver=" + this.getElapsedSecondsToDeliver() + ", items=" + String.valueOf(this.getItems()) + ")";
     }
     @Generated
     public Order() {
     }
     @Generated
-    public Order(Long idOrder, PagerColor pagerColor, Integer pagerNumber, LocalDateTime createdAt, String deliveredAt, int subtotal, int total, OrderStatus status, String paymentMethod, String discountCode, Double discountPercentage, Integer discountAmount, List<OrderItem> items) {
+    public Order(Long idOrder, PagerColor pagerColor, Integer pagerNumber, LocalDateTime createdAt, String deliveredAt, int subtotal, int total, OrderStatus status, String paymentMethod, String discountCode, Double discountPercentage, Integer discountAmount, Integer elapsedSecondsToDeliver, List<OrderItem> items) {
         this.idOrder = idOrder;
         this.pagerColor = pagerColor;
         this.pagerNumber = pagerNumber;
@@ -308,6 +325,7 @@ public class Order {
         this.discountCode = discountCode;
         this.discountPercentage = discountPercentage;
         this.discountAmount = discountAmount;
+        this.elapsedSecondsToDeliver = elapsedSecondsToDeliver;
         this.items = items;
     }
 }

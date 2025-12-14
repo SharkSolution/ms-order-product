@@ -11,9 +11,9 @@ import com.suresell.order.model.enums.PagerColor;
 import com.suresell.order.model.record.OrderItemResponseRecord;
 import java.time.LocalDateTime;
 import java.util.List;
-public record OrderResponseRecord(Long idOrder, PagerColor pagerColor, Integer pagerNumber, LocalDateTime createdAt, int subtotal, int total, String status, String paymentMethod, String discountCode, Double discountPercentage, Integer discountAmount, String deliveredAt, List<OrderItemResponseRecord> items) {
+public record OrderResponseRecord(Long idOrder, PagerColor pagerColor, Integer pagerNumber, LocalDateTime createdAt, int subtotal, int total, String status, String paymentMethod, String discountCode, Double discountPercentage, Integer discountAmount, String deliveredAt, Integer elapsedSecondsToDeliver, List<OrderItemResponseRecord> items) {
 
-    public OrderResponseRecord(Long idOrder, PagerColor pagerColor, Integer pagerNumber, LocalDateTime createdAt, int subtotal, int total, String status, String paymentMethod, String discountCode, Double discountPercentage, Integer discountAmount, String deliveredAt, List<OrderItemResponseRecord> items) {
+    public OrderResponseRecord(Long idOrder, PagerColor pagerColor, Integer pagerNumber, LocalDateTime createdAt, int subtotal, int total, String status, String paymentMethod, String discountCode, Double discountPercentage, Integer discountAmount, String deliveredAt, Integer elapsedSecondsToDeliver, List<OrderItemResponseRecord> items) {
         this.idOrder = idOrder;
         this.pagerColor = pagerColor;
         this.pagerNumber = pagerNumber;
@@ -26,6 +26,7 @@ public record OrderResponseRecord(Long idOrder, PagerColor pagerColor, Integer p
         this.discountPercentage = discountPercentage;
         this.discountAmount = discountAmount;
         this.deliveredAt = deliveredAt;
+        this.elapsedSecondsToDeliver = elapsedSecondsToDeliver;
         this.items = items;
     }
     public Long idOrder() {
@@ -63,6 +64,9 @@ public record OrderResponseRecord(Long idOrder, PagerColor pagerColor, Integer p
     }
     public String deliveredAt() {
         return this.deliveredAt;
+    }
+    public Integer elapsedSecondsToDeliver() {
+        return this.elapsedSecondsToDeliver;
     }
     public List<OrderItemResponseRecord> items() {
         return this.items;
