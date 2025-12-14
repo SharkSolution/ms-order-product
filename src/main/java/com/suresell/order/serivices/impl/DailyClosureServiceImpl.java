@@ -57,53 +57,47 @@ implements DailyClosureService {
     @Transactional(readOnly=true)
     public ClosurePreviewResponse getClosurePreview() {
         log.info("Generando preview de cierre de caja - Todas las \u00f3rdenes pagadas");
-
         List<Object[]> results = this.orderRepository.findTotalByPaymentMethodAndStatus(OrderStatus.pagado);
         Optional<LocalDateTime> minCreatedAt = this.orderRepository.findMinCreatedAtByStatus(OrderStatus.pagado);
         Integer countOrders = this.orderRepository.countByStatus(OrderStatus.pagado);
-
         BigDecimal totalCash = BigDecimal.ZERO;
         BigDecimal totalCard = BigDecimal.ZERO;
         BigDecimal totalNequi = BigDecimal.ZERO;
         BigDecimal totalQr = BigDecimal.ZERO;
-
         for (Object[] result : results) {
-            String paymentMethod = (String) result[0];
-            // SUM returns Long for Integer/int fields in HQL/JPQL, need to cast to BigDecimal
-            BigDecimal sumTotal = BigDecimal.valueOf(((Long) result[1]).doubleValue());
-
+            String paymentMethod = (String)result[0];
+            BigDecimal sumTotal = BigDecimal.valueOf(((Long)result[1]).doubleValue());
             switch (paymentMethod) {
-                case PAYMENT_CASH:
+                case "CASH": {
                     totalCash = sumTotal;
                     break;
-                case PAYMENT_CARD:
+                }
+                case "CARD": {
                     totalCard = sumTotal;
                     break;
-                case PAYMENT_NEQUI:
+                }
+                case "NEQUI": {
                     totalNequi = sumTotal;
                     break;
-                case PAYMENT_QR:
+                }
+                case "QR": {
                     totalQr = sumTotal;
                     break;
-                default:
-                    log.warn("M\u00e9todo de pago desconocido encontrado: {}", paymentMethod);
-                    break;
+                }
+                default: {
+                    log.warn("M\u00e9todo de pago desconocido encontrado: {}", (Object)paymentMethod);
+                }
             }
         }
-
         BigDecimal totalExpected = totalCash.add(totalCard).add(totalNequi).add(totalQr);
         LocalDateTime currentTime = LocalDateTime.now();
-
-        // Use the earliest creation time of a paid order, or LocalDateTime.MIN if no paid orders exist
-        LocalDateTime openingTime = minCreatedAt.orElse(LocalDateTime.MIN);
-        int totalOrders = countOrders != null ? countOrders : 0; // Use the actual count
-
-        log.info("Preview generado: CASH={}, CARD={}, NEQUI={}, QR={}, TOTAL_EXPECTED={}, TOTAL_ORDERS={}, OpeningTime={}",
-                 totalCash, totalCard, totalNequi, totalQr, totalExpected, totalOrders, openingTime);
-
+        LocalDateTime openingTime = minCreatedAt.orElseGet(() -> this.orderRepository.findMinCreatedAt().orElse(LocalDateTime.now()));
+        int totalOrders = countOrders != null ? countOrders : 0;
+        log.info("Preview generado: CASH={}, CARD={}, NEQUI={}, QR={}, TOTAL_EXPECTED={}, TOTAL_ORDERS={}, OpeningTime={}", new Object[]{totalCash, totalCard, totalNequi, totalQr, totalExpected, totalOrders, openingTime});
         return new ClosurePreviewResponse(openingTime, currentTime, totalCash, totalCard, totalNequi, totalQr, totalExpected, totalOrders, "Preview de cierre generado correctamente (Todas las \u00f3rdenes pagadas)");
     }
-    @Transactional
+
+					@Transactional
     public ClosureResponse executeClosure(ClosureRequest request) {
         log.info("Ejecutando cierre de caja para cajero: {}", (Object)request.userName());
         LocalDateTime openingTime = this.determineOpeningTime();
@@ -143,8 +137,8 @@ implements DailyClosureService {
     }
     private LocalDateTime determineOpeningTime() {
         return this.closureRepository.findLastClosure().map(DailyClosure::getClosingTime).orElseGet(() -> {
-            log.info("No se encontr\u00f3 cierre anterior. Usando LocalDateTime.MIN para incluir todo el historial.");
-            return LocalDateTime.MIN;
+            log.info("No se encontr\u00f3 cierre anterior. Usando la fecha de creaci\u00f3n de la primera orden.");
+            return this.orderRepository.findFirstByOrderByCreatedAtAsc().map(Order::getCreatedAt).orElse(LocalDateTime.now());
         });
     }
     private List<Order> getOrdersForPeriod(LocalDateTime from, LocalDateTime to) {

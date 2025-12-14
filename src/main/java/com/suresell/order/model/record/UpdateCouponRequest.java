@@ -10,10 +10,9 @@ import com.suresell.order.model.record.ProductDiscountDto;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
-public record UpdateCouponRequest(String adminPassword, String code, String name, String description, BigDecimal discountPercentage, List<ProductDiscountDto> products, LocalDate validFrom, LocalDate validTo, String validWeekdays, Boolean isActive) {
+public record UpdateCouponRequest(String code, String name, String description, BigDecimal discountPercentage, List<ProductDiscountDto> products, LocalDate validFrom, LocalDate validTo, String validWeekdays, Boolean isActive) {
 
-    public UpdateCouponRequest(String adminPassword, String code, String name, String description, BigDecimal discountPercentage, List<ProductDiscountDto> products, LocalDate validFrom, LocalDate validTo, String validWeekdays, Boolean isActive) {
-        this.adminPassword = adminPassword;
+    public UpdateCouponRequest(String code, String name, String description, BigDecimal discountPercentage, List<ProductDiscountDto> products, LocalDate validFrom, LocalDate validTo, String validWeekdays, Boolean isActive) {
         this.code = code;
         this.name = name;
         this.description = description;
@@ -23,9 +22,6 @@ public record UpdateCouponRequest(String adminPassword, String code, String name
         this.validTo = validTo;
         this.validWeekdays = validWeekdays;
         this.isActive = isActive;
-    }
-    public String adminPassword() {
-        return this.adminPassword;
     }
     public String code() {
         return this.code;

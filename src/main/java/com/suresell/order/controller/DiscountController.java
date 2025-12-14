@@ -130,12 +130,9 @@ public class DiscountController {
             coupon.setValidTo(request.validTo());
             coupon.setValidWeekdays(request.validWeekdays());
             coupon.setIsActive(Boolean.valueOf(request.isActive() != null ? request.isActive() : true));
-            DiscountCoupon created = this.discountService.createCoupon(request.adminPassword(), coupon, request.products());
+            DiscountCoupon created = this.discountService.createCoupon(coupon, request.products());
             logger.info("Cup\u00f3n creado exitosamente: {}", (Object)created.getCode());
             return ResponseEntity.status((HttpStatusCode)HttpStatus.CREATED).body((Object)created);
-        }
-        catch (AdminPasswordException e) {
-            throw e;
         }
         catch (IllegalArgumentException e) {
             logger.warn("Datos inv\u00e1lidos para crear cup\u00f3n: {}", (Object)e.getMessage());
@@ -159,12 +156,9 @@ public class DiscountController {
             updatedData.setValidTo(request.validTo());
             updatedData.setValidWeekdays(request.validWeekdays());
             updatedData.setIsActive(request.isActive());
-            DiscountCoupon updated = this.discountService.updateCoupon(request.adminPassword(), id, updatedData, request.products());
+            DiscountCoupon updated = this.discountService.updateCoupon(id, updatedData, request.products());
             logger.info("Cup\u00f3n actualizado exitosamente: {}", (Object)updated.getCode());
             return ResponseEntity.ok((Object)updated);
-        }
-        catch (AdminPasswordException e) {
-            throw e;
         }
         catch (IllegalArgumentException e) {
             logger.warn("Datos inv\u00e1lidos para actualizar cup\u00f3n: {}", (Object)e.getMessage());
@@ -176,15 +170,12 @@ public class DiscountController {
         }
     }
     @PatchMapping(value={"/{id}/deactivate"})
-    public ResponseEntity<?> deactivateCoupon(@PathVariable Long id, @RequestBody AdminActionRequest request) {
+    public ResponseEntity<?> deactivateCoupon(@PathVariable Long id) {
         logger.info("PATCH /api/discounts/{}/deactivate - Desactivando cup\u00f3n", (Object)id);
         try {
-            DiscountCoupon deactivated = this.discountService.deactivateCoupon(request.adminPassword(), id);
+            DiscountCoupon deactivated = this.discountService.deactivateCoupon(id);
             logger.info("Cup\u00f3n desactivado exitosamente: {}", (Object)deactivated.getCode());
             return ResponseEntity.ok().body(Map.of("success", true, "message", "Cup\u00f3n desactivado exitosamente", "coupon", deactivated));
-        }
-        catch (AdminPasswordException e) {
-            throw e;
         }
         catch (IllegalArgumentException e) {
             logger.warn("Error desactivando cup\u00f3n: {}", (Object)e.getMessage());
@@ -196,14 +187,11 @@ public class DiscountController {
         }
     }
     @GetMapping
-    public ResponseEntity<?> listAllCoupons(@RequestParam String adminPassword, @RequestParam(defaultValue="all") String status) {
+    public ResponseEntity<?> listAllCoupons(@RequestParam(defaultValue="all") String status) {
         logger.info("GET /api/discounts - Listando cupones con filtro: {}", (Object)status);
         try {
-            List coupons = this.discountService.listAllCoupons(adminPassword, status);
+            List coupons = this.discountService.listAllCoupons(status);
             return ResponseEntity.ok((Object)coupons);
-        }
-        catch (AdminPasswordException e) {
-            throw e;
         }
         catch (Exception e) {
             logger.error("Error listando cupones", (Throwable)e);
@@ -211,15 +199,12 @@ public class DiscountController {
         }
     }
     @DeleteMapping(value={"/{id}"})
-    public ResponseEntity<?> deleteCoupon(@PathVariable Long id, @RequestParam String adminPassword) {
+    public ResponseEntity<?> deleteCoupon(@PathVariable Long id) {
         logger.info("DELETE /api/discounts/{} - Eliminando cup\u00f3n", (Object)id);
         try {
-            this.discountService.deleteCoupon(adminPassword, id);
+            this.discountService.deleteCoupon(id);
             logger.info("Cup\u00f3n ID {} eliminado exitosamente", (Object)id);
             return ResponseEntity.ok().body(Map.of("success", true, "message", "Cup\u00f3n eliminado exitosamente", "couponId", id));
-        }
-        catch (AdminPasswordException e) {
-            throw e;
         }
         catch (IllegalArgumentException e) {
             logger.warn("Error eliminando cup\u00f3n: {}", (Object)e.getMessage());

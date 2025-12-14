@@ -25,4 +25,9 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
 
     @Query("SELECT COUNT(o) FROM Order o WHERE o.status = :status")
     Integer countByStatus(@Param("status") OrderStatus status);
+
+    Optional<Order> findFirstByOrderByCreatedAtAsc();
+
+    @Query("SELECT MIN(o.createdAt) FROM Order o")
+    Optional<LocalDateTime> findMinCreatedAt();
 }

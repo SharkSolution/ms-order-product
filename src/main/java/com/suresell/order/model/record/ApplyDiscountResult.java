@@ -7,9 +7,9 @@
 package com.suresell.order.model.record;
 import java.math.BigDecimal;
 import java.util.List;
-public record ApplyDiscountResult(Boolean valid, String discountCode, BigDecimal discountPercentage, BigDecimal discountAmount, BigDecimal newSubtotal, String message, List<Long> appliedProductIds) {
+public record ApplyDiscountResult(Boolean valid, String discountCode, BigDecimal discountPercentage, BigDecimal discountAmount, BigDecimal newSubtotal, String message, List<String> appliedProductIds) {
 
-    public ApplyDiscountResult(Boolean valid, String discountCode, BigDecimal discountPercentage, BigDecimal discountAmount, BigDecimal newSubtotal, String message, List<Long> appliedProductIds) {
+    public ApplyDiscountResult(Boolean valid, String discountCode, BigDecimal discountPercentage, BigDecimal discountAmount, BigDecimal newSubtotal, String message, List<String> appliedProductIds) {
         this.valid = valid;
         this.discountCode = discountCode;
         this.discountPercentage = discountPercentage;
@@ -36,7 +36,7 @@ public record ApplyDiscountResult(Boolean valid, String discountCode, BigDecimal
     public String message() {
         return this.message;
     }
-    public List<Long> appliedProductIds() {
+    public List<String> appliedProductIds() {
         return this.appliedProductIds;
     }
 }

@@ -14,6 +14,7 @@
  */
 package com.suresell.order.model.entity;
 import com.suresell.order.model.entity.DiscountCoupon;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
@@ -28,6 +29,7 @@ public class CouponProduct {
     private Long id;
     @ManyToOne
     @JoinColumn(name="discount_coupon_id", nullable=false)
+    @JsonIgnore
     private DiscountCoupon coupon;
     private String productId;
     private String productName;

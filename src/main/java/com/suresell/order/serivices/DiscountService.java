@@ -33,7 +33,6 @@ import com.suresell.order.model.record.ProductDiscountDto;
 import com.suresell.order.repository.CouponProductRepository;
 import com.suresell.order.repository.DiscountCouponRepository;
 import com.suresell.order.repository.DiscountUsageRepository;
-import com.suresell.order.serivices.AdminPasswordValidator;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.DayOfWeek;
@@ -58,8 +57,10 @@ public class DiscountService {
     private DiscountUsageRepository usageRepository;
     @Autowired
     private CouponProductRepository couponProductRepository;
-    @Autowired
-    private AdminPasswordValidator passwordValidator;
+    
+    // @Autowired // Removed as per user request
+    // private AdminPasswordValidator passwordValidator; // Removed as per user request
+
     public ApplyDiscountResult applyDiscount(ApplyDiscountCommand command) {
         LocalDate orderDate;
         logger.info("Aplicando cup\u00f3n: {}", (Object)command.code());
@@ -99,11 +100,15 @@ public class DiscountService {
         if (couponProducts == null || couponProducts.isEmpty()) {
             return this.createInvalidResult("El cup\u00f3n no tiene productos asociados");
         }
-        Set eligibleProductIds = couponProducts.stream().map(cp -> cp.getProductId()).collect(Collectors.toSet());
+        Set<String> eligibleProductIds = couponProducts.stream().map(cp -> cp.getProductId()).collect(Collectors.toSet());
         BigDecimal baseAmount = BigDecimal.ZERO;
-        List appliedProductIds = command.items().stream().filter(item -> item.productIdLong() != null && eligibleProductIds.contains(item.productIdLong())).peek(item -> logger.debug("Producto elegible: {} (ID: {})", (Object)item.productName(), (Object)item.productIdLong())).map(item -> item).map(item -> item.productIdLong()).collect(Collectors.toList());
+        List<String> appliedProductIds = command.items().stream()
+            .filter(item -> item.productId() != null && eligibleProductIds.contains(item.productId()))
+            .peek(item -> logger.debug("Producto elegible: {} (ID: {})", (Object)item.productName(), (Object)item.productId()))
+            .map(item -> item.productId()).collect(Collectors.toList());
+
         for (OrderItemDto item2 : command.items()) {
-            if (item2.productIdLong() == null || !eligibleProductIds.contains(item2.productIdLong())) continue;
+            if (item2.productId() == null || !eligibleProductIds.contains(item2.productId())) continue;
             BigDecimal itemTotal = item2.unitPrice().multiply(BigDecimal.valueOf(item2.quantity().intValue()));
             baseAmount = baseAmount.add(itemTotal);
         }
@@ -165,9 +170,9 @@ public class DiscountService {
         }).collect(Collectors.toList());
     }
     @Transactional
-    public DiscountCoupon createCoupon(String adminPassword, DiscountCoupon coupon, List<ProductDiscountDto> products) {
+    public DiscountCoupon createCoupon(DiscountCoupon coupon, List<ProductDiscountDto> products) {
         logger.info("Creando nuevo cup\u00f3n: {}", (Object)coupon.getCode());
-        this.passwordValidator.validateAdminPasswordOrThrow(adminPassword);
+        // this.passwordValidator.validateAdminPasswordOrThrow(adminPassword); // Removed as per user request
         if (this.couponRepository.existsByCode(coupon.getCode())) {
             throw new IllegalArgumentException("Ya existe un cup\u00f3n con el c\u00f3digo: " + coupon.getCode());
         }
@@ -185,9 +190,9 @@ public class DiscountService {
         return savedCoupon;
     }
     @Transactional
-    public DiscountCoupon updateCoupon(String adminPassword, Long id, DiscountCoupon updatedData, List<ProductDiscountDto> products) {
+    public DiscountCoupon updateCoupon(Long id, DiscountCoupon updatedData, List<ProductDiscountDto> products) {
         logger.info("Actualizando cup\u00f3n ID: {}", (Object)id);
-        this.passwordValidator.validateAdminPasswordOrThrow(adminPassword);
+        // this.passwordValidator.validateAdminPasswordOrThrow(adminPassword); // Removed as per user request
         DiscountCoupon existing = this.couponRepository.findById(id).orElseThrow(() -> new IllegalArgumentException("Cup\u00f3n no encontrado con ID: " + id));
         existing.setCode(updatedData.getCode());
         existing.setName(updatedData.getName());
@@ -211,16 +216,16 @@ public class DiscountService {
         return this.couponRepository.save(existing);
     }
     @Transactional
-    public DiscountCoupon deactivateCoupon(String adminPassword, Long id) {
+    public DiscountCoupon deactivateCoupon(Long id) {
         logger.info("Desactivando cup\u00f3n ID: {}", (Object)id);
-        this.passwordValidator.validateAdminPasswordOrThrow(adminPassword);
+        // this.passwordValidator.validateAdminPasswordOrThrow(adminPassword); // Removed as per user request
         DiscountCoupon coupon = this.couponRepository.findById(id).orElseThrow(() -> new IllegalArgumentException("Cup\u00f3n no encontrado con ID: " + id));
         coupon.setIsActive(Boolean.valueOf(false));
         return this.couponRepository.save(coupon);
     }
-    public List<DiscountCoupon> listAllCoupons(String adminPassword, String status) {
+    public List<DiscountCoupon> listAllCoupons(String status) {
         logger.info("Listando cupones con filtro: {}", (Object)status);
-        this.passwordValidator.validateAdminPasswordOrThrow(adminPassword);
+        // this.passwordValidator.validateAdminPasswordOrThrow(adminPassword); // Removed as per user request
         if (status == null || status.equalsIgnoreCase("all")) {
             return this.couponRepository.findAll();
         }
@@ -237,9 +242,9 @@ public class DiscountService {
         return this.couponRepository.findAll();
     }
     @Transactional
-    public void deleteCoupon(String adminPassword, Long id) {
+    public void deleteCoupon(Long id) {
         logger.info("Eliminando cup\u00f3n ID: {}", (Object)id);
-        this.passwordValidator.validateAdminPasswordOrThrow(adminPassword);
+        // this.passwordValidator.validateAdminPasswordOrThrow(adminPassword); // Removed as per user request
         DiscountCoupon coupon = this.couponRepository.findById(id).orElseThrow(() -> new IllegalArgumentException("Cup\u00f3n no encontrado con ID: " + id));
         List usages = this.usageRepository.findByCouponId(id);
         if (!usages.isEmpty()) {

@@ -1,22 +1,3 @@
-/*
- * Decompiled with CFR 0.152.
- * 
- * Could not load the following classes:
- *  com.suresell.order.model.entity.CouponProduct
- *  com.suresell.order.model.entity.DiscountCoupon
- *  jakarta.persistence.CascadeType
- *  jakarta.persistence.Column
- *  jakarta.persistence.Entity
- *  jakarta.persistence.GeneratedValue
- *  jakarta.persistence.GenerationType
- *  jakarta.persistence.Id
- *  jakarta.persistence.Index
- *  jakarta.persistence.OneToMany
- *  jakarta.persistence.PrePersist
- *  jakarta.persistence.PreUpdate
- *  jakarta.persistence.Table
- *  lombok.Generated
- */
 package com.suresell.order.model.entity;
 import com.suresell.order.model.entity.CouponProduct;
 import jakarta.persistence.CascadeType;
