@@ -52,7 +52,7 @@ public class Order {
     @Column(name="pager_number", nullable=false)
     private Integer pagerNumber;
     @Column(name="created_at")
-    private LocalDateTime createdAt = LocalDateTime.now();
+    private LocalDateTime createdAt;
     @Column(name="delivered_at")
     private String deliveredAt;
     private int subtotal;

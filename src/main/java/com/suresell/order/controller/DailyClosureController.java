@@ -39,6 +39,7 @@ import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -66,6 +67,8 @@ public class DailyClosureController {
     private static final Logger log = LoggerFactory.getLogger(DailyClosureController.class);
     private final DailyClosureService closureService;
     private final DailyClosureExcelExporter excelExporter;
+    private static final ZoneId BOGOTA_ZONE = ZoneId.of("America/Bogota");
+
     @GetMapping(value={"/export/excel"})
     public ResponseEntity<Resource> exportClosuresToExcel() {
         log.info("GET /api/closures/export/excel - Solicitud de exportaci\u00f3n de cierres a Excel");
@@ -77,7 +80,7 @@ public class DailyClosureController {
             }
             ByteArrayInputStream in = this.excelExporter.export(closures);
             HttpHeaders headers = new HttpHeaders();
-            String filename = "historial_cierres_caja_" + String.valueOf(LocalDate.now()) + ".xlsx";
+            String filename = "historial_cierres_caja_" + String.valueOf(LocalDate.now(BOGOTA_ZONE)) + ".xlsx";
             headers.add("Content-Disposition", "attachment; filename=" + filename);
             log.info("Exportaci\u00f3n a Excel generada exitosamente. Archivo: {}", (Object)filename);
             return ((ResponseEntity.BodyBuilder)((ResponseEntity.BodyBuilder)ResponseEntity.ok().headers(headers)).contentType(MediaType.parseMediaType((String)"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))).body(new InputStreamResource(in));

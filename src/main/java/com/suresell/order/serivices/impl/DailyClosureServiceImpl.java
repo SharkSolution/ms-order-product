@@ -32,6 +32,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.UUID;
 import java.util.Optional;
@@ -54,11 +55,13 @@ implements DailyClosureService {
     private static final String STATUS_BALANCED = "BALANCED";
     private static final String STATUS_POSITIVE_DIFF = "POSITIVE_DIFF";
     private static final String STATUS_NEGATIVE_DIFF = "NEGATIVE_DIFF";
+    private static final ZoneId BOGOTA_ZONE = ZoneId.of("America/Bogota");
+
     @Transactional(readOnly=true)
     public ClosurePreviewResponse getClosurePreview() {
-        log.info("Generando preview de cierre de caja para el d\u00eda actual.");
-        LocalDateTime startOfDay = LocalDate.now().atStartOfDay();
-        LocalDateTime endOfDay = LocalDateTime.now().with(LocalTime.MAX);
+        log.info("Generando preview de cierre de caja para el d\u00eda actual en zona horaria: {}", BOGOTA_ZONE);
+        LocalDateTime startOfDay = LocalDate.now(BOGOTA_ZONE).atStartOfDay();
+        LocalDateTime endOfDay = LocalDateTime.now(BOGOTA_ZONE).with(LocalTime.MAX);
 
         List<Object[]> results = this.orderRepository.findTotalByPaymentMethodAndStatus(OrderStatus.pagado, startOfDay, endOfDay);
         Optional<LocalDateTime> minCreatedAt = this.orderRepository.findMinCreatedAtByStatus(OrderStatus.pagado, startOfDay, endOfDay);
@@ -95,7 +98,7 @@ implements DailyClosureService {
             }
         }
         BigDecimal totalExpected = totalCash.add(totalCard).add(totalNequi).add(totalQr);
-        LocalDateTime currentTime = LocalDateTime.now();
+        LocalDateTime currentTime = LocalDateTime.now(BOGOTA_ZONE);
         LocalDateTime openingTime = minCreatedAt.orElse(startOfDay);
         int totalOrders = countOrders != null ? countOrders : 0;
         log.info("Preview generado para el d\u00eda actual: CASH={}, CARD={}, NEQUI={}, QR={}, TOTAL_EXPECTED={}, TOTAL_ORDERS={}, OpeningTime={}", new Object[]{totalCash, totalCard, totalNequi, totalQr, totalExpected, totalOrders, openingTime});
@@ -106,7 +109,7 @@ implements DailyClosureService {
     public ClosureResponse executeClosure(ClosureRequest request) {
         log.info("Ejecutando cierre de caja para cajero: {}", (Object)request.userName());
         LocalDateTime openingTime = this.determineOpeningTime();
-        LocalDateTime closingTime = LocalDateTime.now();
+        LocalDateTime closingTime = LocalDateTime.now(BOGOTA_ZONE);
         List orders = this.getOrdersForPeriod(openingTime, closingTime);
         BigDecimal expectedCash = this.calculateTotalByPaymentMethod(orders, PAYMENT_CASH);
         BigDecimal expectedCard = this.calculateTotalByPaymentMethod(orders, PAYMENT_CARD);
@@ -143,7 +146,7 @@ implements DailyClosureService {
     private LocalDateTime determineOpeningTime() {
         return this.closureRepository.findLastClosure().map(DailyClosure::getClosingTime).orElseGet(() -> {
             log.info("No se encontr\u00f3 cierre anterior. Usando la fecha de creaci\u00f3n de la primera orden.");
-            return this.orderRepository.findFirstByOrderByCreatedAtAsc().map(Order::getCreatedAt).orElse(LocalDateTime.now());
+            return this.orderRepository.findFirstByOrderByCreatedAtAsc().map(Order::getCreatedAt).orElse(LocalDateTime.now(BOGOTA_ZONE));
         });
     }
     private List<Order> getOrdersForPeriod(LocalDateTime from, LocalDateTime to) {

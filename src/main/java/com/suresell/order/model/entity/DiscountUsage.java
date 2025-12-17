@@ -34,6 +34,7 @@ import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import lombok.Generated;
 @Entity
 @Table(name="discount_usages", uniqueConstraints={@UniqueConstraint(name="uk_order_coupon", columnNames={"order_id", "coupon_id"})}, indexes={@Index(name="idx_usage_order", columnList="order_id"), @Index(name="idx_usage_coupon", columnList="coupon_id"), @Index(name="idx_usage_created", columnList="created_at")})
@@ -56,10 +57,12 @@ public class DiscountUsage {
     private BigDecimal totalAfterDiscount;
     @Column(name="created_at", nullable=false)
     private LocalDateTime createdAt;
+    private static final ZoneId BOGOTA_ZONE = ZoneId.of("America/Bogota");
+    
     @PrePersist
     public void prePersist() {
         if (this.createdAt == null) {
-            this.createdAt = LocalDateTime.now();
+            this.createdAt = LocalDateTime.now(BOGOTA_ZONE);
         }
     }
     @Generated

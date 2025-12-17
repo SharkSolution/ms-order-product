@@ -38,6 +38,7 @@ import java.math.RoundingMode;
 import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
@@ -57,6 +58,7 @@ public class DiscountService {
     private DiscountUsageRepository usageRepository;
     @Autowired
     private CouponProductRepository couponProductRepository;
+    private static final ZoneId BOGOTA_ZONE = ZoneId.of("America/Bogota");
     
     // @Autowired // Removed as per user request
     // private AdminPasswordValidator passwordValidator; // Removed as per user request
@@ -81,7 +83,7 @@ public class DiscountService {
         if (!Boolean.TRUE.equals(coupon.getIsActive())) {
             return this.createInvalidResult("El cup\u00f3n no est\u00e1 activo");
         }
-        LocalDate localDate = orderDate = command.orderDateTime() != null ? command.orderDateTime().toLocalDate() : LocalDate.now();
+        LocalDate localDate = orderDate = command.orderDateTime() != null ? command.orderDateTime().toLocalDate() : LocalDate.now(BOGOTA_ZONE);
         if (coupon.getValidFrom() != null && orderDate.isBefore(coupon.getValidFrom())) {
             return this.createInvalidResult("El cup\u00f3n a\u00fan no es v\u00e1lido. V\u00e1lido desde: " + String.valueOf(coupon.getValidFrom()));
         }
@@ -90,7 +92,7 @@ public class DiscountService {
         }
         if (coupon.getValidWeekdays() != null && !coupon.getValidWeekdays().trim().isEmpty()) {
             String currentDayStr;
-            DayOfWeek currentDay = command.orderDateTime() != null ? command.orderDateTime().getDayOfWeek() : LocalDateTime.now().getDayOfWeek();
+            DayOfWeek currentDay = command.orderDateTime() != null ? command.orderDateTime().getDayOfWeek() : LocalDateTime.now(BOGOTA_ZONE).getDayOfWeek();
             List validDays = Arrays.stream(coupon.getValidWeekdays().split(",")).map(String::trim).map(String::toUpperCase).collect(Collectors.toList());
             if (!validDays.contains(currentDayStr = currentDay.toString().substring(0, 3))) {
                 return this.createInvalidResult("El cup\u00f3n no es v\u00e1lido para " + currentDay.toString());
@@ -161,7 +163,7 @@ public class DiscountService {
     }
     public List<DiscountCoupon> getActiveCoupons() {
         logger.debug("Obteniendo cupones activos");
-        LocalDate today = LocalDate.now();
+        LocalDate today = LocalDate.now(BOGOTA_ZONE);
         return this.couponRepository.findByIsActive(Boolean.valueOf(true)).stream().filter(coupon -> {
             if (coupon.getValidTo() != null && today.isAfter(coupon.getValidTo())) {
                 return false;
@@ -236,7 +238,7 @@ public class DiscountService {
             return this.couponRepository.findByIsActive(Boolean.valueOf(false));
         }
         if (status.equalsIgnoreCase("expired")) {
-            LocalDate today = LocalDate.now();
+            LocalDate today = LocalDate.now(BOGOTA_ZONE);
             return this.couponRepository.findAll().stream().filter(coupon -> coupon.getValidTo() != null && today.isAfter(coupon.getValidTo())).collect(Collectors.toList());
         }
         return this.couponRepository.findAll();

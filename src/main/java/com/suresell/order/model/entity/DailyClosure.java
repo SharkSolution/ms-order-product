@@ -20,6 +20,7 @@ import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.UUID;
 import lombok.Generated;
 @Entity
@@ -56,13 +57,15 @@ public class DailyClosure {
     private String status;
     @Column(name="notes", columnDefinition="TEXT")
     private String notes;
+    private static final ZoneId BOGOTA_ZONE = ZoneId.of("America/Bogota");
+
     @PrePersist
     public void prePersist() {
         if (this.id == null) {
             this.id = UUID.randomUUID();
         }
         if (this.closingTime == null) {
-            this.closingTime = LocalDateTime.now();
+            this.closingTime = LocalDateTime.now(BOGOTA_ZONE);
         }
     }
     @Generated

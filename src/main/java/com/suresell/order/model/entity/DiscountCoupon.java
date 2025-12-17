@@ -14,6 +14,7 @@ import jakarta.persistence.Table;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
 import lombok.Generated;
@@ -45,9 +46,11 @@ public class DiscountCoupon {
     private LocalDateTime createdAt;
     @Column(name="updated_at", nullable=false)
     private LocalDateTime updatedAt;
+    private static final ZoneId BOGOTA_ZONE = ZoneId.of("America/Bogota");
+
     @PrePersist
     public void prePersist() {
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = LocalDateTime.now(BOGOTA_ZONE);
         if (this.createdAt == null) {
             this.createdAt = now;
         }
@@ -60,7 +63,7 @@ public class DiscountCoupon {
     }
     @PreUpdate
     public void preUpdate() {
-        this.updatedAt = LocalDateTime.now();
+        this.updatedAt = LocalDateTime.now(BOGOTA_ZONE);
     }
     public void addProduct(CouponProduct product) {
         this.products.add(product);

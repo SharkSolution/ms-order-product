@@ -45,6 +45,7 @@ import com.suresell.order.serivices.OrderService;
 import jakarta.transaction.Transactional;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -57,6 +58,8 @@ implements OrderService {
     private final ProductClient productClient;
     private final OrderMapper orderMapper;
     private final DiscountService discountService;
+    private static final ZoneId BOGOTA_ZONE = ZoneId.of("America/Bogota");
+
     @Transactional
     public void createOrUpdateOrder(OrderRequestRecord dto) {
         if (!List.of("CASH", "CARD", "NEQUI", "QR").contains(dto.paymentMethod())) {
@@ -72,7 +75,7 @@ implements OrderService {
         order.setStatus(OrderStatus.pagado);
         order.setDeliveredAt("No");
         order.setPaymentMethod(dto.paymentMethod());
-        order.setCreatedAt(LocalDateTime.now());
+        order.setCreatedAt(LocalDateTime.now(BOGOTA_ZONE));
         List<OrderItem> items = dto.items().stream().map(itemDto -> {
             OrderItem item = new OrderItem();
             item.setOrder(order);
@@ -99,7 +102,7 @@ implements OrderService {
                 }
                 return new OrderItemDto(item.getProductId(), productIdLong, productDetails != null ? productDetails.nameProduct() : null, productDetails != null ? productDetails.categoryName() : null, Integer.valueOf(item.getQuantity()), BigDecimal.valueOf(item.getUnitPrice()));
             }).toList();
-            ApplyDiscountCommand command = new ApplyDiscountCommand(dto.discountCode(), LocalDateTime.now(), itemsForDiscount, BigDecimal.valueOf(subtotal));
+            ApplyDiscountCommand command = new ApplyDiscountCommand(dto.discountCode(), LocalDateTime.now(BOGOTA_ZONE), itemsForDiscount, BigDecimal.valueOf(subtotal));
             ApplyDiscountResult discountResult = this.discountService.applyDiscount(command);
             if (discountResult.valid().booleanValue()) {
                 order.setDiscountCode(discountResult.discountCode());
@@ -175,7 +178,7 @@ implements OrderService {
                 }
                 return new OrderItemDto(item.getProductId(), productIdLong, productDetails != null ? productDetails.nameProduct() : null, productDetails != null ? productDetails.categoryName() : null, Integer.valueOf(item.getQuantity()), BigDecimal.valueOf(item.getUnitPrice()));
             }).toList();
-            ApplyDiscountCommand command = new ApplyDiscountCommand(dto.discountCode(), LocalDateTime.now(), itemsForDiscount, BigDecimal.valueOf(subtotal));
+            ApplyDiscountCommand command = new ApplyDiscountCommand(dto.discountCode(), LocalDateTime.now(BOGOTA_ZONE), itemsForDiscount, BigDecimal.valueOf(subtotal));
             ApplyDiscountResult discountResult = this.discountService.applyDiscount(command);
             if (discountResult.valid().booleanValue()) {
                 order.setDiscountCode(discountResult.discountCode());
@@ -232,7 +235,7 @@ implements OrderService {
             }
             return new OrderItemDto(item.getProductId(), productIdLong, productDetails != null ? productDetails.nameProduct() : null, productDetails != null ? productDetails.categoryName() : null, Integer.valueOf(item.getQuantity()), BigDecimal.valueOf(item.getUnitPrice()));
         }).toList();
-        ApplyDiscountCommand command = new ApplyDiscountCommand(discountCode, LocalDateTime.now(), itemsForDiscount, BigDecimal.valueOf(subtotal));
+        ApplyDiscountCommand command = new ApplyDiscountCommand(discountCode, LocalDateTime.now(BOGOTA_ZONE), itemsForDiscount, BigDecimal.valueOf(subtotal));
         ApplyDiscountResult discountResult = this.discountService.applyDiscount(command);
         if (!discountResult.valid().booleanValue()) {
             throw new IllegalArgumentException("Cup\u00f3n inv\u00e1lido: " + discountResult.message());
