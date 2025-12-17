@@ -56,14 +56,19 @@ implements DailyClosureService {
     private static final String STATUS_NEGATIVE_DIFF = "NEGATIVE_DIFF";
     @Transactional(readOnly=true)
     public ClosurePreviewResponse getClosurePreview() {
-        log.info("Generando preview de cierre de caja - Todas las \u00f3rdenes pagadas");
-        List<Object[]> results = this.orderRepository.findTotalByPaymentMethodAndStatus(OrderStatus.pagado);
-        Optional<LocalDateTime> minCreatedAt = this.orderRepository.findMinCreatedAtByStatus(OrderStatus.pagado);
-        Integer countOrders = this.orderRepository.countByStatus(OrderStatus.pagado);
+        log.info("Generando preview de cierre de caja para el d\u00eda actual.");
+        LocalDateTime startOfDay = LocalDate.now().atStartOfDay();
+        LocalDateTime endOfDay = LocalDateTime.now().with(LocalTime.MAX);
+
+        List<Object[]> results = this.orderRepository.findTotalByPaymentMethodAndStatus(OrderStatus.pagado, startOfDay, endOfDay);
+        Optional<LocalDateTime> minCreatedAt = this.orderRepository.findMinCreatedAtByStatus(OrderStatus.pagado, startOfDay, endOfDay);
+        Integer countOrders = this.orderRepository.countByStatus(OrderStatus.pagado, startOfDay, endOfDay);
+
         BigDecimal totalCash = BigDecimal.ZERO;
         BigDecimal totalCard = BigDecimal.ZERO;
         BigDecimal totalNequi = BigDecimal.ZERO;
         BigDecimal totalQr = BigDecimal.ZERO;
+
         for (Object[] result : results) {
             String paymentMethod = (String)result[0];
             BigDecimal sumTotal = BigDecimal.valueOf(((Long)result[1]).doubleValue());
@@ -91,10 +96,10 @@ implements DailyClosureService {
         }
         BigDecimal totalExpected = totalCash.add(totalCard).add(totalNequi).add(totalQr);
         LocalDateTime currentTime = LocalDateTime.now();
-        LocalDateTime openingTime = minCreatedAt.orElseGet(() -> this.orderRepository.findMinCreatedAt().orElse(LocalDateTime.now()));
+        LocalDateTime openingTime = minCreatedAt.orElse(startOfDay);
         int totalOrders = countOrders != null ? countOrders : 0;
-        log.info("Preview generado: CASH={}, CARD={}, NEQUI={}, QR={}, TOTAL_EXPECTED={}, TOTAL_ORDERS={}, OpeningTime={}", new Object[]{totalCash, totalCard, totalNequi, totalQr, totalExpected, totalOrders, openingTime});
-        return new ClosurePreviewResponse(openingTime, currentTime, totalCash, totalCard, totalNequi, totalQr, totalExpected, totalOrders, "Preview de cierre generado correctamente (Todas las \u00f3rdenes pagadas)");
+        log.info("Preview generado para el d\u00eda actual: CASH={}, CARD={}, NEQUI={}, QR={}, TOTAL_EXPECTED={}, TOTAL_ORDERS={}, OpeningTime={}", new Object[]{totalCash, totalCard, totalNequi, totalQr, totalExpected, totalOrders, openingTime});
+        return new ClosurePreviewResponse(openingTime, currentTime, totalCash, totalCard, totalNequi, totalQr, totalExpected, totalOrders, "Preview de cierre generado correctamente para el d\u00eda actual.");
     }
 
 					@Transactional
