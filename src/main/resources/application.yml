@@ -4,7 +4,7 @@ spring:
   datasource:
     url: jdbc:postgresql://database-surresell.c740uem2quei.us-east-2.rds.amazonaws.com:5432/pos_db
     username: postgres
-    password: postgres
+    password: Sharkcol2025*
   jpa:
     properties:
       hibernate.format_sql: true
