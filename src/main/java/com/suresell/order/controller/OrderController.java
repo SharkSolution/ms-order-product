@@ -27,11 +27,12 @@
  *  org.springframework.web.bind.annotation.RestController
  */
 package com.suresell.order.controller;
+
+import com.suresell.order.adapter.OrderRequestAdapter;
 import com.suresell.order.model.record.OrderItemResponseRecord;
 import com.suresell.order.model.record.OrderRequestRecord;
 import com.suresell.order.model.record.OrderResponseRecord;
 import com.suresell.order.serivices.OrderService;
-import jakarta.validation.Valid;
 import java.io.ByteArrayOutputStream;
 import java.io.OutputStream;
 import java.util.List;
@@ -52,20 +53,27 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+
 @RestController
 @RequestMapping(value={"/orders"})
 public class OrderController {
     private final OrderService orderService;
+    private final OrderRequestAdapter orderRequestAdapter;
+
     @PostMapping(value={"/create"})
-    public ResponseEntity<Map<String, String>> createOrder(@RequestBody @Valid OrderRequestRecord dto) {
+    public ResponseEntity<Map<String, String>> createOrder(@RequestBody Map<String, Object> payload) {
+        OrderRequestRecord dto = this.orderRequestAdapter.normalize(payload);
         this.orderService.createOrUpdateOrder(dto);
         return ResponseEntity.status((HttpStatusCode)HttpStatus.CREATED).body(Map.of("message", "Orden creada con \u00e9xito"));
     }
+
     @PutMapping(value={"/{orderId}"})
-    public ResponseEntity<Map<String, String>> updateOrder(@PathVariable Long orderId, @RequestBody @Valid OrderRequestRecord dto) {
+    public ResponseEntity<Map<String, String>> updateOrder(@PathVariable Long orderId, @RequestBody Map<String, Object> payload) {
+        OrderRequestRecord dto = this.orderRequestAdapter.normalize(payload);
         this.orderService.updateOrder(orderId, dto);
         return ResponseEntity.ok(Map.of("message", "Orden actualizada con \u00e9xito"));
     }
+    
     @GetMapping(value={"/cocina"})
     public List<OrderResponseRecord> getKitchenOrders() {
         return this.orderService.getKitchenOrders();
@@ -177,8 +185,10 @@ public class OrderController {
             return ResponseEntity.status((HttpStatusCode)HttpStatus.NOT_FOUND).body(Map.of("error", e.getMessage()));
         }
     }
+
     @Generated
-    public OrderController(OrderService orderService) {
+    public OrderController(OrderService orderService, OrderRequestAdapter orderRequestAdapter) {
         this.orderService = orderService;
+        this.orderRequestAdapter = orderRequestAdapter;
     }
 }

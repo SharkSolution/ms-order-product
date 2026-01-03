@@ -67,7 +67,7 @@ implements OrderService {
         }
         Optional existingPagerOrder = this.orderRepository.findByPagerColorAndPagerNumberAndStatusAndDeliveredAt(dto.pagerColor(), dto.pagerNumber(), OrderStatus.pagado, "No");
         if (existingPagerOrder.isPresent()) {
-            throw new PagerOcupadoException(String.format("El pager %s #%d ya est\u00e1 en uso por la orden #%d", dto.pagerColor(), dto.pagerNumber(), ((Order)existingPagerOrder.get()).getIdOrder()), "PAGER_OCUPADO");
+            throw new PagerOcupadoException(String.format("El pager %s %s ya est\u00e1 en uso por la orden #%d", dto.pagerColor(), dto.pagerNumber(), ((Order)existingPagerOrder.get()).getIdOrder()), "PAGER_OCUPADO");
         }
         Order order = new Order();
         order.setPagerColor(dto.pagerColor());
@@ -147,7 +147,7 @@ implements OrderService {
         Optional existingPagerOrder;
         Order order = (Order)this.orderRepository.findById(orderId).orElseThrow(() -> new RuntimeException("Orden no encontrada con ID: " + orderId));
         if (!(order.getPagerColor().equals((Object)dto.pagerColor()) && order.getPagerNumber().equals(dto.pagerNumber()) || !(existingPagerOrder = this.orderRepository.findByPagerColorAndPagerNumberAndStatusAndDeliveredAt(dto.pagerColor(), dto.pagerNumber(), OrderStatus.pagado, "No")).isPresent() || ((Order)existingPagerOrder.get()).getIdOrder().equals(orderId))) {
-            throw new PagerOcupadoException(String.format("El pager %s #%d ya est\u00e1 en uso", dto.pagerColor(), dto.pagerNumber()), "PAGER_OCUPADO");
+            throw new PagerOcupadoException(String.format("El pager %s %s ya est\u00e1 en uso", dto.pagerColor(), dto.pagerNumber()), "PAGER_OCUPADO");
         }
         order.setPagerColor(dto.pagerColor());
         order.setPagerNumber(dto.pagerNumber());

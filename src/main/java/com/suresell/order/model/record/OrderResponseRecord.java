@@ -7,13 +7,12 @@
  *  com.suresell.order.model.record.OrderResponseRecord
  */
 package com.suresell.order.model.record;
-import com.suresell.order.model.enums.PagerColor;
 import com.suresell.order.model.record.OrderItemResponseRecord;
 import java.time.LocalDateTime;
 import java.util.List;
-public record OrderResponseRecord(Long idOrder, PagerColor pagerColor, Integer pagerNumber, LocalDateTime createdAt, int subtotal, int total, String status, String paymentMethod, String discountCode, Double discountPercentage, Integer discountAmount, String deliveredAt, Integer elapsedSecondsToDeliver, List<OrderItemResponseRecord> items) {
+public record OrderResponseRecord(Long idOrder, String pagerColor, String pagerNumber, LocalDateTime createdAt, int subtotal, int total, String status, String paymentMethod, String discountCode, Double discountPercentage, Integer discountAmount, String deliveredAt, Integer elapsedSecondsToDeliver, List<OrderItemResponseRecord> items) {
 
-    public OrderResponseRecord(Long idOrder, PagerColor pagerColor, Integer pagerNumber, LocalDateTime createdAt, int subtotal, int total, String status, String paymentMethod, String discountCode, Double discountPercentage, Integer discountAmount, String deliveredAt, Integer elapsedSecondsToDeliver, List<OrderItemResponseRecord> items) {
+    public OrderResponseRecord(Long idOrder, String pagerColor, String pagerNumber, LocalDateTime createdAt, int subtotal, int total, String status, String paymentMethod, String discountCode, Double discountPercentage, Integer discountAmount, String deliveredAt, Integer elapsedSecondsToDeliver, List<OrderItemResponseRecord> items) {
         this.idOrder = idOrder;
         this.pagerColor = pagerColor;
         this.pagerNumber = pagerNumber;
@@ -32,10 +31,10 @@ public record OrderResponseRecord(Long idOrder, PagerColor pagerColor, Integer p
     public Long idOrder() {
         return this.idOrder;
     }
-    public PagerColor pagerColor() {
+    public String pagerColor() {
         return this.pagerColor;
     }
-    public Integer pagerNumber() {
+    public String pagerNumber() {
         return this.pagerNumber;
     }
     public LocalDateTime createdAt() {

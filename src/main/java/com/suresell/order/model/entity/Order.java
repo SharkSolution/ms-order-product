@@ -23,7 +23,6 @@
 package com.suresell.order.model.entity;
 import com.suresell.order.model.entity.OrderItem;
 import com.suresell.order.model.enums.OrderStatus;
-import com.suresell.order.model.enums.PagerColor;
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -33,8 +32,6 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.OneToMany;
-import jakarta.persistence.PrePersist;
-import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -46,11 +43,10 @@ public class Order {
     @GeneratedValue(strategy=GenerationType.IDENTITY)
     @Column(name="id_order")
     private Long idOrder;
-    @Enumerated(value=EnumType.STRING)
     @Column(name="pager_color", nullable=false)
-    private PagerColor pagerColor;
+    private String pagerColor;
     @Column(name="pager_number", nullable=false)
-    private Integer pagerNumber;
+    private String pagerNumber;
     @Column(name="created_at")
     private LocalDateTime createdAt;
     @Column(name="delivered_at")
@@ -72,23 +68,16 @@ public class Order {
     private Integer elapsedSecondsToDeliver;
     @OneToMany(mappedBy="order", cascade={CascadeType.ALL}, orphanRemoval=true)
     private List<OrderItem> items;
-    @PrePersist
-    @PreUpdate
-    private void validatePagerNumber() {
-        if (this.pagerNumber != null && (this.pagerNumber < 1 || this.pagerNumber > 16)) {
-            throw new IllegalArgumentException("El n\u00famero de pager debe estar entre 1 y 16");
-        }
-    }
     @Generated
     public Long getIdOrder() {
         return this.idOrder;
     }
     @Generated
-    public PagerColor getPagerColor() {
+    public String getPagerColor() {
         return this.pagerColor;
     }
     @Generated
-    public Integer getPagerNumber() {
+    public String getPagerNumber() {
         return this.pagerNumber;
     }
     @Generated
@@ -140,11 +129,11 @@ public class Order {
         this.idOrder = idOrder;
     }
     @Generated
-    public void setPagerColor(PagerColor pagerColor) {
+    public void setPagerColor(String pagerColor) {
         this.pagerColor = pagerColor;
     }
     @Generated
-    public void setPagerNumber(Integer pagerNumber) {
+    public void setPagerNumber(String pagerNumber) {
         this.pagerNumber = pagerNumber;
     }
     @Generated
@@ -214,8 +203,8 @@ public class Order {
         if (this$idOrder == null ? other$idOrder != null : !((Object)this$idOrder).equals(other$idOrder)) {
             return false;
         }
-        Integer this$pagerNumber = this.getPagerNumber();
-        Integer other$pagerNumber = other.getPagerNumber();
+        String this$pagerNumber = this.getPagerNumber();
+        String other$pagerNumber = other.getPagerNumber();
         if (this$pagerNumber == null ? other$pagerNumber != null : !((Object)this$pagerNumber).equals(other$pagerNumber)) {
             return false;
         }
@@ -234,8 +223,8 @@ public class Order {
         if (this$elapsedSecondsToDeliver == null ? other$elapsedSecondsToDeliver != null : !((Object)this$elapsedSecondsToDeliver).equals(other$elapsedSecondsToDeliver)) {
             return false;
         }
-        PagerColor this$pagerColor = this.getPagerColor();
-        PagerColor other$pagerColor = other.getPagerColor();
+        String this$pagerColor = this.getPagerColor();
+        String other$pagerColor = other.getPagerColor();
         if (this$pagerColor == null ? other$pagerColor != null : !this$pagerColor.equals(other$pagerColor)) {
             return false;
         }
@@ -280,7 +269,7 @@ public class Order {
         result = result * 59 + this.getTotal();
         Long $idOrder = this.getIdOrder();
         result = result * 59 + ($idOrder == null ? 43 : ((Object)$idOrder).hashCode());
-        Integer $pagerNumber = this.getPagerNumber();
+        String $pagerNumber = this.getPagerNumber();
         result = result * 59 + ($pagerNumber == null ? 43 : ((Object)$pagerNumber).hashCode());
         Double $discountPercentage = this.getDiscountPercentage();
         result = result * 59 + ($discountPercentage == null ? 43 : ((Object)$discountPercentage).hashCode());
@@ -288,7 +277,7 @@ public class Order {
         result = result * 59 + ($discountAmount == null ? 43 : ((Object)$discountAmount).hashCode());
         Integer $elapsedSecondsToDeliver = this.getElapsedSecondsToDeliver();
         result = result * 59 + ($elapsedSecondsToDeliver == null ? 43 : ((Object)$elapsedSecondsToDeliver).hashCode());
-        PagerColor $pagerColor = this.getPagerColor();
+        String $pagerColor = this.getPagerColor();
         result = result * 59 + ($pagerColor == null ? 43 : $pagerColor.hashCode());
         LocalDateTime $createdAt = this.getCreatedAt();
         result = result * 59 + ($createdAt == null ? 43 : ((Object)$createdAt).hashCode());
@@ -312,7 +301,7 @@ public class Order {
     public Order() {
     }
     @Generated
-    public Order(Long idOrder, PagerColor pagerColor, Integer pagerNumber, LocalDateTime createdAt, String deliveredAt, int subtotal, int total, OrderStatus status, String paymentMethod, String discountCode, Double discountPercentage, Integer discountAmount, Integer elapsedSecondsToDeliver, List<OrderItem> items) {
+    public Order(Long idOrder, String pagerColor, String pagerNumber, LocalDateTime createdAt, String deliveredAt, int subtotal, int total, OrderStatus status, String paymentMethod, String discountCode, Double discountPercentage, Integer discountAmount, Integer elapsedSecondsToDeliver, List<OrderItem> items) {
         this.idOrder = idOrder;
         this.pagerColor = pagerColor;
         this.pagerNumber = pagerNumber;
