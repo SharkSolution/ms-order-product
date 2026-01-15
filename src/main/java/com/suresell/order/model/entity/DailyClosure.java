@@ -57,6 +57,9 @@ public class DailyClosure {
     private String status;
     @Column(name="notes", columnDefinition="TEXT")
     private String notes;
+
+    @Column(name="base_balance_for_next_day", precision=15, scale=2)
+    private BigDecimal baseBalanceForNextDay;
     private static final ZoneId BOGOTA_ZONE = ZoneId.of("America/Bogota");
 
     @PrePersist
@@ -128,6 +131,12 @@ public class DailyClosure {
     public String getNotes() {
         return this.notes;
     }
+
+    @Generated
+    public BigDecimal getBaseBalanceForNextDay() {
+        return this.baseBalanceForNextDay;
+    }
+
     @Generated
     public void setId(UUID id) {
         this.id = id;
@@ -188,6 +197,12 @@ public class DailyClosure {
     public void setNotes(String notes) {
         this.notes = notes;
     }
+
+    @Generated
+    public void setBaseBalanceForNextDay(BigDecimal baseBalanceForNextDay) {
+        this.baseBalanceForNextDay = baseBalanceForNextDay;
+    }
+
     @Generated
     public boolean equals(Object o) {
         if (o == this) {

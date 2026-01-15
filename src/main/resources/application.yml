@@ -12,7 +12,7 @@ spring:
     name: ms-order-product
 products:
   service:
-    url: http://ms-products-and-categories-env.eba-df2vkatt.us-east-2.elasticbeanstalk.com
+    url: http://localhost:8082/api/products
 coupon:
   admin:
     password: Admin2025*

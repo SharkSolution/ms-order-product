@@ -71,6 +71,8 @@ implements DailyClosureService {
         BigDecimal totalCard = BigDecimal.ZERO;
         BigDecimal totalNequi = BigDecimal.ZERO;
         BigDecimal totalQr = BigDecimal.ZERO;
+        BigDecimal baseBalance = this.closureRepository.findLastClosure().map(DailyClosure::getBaseBalanceForNextDay).orElse(BigDecimal.ZERO);
+
 
         for (Object[] result : results) {
             String paymentMethod = (String)result[0];
@@ -102,48 +104,52 @@ implements DailyClosureService {
         LocalDateTime openingTime = minCreatedAt.orElse(startOfDay);
         int totalOrders = countOrders != null ? countOrders : 0;
         log.info("Preview generado para el d\u00eda actual: CASH={}, CARD={}, NEQUI={}, QR={}, TOTAL_EXPECTED={}, TOTAL_ORDERS={}, OpeningTime={}", new Object[]{totalCash, totalCard, totalNequi, totalQr, totalExpected, totalOrders, openingTime});
-        return new ClosurePreviewResponse(openingTime, currentTime, totalCash, totalCard, totalNequi, totalQr, totalExpected, totalOrders, "Preview de cierre generado correctamente para el d\u00eda actual.");
+        return new ClosurePreviewResponse(openingTime, currentTime, totalOrders, "Preview de cierre generado correctamente para el d\u00eda actual.");
     }
 
-					@Transactional
-    public ClosureResponse executeClosure(ClosureRequest request) {
-        log.info("Ejecutando cierre de caja para cajero: {}", (Object)request.userName());
-        LocalDateTime openingTime = this.determineOpeningTime();
-        LocalDateTime closingTime = LocalDateTime.now(BOGOTA_ZONE);
-        List orders = this.getOrdersForPeriod(openingTime, closingTime);
-        BigDecimal expectedCash = this.calculateTotalByPaymentMethod(orders, PAYMENT_CASH);
-        BigDecimal expectedCard = this.calculateTotalByPaymentMethod(orders, PAYMENT_CARD);
-        BigDecimal expectedNequi = this.calculateTotalByPaymentMethod(orders, PAYMENT_NEQUI);
-        BigDecimal expectedQr = this.calculateTotalByPaymentMethod(orders, PAYMENT_QR);
-        BigDecimal countedCash = request.totalCountedCash();
-        BigDecimal countedCard = request.totalCountedCard();
-        BigDecimal countedNequi = request.totalCountedNequi();
-        BigDecimal countedQr = request.totalCountedQr();
-        BigDecimal totalExpected = expectedCash.add(expectedCard).add(expectedNequi).add(expectedQr);
-        BigDecimal totalCounted = countedCash.add(countedCard).add(countedNequi).add(countedQr);
-        BigDecimal difference = totalCounted.subtract(totalExpected);
-        String status = this.determineStatus(difference);
-        DailyClosure closure = new DailyClosure();
-        closure.setId(UUID.randomUUID());
-        closure.setUserName(request.userName());
-        closure.setOpeningTime(openingTime);
-        closure.setClosingTime(closingTime);
-        closure.setTotalExpectedCash(expectedCash);
-        closure.setTotalExpectedCard(expectedCard);
-        closure.setTotalExpectedNequi(expectedNequi);
-        closure.setTotalExpectedQr(expectedQr);
-        closure.setTotalCountedCash(countedCash);
-        closure.setTotalCountedCard(countedCard);
-        closure.setTotalCountedNequi(countedNequi);
-        closure.setTotalCountedQr(countedQr);
-        closure.setDifferenceAmount(difference);
-        closure.setStatus(status);
-        closure.setNotes(request.notes());
-        DailyClosure savedClosure = this.closureRepository.save(closure);
-        log.info("Cierre ejecutado exitosamente. ID: {}, Cajero: {}, Status: {}, Diferencia: {}", new Object[]{savedClosure.getId(), savedClosure.getUserName(), status, difference});
-        return new ClosureResponse(savedClosure.getId(), savedClosure.getUserName(), savedClosure.getOpeningTime(), savedClosure.getClosingTime(), expectedCash, expectedCard, expectedNequi, expectedQr, totalExpected, countedCash, countedCard, countedNequi, countedQr, totalCounted, difference, status, savedClosure.getNotes(), this.generateClosureMessage(status, difference));
-    }
-    private LocalDateTime determineOpeningTime() {
+					    @Transactional
+					    public ClosureResponse executeClosure(ClosureRequest request) {
+					        log.info("Ejecutando cierre de caja para cajero: {}", (Object)request.userName());
+					        LocalDateTime openingTime = this.determineOpeningTime();
+					        LocalDateTime closingTime = LocalDateTime.now(BOGOTA_ZONE);
+					        List orders = this.getOrdersForPeriod(openingTime, closingTime);
+					        BigDecimal expectedCash = this.calculateTotalByPaymentMethod(orders, PAYMENT_CASH);
+					        BigDecimal expectedCard = this.calculateTotalByPaymentMethod(orders, PAYMENT_CARD);
+					        BigDecimal expectedNequi = this.calculateTotalByPaymentMethod(orders, PAYMENT_NEQUI);
+					        BigDecimal expectedQr = this.calculateTotalByPaymentMethod(orders, PAYMENT_QR);
+					
+					        BigDecimal previousBaseBalance = this.closureRepository.findLastClosure().map(DailyClosure::getBaseBalanceForNextDay).orElse(BigDecimal.ZERO);
+					
+					        BigDecimal countedCash = request.totalCountedCash().subtract(previousBaseBalance);
+					        BigDecimal countedCard = request.totalCountedCard();
+					        BigDecimal countedNequi = request.totalCountedNequi();
+					        BigDecimal countedQr = request.totalCountedQr();
+					        
+					        BigDecimal totalExpected = expectedCash.add(expectedCard).add(expectedNequi).add(expectedQr);
+					        BigDecimal totalCounted = countedCash.add(countedCard).add(countedNequi).add(countedQr);
+					        BigDecimal difference = totalCounted.subtract(totalExpected);
+					        String status = this.determineStatus(difference);
+					        DailyClosure closure = new DailyClosure();
+					        closure.setId(UUID.randomUUID());
+					        closure.setUserName(request.userName());
+					        closure.setOpeningTime(openingTime);
+					        closure.setClosingTime(closingTime);
+					        closure.setTotalExpectedCash(expectedCash);
+					        closure.setTotalExpectedCard(expectedCard);
+					        closure.setTotalExpectedNequi(expectedNequi);
+					        closure.setTotalExpectedQr(expectedQr);
+					        closure.setTotalCountedCash(countedCash);
+					        closure.setTotalCountedCard(countedCard);
+					        closure.setTotalCountedNequi(countedNequi);
+					        closure.setTotalCountedQr(countedQr);
+					        closure.setDifferenceAmount(difference);
+					        closure.setStatus(status);
+					        closure.setNotes(request.notes());
+					        closure.setBaseBalanceForNextDay(request.baseBalanceForNextDay());
+					        DailyClosure savedClosure = this.closureRepository.save(closure);
+					        log.info("Cierre ejecutado exitosamente. ID: {}, Cajero: {}, Status: {}, Diferencia: {}", new Object[]{savedClosure.getId(), savedClosure.getUserName(), status, difference});
+					        return new ClosureResponse(savedClosure.getId(), savedClosure.getUserName(), savedClosure.getOpeningTime(), savedClosure.getClosingTime(), expectedCash, expectedCard, expectedNequi, expectedQr, totalExpected, countedCash, countedCard, countedNequi, countedQr, totalCounted, difference, status, savedClosure.getNotes(), this.generateClosureMessage(status, difference), previousBaseBalance);
+					    }    private LocalDateTime determineOpeningTime() {
         return this.closureRepository.findLastClosure().map(DailyClosure::getClosingTime).orElseGet(() -> {
             log.info("No se encontr\u00f3 cierre anterior. Usando la fecha de creaci\u00f3n de la primera orden.");
             return this.orderRepository.findFirstByOrderByCreatedAtAsc().map(Order::getCreatedAt).orElse(LocalDateTime.now(BOGOTA_ZONE));
@@ -195,7 +201,7 @@ implements DailyClosureService {
         BigDecimal countedQr = closure.getTotalCountedQr() != null ? closure.getTotalCountedQr() : BigDecimal.ZERO;
         BigDecimal totalExpected = expectedCash.add(expectedCard).add(expectedNequi).add(expectedQr);
         BigDecimal totalCounted = countedCash.add(countedCard).add(countedNequi).add(countedQr);
-        return new ClosureResponse(closure.getId(), closure.getUserName(), closure.getOpeningTime(), closure.getClosingTime(), expectedCash, expectedCard, expectedNequi, expectedQr, totalExpected, countedCash, countedCard, countedNequi, countedQr, totalCounted, closure.getDifferenceAmount(), closure.getStatus(), closure.getNotes(), this.generateClosureMessage(closure.getStatus(), closure.getDifferenceAmount()));
+        return new ClosureResponse(closure.getId(), closure.getUserName(), closure.getOpeningTime(), closure.getClosingTime(), expectedCash, expectedCard, expectedNequi, expectedQr, totalExpected, countedCash, countedCard, countedNequi, countedQr, totalCounted, closure.getDifferenceAmount(), closure.getStatus(), closure.getNotes(), this.generateClosureMessage(closure.getStatus(), closure.getDifferenceAmount()), closure.getBaseBalanceForNextDay());
     }
     @Generated
     public DailyClosureServiceImpl(DailyClosureRepository closureRepository, OrderRepository orderRepository) {
