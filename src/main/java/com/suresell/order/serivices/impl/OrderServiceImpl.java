@@ -53,7 +53,7 @@ public class OrderServiceImpl implements OrderService {
     @Override
     @Transactional
     public void createOrUpdateOrder(OrderRequestRecord dto) {
-        if (!List.of("CASH", "CARD", "NEQUI", "QR").contains(dto.paymentMethod())) {
+        if (dto.paymentMethod() == null || !List.of("CASH", "CARD", "NEQUI", "QR").contains(dto.paymentMethod())) {
             throw new IllegalArgumentException("Método de pago inválido. Debe ser: CASH, CARD, NEQUI o QR");
         }
 
