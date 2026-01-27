@@ -34,6 +34,9 @@ dependencies {
 
 	implementation 'org.apache.poi:poi-ooxml:5.2.3'
 
+	// Caffeine cache - para cache cross-request de productos
+	implementation 'com.github.ben-manes.caffeine:caffeine:3.1.8'
+
 	testImplementation 'org.springframework.boot:spring-boot-starter-test'
 	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }

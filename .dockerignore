@@ -1,0 +1,52 @@
+# Git files
+.git
+.gitignore
+.gitattributes
+.github
+
+# Build outputs
+build/
+target/
+out/
+bin/
+
+# Gradle cache
+.gradle/
+
+# IDE files
+.idea/
+.vscode/
+.settings/
+.project
+.classpath
+*.iml
+*.iws
+*.ipr
+
+# OS files
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+
+# Documentation and non-essential files
+README.md
+*.md
+docs/
+LICENSE
+
+# Docker files (avoid recursion)
+Dockerfile*
+.dockerignore
+docker-compose*.yml
+
+# Test files and coverage reports
+coverage/
+*.log
+logs/
+
+# Temporary files
+tmp/
+temp/
+*.tmp

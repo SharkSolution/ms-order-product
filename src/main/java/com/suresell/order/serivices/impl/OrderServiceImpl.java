@@ -17,6 +17,7 @@ import com.suresell.order.model.record.OrderRequestRecord;
 import com.suresell.order.model.record.OrderResponseRecord;
 import com.suresell.order.model.record.ProductResponse;
 import com.suresell.order.repository.OrderEditHistoryRepository;
+import com.suresell.order.repository.OrderItemRepository;
 import com.suresell.order.repository.OrderRepository;
 import com.suresell.order.rest_client.ProductClient;
 import com.suresell.order.serivices.DiscountService;
@@ -41,6 +42,7 @@ import java.util.Optional;
 public class OrderServiceImpl implements OrderService {
 
     private final OrderRepository orderRepository;
+    private final OrderItemRepository orderItemRepository;
     private final ProductClient productClient;
     private final OrderMapper orderMapper;
     private final DiscountService discountService;
@@ -144,39 +146,115 @@ public class OrderServiceImpl implements OrderService {
 
     @Override
     public List<OrderResponseRecord> getKitchenOrders() {
-        return orderRepository.findActiveOrders(OrderStatus.pagado).stream()
-                .map(order -> new OrderResponseRecord(
-                        order.getIdOrder(),
-                        order.getPagerColor(),
-                        order.getPagerNumber(),
-                        order.getCreatedAt(),
-                        order.getSubtotal(),
-                        order.getTotal(),
-                        order.getStatus().getDisplayName(),
-                        order.getPaymentMethod(),
-                        order.getDiscountCode(),
-                        order.getDiscountPercentage(),
-                        order.getDiscountAmount(),
-                        order.getDeliveredAt(),
-                        order.getElapsedSecondsToDeliver(),
-                        order.getItems().stream()
-                                .map(item -> new OrderItemResponseRecord(
-                                        item.getProductId(),
-                                        productClient.getProductName(item.getProductId()),
-                                        item.getQuantity(),
-                                        item.getUnitPrice(),
-                                        item.getTotalPrice(),
-                                        item.getInstructions(),
-                                        item.getComboGroup()))
-                                .toList()))
+        // Query optimizada: trae órdenes CON items en 1 sola query (evita N+1)
+        List<Order> orders = orderRepository.findActiveOrdersWithItems(OrderStatus.pagado);
+
+        // Usar mapper con cache Caffeine para nombres de productos
+        return orders.stream()
+                .map(orderMapper::toOrderResponse)
                 .toList();
     }
 
     @Override
     public List<OrderResponseRecord> getAllOrders() {
-        return orderRepository.findAll().stream()
-                .map(orderMapper::toOrderResponse)
-                .toList();
+        try {
+            // Usar query optimizada con JOIN FETCH para evitar N+1 queries
+            List<Order> orders = orderRepository.findAllWithItems();
+
+            // Mapear a DTOs (con cache de nombres de productos para evitar N+1 HTTP calls)
+            return orders.stream()
+                    .map(orderMapper::toOrderResponse)
+                    .toList();
+        } finally {
+            // Limpiar cache de nombres de productos después de procesar el lote
+            orderMapper.clearProductNameCache();
+        }
+    }
+
+    @Override
+    public Page<OrderResponseRecord> getAllOrdersPaginated(int page, int size) {
+        try {
+            // PASO 1: Paginar SOLO las órdenes (sin items)
+            Pageable pageable = PageRequest.of(page, size);
+            Page<Order> ordersPage = orderRepository.findAllOrdersOnly(pageable);
+
+            // Si no hay órdenes, retornar página vacía
+            if (ordersPage.isEmpty()) {
+                return Page.empty(pageable);
+            }
+
+            // PASO 2: Extraer IDs de las órdenes de esta página
+            List<Long> orderIds = ordersPage.getContent().stream()
+                    .map(Order::getIdOrder)
+                    .toList();
+
+            // PASO 3: Traer items SOLO de estas órdenes (1 query)
+            List<OrderItem> items = orderItemRepository.findByOrderIds(orderIds);
+
+            // PASO 4: Agrupar items por orden
+            var itemsByOrderId = items.stream()
+                    .collect(java.util.stream.Collectors.groupingBy(
+                            oi -> oi.getOrder().getIdOrder()
+                    ));
+
+            // PASO 5: Asignar items a cada orden
+            ordersPage.getContent().forEach(order -> {
+                List<OrderItem> orderItems = itemsByOrderId.getOrDefault(
+                        order.getIdOrder(),
+                        new ArrayList<>()
+                );
+                order.setItems(orderItems);
+            });
+
+            // PASO 6: Mapear a DTOs
+            return ordersPage.map(orderMapper::toOrderResponse);
+        } finally {
+            // Limpiar cache de nombres de productos
+            orderMapper.clearProductNameCache();
+        }
+    }
+
+    @Override
+    public List<OrderResponseRecord> getAllOrdersKeyset(Long afterId, int size) {
+        try {
+            // PASO 1: Traer órdenes después del ID dado (keyset pagination)
+            Pageable pageable = PageRequest.of(0, size);
+            List<Order> orders = orderRepository.findOrdersAfter(afterId, pageable);
+
+            if (orders.isEmpty()) {
+                return new ArrayList<>();
+            }
+
+            // PASO 2: Extraer IDs
+            List<Long> orderIds = orders.stream()
+                    .map(Order::getIdOrder)
+                    .toList();
+
+            // PASO 3: Traer items
+            List<OrderItem> items = orderItemRepository.findByOrderIds(orderIds);
+
+            // PASO 4: Agrupar items por orden
+            var itemsByOrderId = items.stream()
+                    .collect(java.util.stream.Collectors.groupingBy(
+                            oi -> oi.getOrder().getIdOrder()
+                    ));
+
+            // PASO 5: Asignar items a cada orden
+            orders.forEach(order -> {
+                List<OrderItem> orderItems = itemsByOrderId.getOrDefault(
+                        order.getIdOrder(),
+                        new ArrayList<>()
+                );
+                order.setItems(orderItems);
+            });
+
+            // PASO 6: Mapear a DTOs
+            return orders.stream()
+                    .map(orderMapper::toOrderResponse)
+                    .toList();
+        } finally {
+            orderMapper.clearProductNameCache();
+        }
     }
 
     @Override

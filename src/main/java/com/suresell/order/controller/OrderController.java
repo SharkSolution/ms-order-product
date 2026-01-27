@@ -5,6 +5,7 @@ import com.suresell.order.model.entity.OrderEditHistory;
 import com.suresell.order.model.record.OrderItemResponseRecord;
 import com.suresell.order.model.record.OrderRequestRecord;
 import com.suresell.order.model.record.OrderResponseRecord;
+import com.suresell.order.model.record.PageResponse;
 import com.suresell.order.serivices.OrderService;
 import lombok.RequiredArgsConstructor;
 import org.apache.poi.ss.usermodel.Row;
@@ -49,9 +50,35 @@ public class OrderController {
         return orderService.getKitchenOrders();
     }
 
+    private static final int MAX_PAGE_SIZE = 50;
+    private static final int DEFAULT_PAGE_SIZE = 20;
+
     @GetMapping("/historial")
-    public List<OrderResponseRecord> getAllOrders() {
-        return orderService.getAllOrders();
+    public ResponseEntity<PageResponse<OrderResponseRecord>> getAllOrders(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size,
+            @RequestParam(required = false) Long afterId) {
+
+        // Cap duro al size para evitar queries gigantes
+        int safeSize = Math.min(Math.max(size, 1), MAX_PAGE_SIZE);
+
+        // Keyset pagination (recomendado para scroll infinito)
+        if (afterId != null) {
+            List<OrderResponseRecord> orders = orderService.getAllOrdersKeyset(afterId, safeSize);
+            // Wrap en PageResponse para consistencia
+            return ResponseEntity.ok(new PageResponse<>(
+                orders,
+                orders.size(),  // No sabemos el total exacto en keyset
+                -1,             // totalPages desconocido en keyset
+                safeSize,
+                0,
+                orders.size() < safeSize  // last = true si retornó menos del size pedido
+            ));
+        }
+
+        // Siempre usar paginación - NO hay backward compatibility sin page
+        Page<OrderResponseRecord> ordersPage = orderService.getAllOrdersPaginated(page, safeSize);
+        return ResponseEntity.ok(PageResponse.from(ordersPage));
     }
 
     @PatchMapping("/{orderId}/status")
@@ -98,13 +125,14 @@ public class OrderController {
      * Si se proporciona orderId, filtra por esa orden específica.
      */
     @GetMapping("/edit-history")
-    public ResponseEntity<Page<OrderEditHistory>> getOrderEditHistory(
+    public ResponseEntity<PageResponse<OrderEditHistory>> getOrderEditHistory(
             @RequestParam(required = false) Long orderId,
             @RequestParam String adminPassword,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "10") int size) {
-        Page<OrderEditHistory> history = orderService.getOrderEditHistory(orderId, adminPassword, page, size);
-        return ResponseEntity.ok(history);
+        int safeSize = Math.min(size, MAX_PAGE_SIZE);
+        Page<OrderEditHistory> history = orderService.getOrderEditHistory(orderId, adminPassword, page, safeSize);
+        return ResponseEntity.ok(PageResponse.from(history));
     }
 
     @GetMapping("/report")

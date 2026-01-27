@@ -15,6 +15,10 @@ public interface OrderService {
 
     List<OrderResponseRecord> getAllOrders();
 
+    Page<OrderResponseRecord> getAllOrdersPaginated(int page, int size);
+
+    List<OrderResponseRecord> getAllOrdersKeyset(Long afterId, int size);
+
     OrderResponseRecord getOrderById(Long orderId);
 
     void updateStatus(Long orderId, String status);
