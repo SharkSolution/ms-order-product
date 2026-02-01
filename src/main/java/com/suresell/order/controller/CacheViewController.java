@@ -852,7 +852,7 @@ public class CacheViewController {
                                         <td><small>${order.localOrderId.substring(6, 20)}...</small></td>
                                         <td><span class="timestamp">${formatDate(order.createdAt)}</span></td>
                                         <td>${itemCount} item(s)</td>
-                                        <td>$${(total / 100).toFixed(2)}</td>
+                                        <td>${formatCurrency(total)}</td>
                                         <td>${status}</td>
                                         <td>${order.syncAttempts}</td>
                                         <td>
@@ -904,7 +904,7 @@ public class CacheViewController {
                                     html += `<tr>
                                         <td><strong>${order.pagerColor} #${order.pagerNumber}</strong></td>
                                         <td>${itemsText}</td>
-                                        <td>$${(order.total / 100).toFixed(2)}</td>
+                                        <td>${formatCurrency(order.total)}</td>
                                         <td><span class="badge info">${order.status}</span></td>
                                         <td><span class="timestamp">${formatDate(order.createdAt)}</span></td>
                                         <td>
@@ -933,6 +933,16 @@ public class CacheViewController {
                             hour: '2-digit',
                             minute: '2-digit'
                         });
+                    }
+
+                    function formatCurrency(cents) {
+                        const pesos = cents / 100;
+                        return new Intl.NumberFormat('es-CO', {
+                            style: 'currency',
+                            currency: 'COP',
+                            minimumFractionDigits: 0,
+                            maximumFractionDigits: 0
+                        }).format(pesos);
                     }
 
                     function cleanSynced() {
@@ -1017,8 +1027,8 @@ public class CacheViewController {
                             html += `<div class="product-item">
                                 <div class="product-name">${item.quantity}x Producto ID: ${item.productId}</div>
                                 <div class="product-details">
-                                    <span>Precio Unitario: $${(item.unitPrice / 100).toFixed(2)}</span>
-                                    <span>Subtotal: $${(item.quantity * item.unitPrice / 100).toFixed(2)}</span>
+                                    <span>Precio Unitario: ${formatCurrency(item.unitPrice)}</span>
+                                    <span>Subtotal: ${formatCurrency(item.quantity * item.unitPrice)}</span>
                                 </div>
                                 ${item.instructions ? `<div class="product-instructions">📝 ${item.instructions}</div>` : ''}
                             </div>`;
@@ -1026,7 +1036,7 @@ public class CacheViewController {
                         html += '</div>';
 
                         html += '<div class="total-section">';
-                        html += '<div class="total-row"><span>Total de la Orden:</span><span>$' + (total / 100).toFixed(2) + '</span></div>';
+                        html += '<div class="total-row"><span>Total de la Orden:</span><span>' + formatCurrency(total) + '</span></div>';
                         html += '</div>';
 
                         document.getElementById('modalBody').innerHTML = html;
@@ -1060,7 +1070,7 @@ public class CacheViewController {
                         if (order.discountCode) {
                             html += `<div class="detail-row">
                                 <span class="detail-label">Cupón de Descuento:</span>
-                                <span class="detail-value">${order.discountCode} (-$${(order.discountAmount / 100).toFixed(2)})</span>
+                                <span class="detail-value">${order.discountCode} (-${formatCurrency(order.discountAmount)})</span>
                             </div>`;
                         }
                         html += '</div>';
@@ -1071,8 +1081,8 @@ public class CacheViewController {
                             html += `<div class="product-item">
                                 <div class="product-name">${item.quantity}x ${item.nameProduct}</div>
                                 <div class="product-details">
-                                    <span>Precio Unitario: $${(item.unitPrice / 100).toFixed(2)}</span>
-                                    <span>Subtotal: $${(item.totalPrice / 100).toFixed(2)}</span>
+                                    <span>Precio Unitario: ${formatCurrency(item.unitPrice)}</span>
+                                    <span>Subtotal: ${formatCurrency(item.totalPrice)}</span>
                                 </div>
                                 ${item.instructions ? `<div class="product-instructions">📝 ${item.instructions}</div>` : ''}
                             </div>`;
@@ -1080,11 +1090,11 @@ public class CacheViewController {
                         html += '</div>';
 
                         html += '<div class="total-section">';
-                        html += `<div class="total-row"><span>Subtotal:</span><span>$${(order.subtotal / 100).toFixed(2)}</span></div>`;
+                        html += `<div class="total-row"><span>Subtotal:</span><span>${formatCurrency(order.subtotal)}</span></div>`;
                         if (order.discountAmount) {
-                            html += `<div class="total-row"><span>Descuento:</span><span>-$${(order.discountAmount / 100).toFixed(2)}</span></div>`;
+                            html += `<div class="total-row"><span>Descuento:</span><span>-${formatCurrency(order.discountAmount)}</span></div>`;
                         }
-                        html += `<div class="total-row"><span>Total:</span><span>$${(order.total / 100).toFixed(2)}</span></div>`;
+                        html += `<div class="total-row"><span>Total:</span><span>${formatCurrency(order.total)}</span></div>`;
                         html += '</div>';
 
                         document.getElementById('modalBody').innerHTML = html;
