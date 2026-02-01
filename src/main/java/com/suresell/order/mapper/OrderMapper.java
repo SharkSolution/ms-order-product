@@ -92,4 +92,18 @@ public class OrderMapper {
                 stats.hitCount(), stats.missCount(), stats.hitRate() * 100,
                 productNameCache.estimatedSize());
     }
+
+    /**
+     * Obtiene nombre de producto usando cache Caffeine.
+     * Reutilizable desde otros servicios (ej: ResilientOrderService).
+     *
+     * @param productId ID del producto
+     * @return Nombre del producto o "Producto no disponible" si falla
+     */
+    public String getProductNameCached(String productId) {
+        return productNameCache.get(
+            productId,
+            productClient::getProductName
+        );
+    }
 }

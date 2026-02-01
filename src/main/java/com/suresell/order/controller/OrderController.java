@@ -7,7 +7,9 @@ import com.suresell.order.model.record.OrderRequestRecord;
 import com.suresell.order.model.record.OrderResponseRecord;
 import com.suresell.order.model.record.PageResponse;
 import com.suresell.order.serivices.OrderService;
+import com.suresell.order.serivices.ResilientOrderService;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
@@ -20,20 +22,39 @@ import java.io.ByteArrayOutputStream;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * Controller de órdenes con soporte offline-first.
+ * Los endpoints críticos (create, cocina) usan ResilientOrderService.
+ */
 @RestController
 @RequestMapping("/orders")
 @RequiredArgsConstructor
+@Slf4j
 public class OrderController {
 
     private final OrderService orderService;
+    private final ResilientOrderService resilientOrderService;
     private final OrderRequestAdapter orderRequestAdapter;
 
+    /**
+     * Crea una orden con fallback automático a modo offline si AWS falla.
+     * NUNCA debe retornar error 500 por fallo de AWS.
+     */
     @PostMapping("/create")
     public ResponseEntity<Map<String, String>> createOrder(@RequestBody Map<String, Object> payload) {
-        OrderRequestRecord dto = orderRequestAdapter.normalize(payload);
-        orderService.createOrUpdateOrder(dto);
-        return ResponseEntity.status(HttpStatus.CREATED)
-                .body(Map.of("message", "Orden creada con éxito"));
+        try {
+            OrderRequestRecord dto = orderRequestAdapter.normalize(payload);
+            resilientOrderService.createOrder(dto);
+
+            log.info("Order created successfully");
+
+            return ResponseEntity.status(HttpStatus.CREATED)
+                    .body(Map.of("message", "Orden creada con éxito"));
+        } catch (Exception e) {
+            log.error("Critical error creating order: {}", e.getMessage(), e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Map.of("error", "Error al crear orden. Por favor intente nuevamente."));
+        }
     }
 
     @PutMapping("/{orderId}")
@@ -45,9 +66,19 @@ public class OrderController {
         return ResponseEntity.ok(Map.of("message", "Orden actualizada con éxito"));
     }
 
+    /**
+     * Obtiene órdenes de cocina con fallback a cache si AWS falla.
+     * NUNCA debe retornar error 500 o lista vacía si hay cache disponible.
+     */
     @GetMapping("/cocina")
     public List<OrderResponseRecord> getKitchenOrders() {
-        return orderService.getKitchenOrders();
+        try {
+            return resilientOrderService.getKitchenOrders();
+        } catch (Exception e) {
+            log.error("Critical error getting kitchen orders: {}", e.getMessage(), e);
+            // En caso de error crítico, retornar lista vacía (mejor que error 500)
+            return List.of();
+        }
     }
 
     private static final int MAX_PAGE_SIZE = 50;

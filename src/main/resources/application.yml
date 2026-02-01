@@ -1,25 +1,61 @@
 server:
   port: 8081
+
 spring:
+  # AWS RDS - Base de datos principal
   datasource:
     url: jdbc:postgresql://database-surresell.c740uem2quei.us-east-2.rds.amazonaws.com:5432/pos_db
     username: postgres
     password: Sharkcol2025*
+    hikari:
+      connection-timeout: 3000
+      maximum-pool-size: 10
+
   jpa:
     properties:
       hibernate:
         format_sql: true
         use_sql_comments: true
+    hibernate:
+      ddl-auto: update
     show-sql: false
+
 logging:
   level:
     org.hibernate.SQL: DEBUG
     org.hibernate.orm.jdbc.bind: TRACE
+    com.suresell.order.serivices: INFO
   application:
     name: ms-order-product
+
+# Servicio de productos en AWS
 products:
   service:
-    url: http://ms-products-and-categories-env.eba-df2vkatt.us-east-2.elasticbeanstalk.com
+    url: http://localhost:8082
+
+# Cupones
 coupon:
   admin:
     password: Admin2025*
+
+# CONFIGURACIÓN OFFLINE-FIRST
+# Cache persistente en disco
+cache:
+  enabled: true
+  path: ./cache
+  ttl-minutes: 60
+  cleanup:
+    enabled: true
+    cron: "0 0 19 * * ?"  # 19:00 todos los días (zona America/Bogota)
+
+# Sincronización automática
+sync:
+  enabled: true
+  interval-seconds: 30
+  batch-size: 10
+  max-retries: 5
+
+# Verificación de conectividad
+connectivity:
+  check-interval-seconds: 10
+  timeout-ms: 2000
