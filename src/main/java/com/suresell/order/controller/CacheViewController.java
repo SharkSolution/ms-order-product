@@ -118,99 +118,11 @@ public class CacheViewController {
         }
     }
 
-    /**
-     * Limpiar órdenes ya sincronizadas (seguro)
-     * POST http://localhost:8081/api/cache/clean-synced
-     */
-    @org.springframework.web.bind.annotation.PostMapping("/clean-synced")
-    public ResponseEntity<Map<String, Object>> cleanSyncedOrders() {
-        try {
-            var offlineOrders = resilientOrderService.getOfflineOrdersIndex();
-            long initialCount = offlineOrders.size();
-            long syncedCount = offlineOrders.stream().filter(o -> o.synced()).count();
 
-            // Filtrar solo las órdenes NO sincronizadas
-            var pendingOrders = offlineOrders.stream()
-                    .filter(o -> !o.synced())
-                    .collect(Collectors.toList());
 
-            // Guardar solo las pendientes
-            diskCacheService.save("offline-orders-index", pendingOrders);
 
-            Map<String, Object> response = new HashMap<>();
-            response.put("success", true);
-            response.put("message", "Órdenes sincronizadas eliminadas");
-            response.put("ordersRemoved", syncedCount);
-            response.put("ordersRemaining", pendingOrders.size());
 
-            return ResponseEntity.ok(response);
-        } catch (Exception e) {
-            Map<String, Object> error = new HashMap<>();
-            error.put("success", false);
-            error.put("error", "Failed to clean synced orders: " + e.getMessage());
-            return ResponseEntity.internalServerError().body(error);
-        }
-    }
 
-    /**
-     * Limpiar cache de órdenes de cocina
-     * POST http://localhost:8081/api/cache/clean-kitchen
-     */
-    @org.springframework.web.bind.annotation.PostMapping("/clean-kitchen")
-    public ResponseEntity<Map<String, Object>> cleanKitchenCache() {
-        try {
-            Path cachePath = Paths.get(diskCacheService.getStats().cachePath());
-            Path kitchenFile = cachePath.resolve("kitchen-orders.json");
-
-            if (Files.exists(kitchenFile)) {
-                Files.delete(kitchenFile);
-            }
-
-            Map<String, Object> response = new HashMap<>();
-            response.put("success", true);
-            response.put("message", "Cache de cocina eliminado (se recreará automáticamente)");
-
-            return ResponseEntity.ok(response);
-        } catch (Exception e) {
-            Map<String, Object> error = new HashMap<>();
-            error.put("success", false);
-            error.put("error", "Failed to clean kitchen cache: " + e.getMessage());
-            return ResponseEntity.internalServerError().body(error);
-        }
-    }
-
-    /**
-     * PELIGROSO: Borrar TODO el cache (incluye órdenes pendientes)
-     * POST http://localhost:8081/api/cache/clear-all?confirm=true
-     */
-    @org.springframework.web.bind.annotation.PostMapping("/clear-all")
-    public ResponseEntity<Map<String, Object>> clearAllCache(
-            @org.springframework.web.bind.annotation.RequestParam(required = false) Boolean confirm) {
-
-        if (confirm == null || !confirm) {
-            Map<String, Object> error = new HashMap<>();
-            error.put("success", false);
-            error.put("error", "Confirmación requerida. Usa ?confirm=true");
-            error.put("warning", "Esto borrará TODAS las órdenes offline incluyendo las NO sincronizadas");
-            return ResponseEntity.badRequest().body(error);
-        }
-
-        try {
-            diskCacheService.clearAllCache();
-
-            Map<String, Object> response = new HashMap<>();
-            response.put("success", true);
-            response.put("message", "TODO el cache ha sido eliminado");
-            response.put("warning", "Si había órdenes offline no sincronizadas, se han perdido");
-
-            return ResponseEntity.ok(response);
-        } catch (Exception e) {
-            Map<String, Object> error = new HashMap<>();
-            error.put("success", false);
-            error.put("error", "Failed to clear cache: " + e.getMessage());
-            return ResponseEntity.internalServerError().body(error);
-        }
-    }
 
     /**
      * Dashboard de cache (HTML visual y bonito)
@@ -219,7 +131,7 @@ public class CacheViewController {
     @GetMapping(value = "/dashboard", produces = "text/html")
     public ResponseEntity<String> cacheDashboard() {
         String html = getModernDashboardHTML();
-        return ResponseEntity.ok(html);
+        return ResponseEntity.ok().header("Cache-Control", "no-cache, no-store, must-revalidate").body(html);
     }
 
     private String getModernDashboardHTML() {
@@ -740,21 +652,7 @@ public class CacheViewController {
                             </div>
                         </div>
 
-                        <div class="card">
-                            <h2>🧹 Limpieza del Caché</h2>
-                            <p style="color: #666; margin-bottom: 20px;">
-                                Libera espacio eliminando datos que ya no son necesarios.
-                            </p>
-                            <button class="btn btn-success" onclick="cleanSynced()">
-                                ✅ Limpiar Órdenes Sincronizadas
-                            </button>
-                            <button class="btn btn-warning" onclick="cleanKitchen()">
-                                🍳 Limpiar Cache de Cocina
-                            </button>
-                            <button class="btn btn-danger" onclick="clearAll()">
-                                ⚠️ Borrar TODO el Cache
-                            </button>
-                        </div>
+
                     </div>
                 </div>
 
@@ -773,6 +671,11 @@ public class CacheViewController {
                 </div>
 
                 <script>
+                    function formatCurrency(valueInCents) {
+                        const pesos = valueInCents / 100;
+                        return '$' + pesos.toLocaleString('es-CO');
+                    }
+
                     function loadData() {
                         loadStats();
                         loadOfflineOrders();
@@ -832,6 +735,7 @@ public class CacheViewController {
 
                                 let html = '<table><thead><tr>';
                                 html += '<th>ID Local</th>';
+                                html += '<th>ID AWS</th>';
                                 html += '<th>Creada</th>';
                                 html += '<th>Productos</th>';
                                 html += '<th>Total</th>';
@@ -849,10 +753,11 @@ public class CacheViewController {
                                         '<span class="badge warning">⏳ Pendiente</span>';
 
                                     html += `<tr>
-                                        <td><small>${order.localOrderId.substring(6, 20)}...</small></td>
+                                        <td><small>${order.localOrderId.substring(6, 16)}...</small></td>
+                                        <td>${order.externalOrderId || 'N/A'}</td>
                                         <td><span class="timestamp">${formatDate(order.createdAt)}</span></td>
                                         <td>${itemCount} item(s)</td>
-                                        <td>$${(total / 100).toFixed(2)}</td>
+                                        <td>${formatCurrency(total)}</td>
                                         <td>${status}</td>
                                         <td>${order.syncAttempts}</td>
                                         <td>
@@ -904,7 +809,7 @@ public class CacheViewController {
                                     html += `<tr>
                                         <td><strong>${order.pagerColor} #${order.pagerNumber}</strong></td>
                                         <td>${itemsText}</td>
-                                        <td>$${(order.total / 100).toFixed(2)}</td>
+                                        <td>${formatCurrency(order.total)}</td>
                                         <td><span class="badge info">${order.status}</span></td>
                                         <td><span class="timestamp">${formatDate(order.createdAt)}</span></td>
                                         <td>
@@ -935,44 +840,7 @@ public class CacheViewController {
                         });
                     }
 
-                    function cleanSynced() {
-                        if (confirm('¿Eliminar órdenes ya sincronizadas?\\n\\nEsto es seguro y liberará espacio.')) {
-                            fetch('/api/cache/clean-synced', { method: 'POST' })
-                                .then(r => r.json())
-                                .then(data => {
-                                    alert(`✅ ${data.message}\\n\\nÓrdenes eliminadas: ${data.ordersRemoved}\\nÓrdenes restantes: ${data.ordersRemaining}`);
-                                    loadData();
-                                })
-                                .catch(err => alert('❌ Error: ' + err));
-                        }
-                    }
 
-                    function cleanKitchen() {
-                        if (confirm('¿Eliminar cache de cocina?\\n\\nSe recreará automáticamente.')) {
-                            fetch('/api/cache/clean-kitchen', { method: 'POST' })
-                                .then(r => r.json())
-                                .then(data => {
-                                    alert('✅ ' + data.message);
-                                    loadData();
-                                })
-                                .catch(err => alert('❌ Error: ' + err));
-                        }
-                    }
-
-                    function clearAll() {
-                        if (confirm('⚠️ ADVERTENCIA: Esto borrará TODO el cache incluyendo órdenes NO sincronizadas.\\n\\n¿Estás SEGURO?')) {
-                            const confirmation = prompt('Escribe "BORRAR TODO" para confirmar:');
-                            if (confirmation === 'BORRAR TODO') {
-                                fetch('/api/cache/clear-all?confirm=true', { method: 'POST' })
-                                    .then(r => r.json())
-                                    .then(data => {
-                                        alert('✅ ' + data.message);
-                                        loadData();
-                                    })
-                                    .catch(err => alert('❌ Error: ' + err));
-                            }
-                        }
-                    }
 
                     function viewOfflineOrder(order) {
                         const total = order.orderData.items.reduce((sum, item) =>
@@ -985,6 +853,12 @@ public class CacheViewController {
 
                         let html = '<div class="detail-section">';
                         html += '<h3>📋 Información General</h3>';
+                        if (order.externalOrderId) {
+                            html += `<div class="detail-row">
+                                <span class="detail-label">ID Externo (AWS):</span>
+                                <span class="detail-value">${order.externalOrderId}</span>
+                            </div>`;
+                        }
                         html += `<div class="detail-row">
                             <span class="detail-label">Pager:</span>
                             <span class="detail-value"><span class="pager-badge">${order.orderData.pagerColor} #${order.orderData.pagerNumber}</span></span>
@@ -1017,8 +891,8 @@ public class CacheViewController {
                             html += `<div class="product-item">
                                 <div class="product-name">${item.quantity}x Producto ID: ${item.productId}</div>
                                 <div class="product-details">
-                                    <span>Precio Unitario: $${(item.unitPrice / 100).toFixed(2)}</span>
-                                    <span>Subtotal: $${(item.quantity * item.unitPrice / 100).toFixed(2)}</span>
+                                    <span>Precio Unitario: ${item.unitPrice}</span>
+                                    <span>Subtotal: ${item.quantity * item.unitPrice}</span>
                                 </div>
                                 ${item.instructions ? `<div class="product-instructions">📝 ${item.instructions}</div>` : ''}
                             </div>`;
@@ -1026,7 +900,7 @@ public class CacheViewController {
                         html += '</div>';
 
                         html += '<div class="total-section">';
-                        html += '<div class="total-row"><span>Total de la Orden:</span><span>$' + (total / 100).toFixed(2) + '</span></div>';
+                        html += '<div class="total-row"><span>Total de la Orden:</span><span>' + total + '</span></div>';
                         html += '</div>';
 
                         document.getElementById('modalBody').innerHTML = html;
@@ -1060,7 +934,7 @@ public class CacheViewController {
                         if (order.discountCode) {
                             html += `<div class="detail-row">
                                 <span class="detail-label">Cupón de Descuento:</span>
-                                <span class="detail-value">${order.discountCode} (-$${(order.discountAmount / 100).toFixed(2)})</span>
+                                <span class="detail-value">${order.discountCode} (-${order.discountAmount})</span>
                             </div>`;
                         }
                         html += '</div>';
@@ -1071,8 +945,8 @@ public class CacheViewController {
                             html += `<div class="product-item">
                                 <div class="product-name">${item.quantity}x ${item.nameProduct}</div>
                                 <div class="product-details">
-                                    <span>Precio Unitario: $${(item.unitPrice / 100).toFixed(2)}</span>
-                                    <span>Subtotal: $${(item.totalPrice / 100).toFixed(2)}</span>
+                                    <span>Precio Unitario: ${item.unitPrice}</span>
+                                    <span>Subtotal: ${item.totalPrice}</span>
                                 </div>
                                 ${item.instructions ? `<div class="product-instructions">📝 ${item.instructions}</div>` : ''}
                             </div>`;
@@ -1080,11 +954,11 @@ public class CacheViewController {
                         html += '</div>';
 
                         html += '<div class="total-section">';
-                        html += `<div class="total-row"><span>Subtotal:</span><span>$${(order.subtotal / 100).toFixed(2)}</span></div>`;
+                        html += `<div class="total-row"><span>Subtotal:</span><span>${order.subtotal}</span></div>`;
                         if (order.discountAmount) {
-                            html += `<div class="total-row"><span>Descuento:</span><span>-$${(order.discountAmount / 100).toFixed(2)}</span></div>`;
+                            html += `<div class="total-row"><span>Descuento:</span><span>-${order.discountAmount}</span></div>`;
                         }
-                        html += `<div class="total-row"><span>Total:</span><span>$${(order.total / 100).toFixed(2)}</span></div>`;
+                        html += `<div class="total-row"><span>Total:</span><span>${order.total}</span></div>`;
                         html += '</div>';
 
                         document.getElementById('modalBody').innerHTML = html;

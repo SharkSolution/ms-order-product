@@ -88,7 +88,7 @@ public class ResilientOrderService {
     /**
      * Agrega una orden al índice de órdenes offline
      */
-    private void addToOfflineIndex(OfflineOrderRecord offlineOrder) {
+    private synchronized void addToOfflineIndex(OfflineOrderRecord offlineOrder) {
         List<OfflineOrderRecord> index = getOfflineOrdersIndex();
         index.add(offlineOrder);
         diskCacheService.save(OFFLINE_ORDERS_INDEX, index);
@@ -105,7 +105,7 @@ public class ResilientOrderService {
     /**
      * Actualiza una orden en el índice
      */
-    public void updateOfflineOrderInIndex(OfflineOrderRecord updatedOrder) {
+    public synchronized void updateOfflineOrderInIndex(OfflineOrderRecord updatedOrder) {
         List<OfflineOrderRecord> index = getOfflineOrdersIndex();
         index.removeIf(o -> o.localOrderId().equals(updatedOrder.localOrderId()));
         index.add(updatedOrder);

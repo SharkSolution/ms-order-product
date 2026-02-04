@@ -1,5 +1,6 @@
 package com.suresell.order.serivices;
 
+import com.suresell.order.model.entity.Order;
 import com.suresell.order.model.record.OfflineOrderRecord;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -110,16 +111,16 @@ public class OrderSyncService {
         }
 
         try {
-            // Crear orden en AWS (retorna void)
-            orderService.createOrUpdateOrder(offlineOrder.orderData());
+            // Crear orden en AWS (retorna la orden con ID)
+            Order syncedAwsOrder = orderService.createOrUpdateOrder(offlineOrder.orderData());
 
-            // Marcar como sincronizada (sin externalOrderId porque el método es void)
+            // Marcar como sincronizada
             var syncedOrder = OfflineOrderRecord.builder()
                     .localOrderId(offlineOrder.localOrderId())
                     .idempotencyKey(offlineOrder.idempotencyKey())
                     .orderData(offlineOrder.orderData())
                     .synced(true)
-                    .externalOrderId(null) // No podemos obtener el ID porque createOrUpdateOrder retorna void
+                    .externalOrderId(syncedAwsOrder.getIdOrder())
                     .createdAt(offlineOrder.createdAt())
                     .syncedAt(LocalDateTime.now())
                     .syncAttempts(offlineOrder.syncAttempts() + 1)
@@ -128,7 +129,8 @@ public class OrderSyncService {
 
             resilientOrderService.updateOfflineOrderInIndex(syncedOrder);
 
-            log.info("Order synced successfully: {}", offlineOrder.localOrderId());
+            log.info("Order synced successfully: {} -> AWS ID: {}",
+                    offlineOrder.localOrderId(), syncedAwsOrder.getIdOrder());
 
         } catch (Exception e) {
             log.error("Error syncing order {}: {}", offlineOrder.localOrderId(), e.getMessage());

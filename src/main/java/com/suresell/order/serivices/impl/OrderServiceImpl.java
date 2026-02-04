@@ -54,7 +54,7 @@ public class OrderServiceImpl implements OrderService {
 
     @Override
     @Transactional
-    public void createOrUpdateOrder(OrderRequestRecord dto) {
+    public Order createOrUpdateOrder(OrderRequestRecord dto) {
         if (dto.paymentMethod() == null || !List.of("CASH", "CARD", "NEQUI", "QR").contains(dto.paymentMethod())) {
             throw new IllegalArgumentException("Método de pago inválido. Debe ser: CASH, CARD, NEQUI o QR");
         }
@@ -142,6 +142,7 @@ public class OrderServiceImpl implements OrderService {
                     BigDecimal.valueOf(savedOrder.getTotal()));
             discountService.linkOrderWithCoupon(linkCommand);
         }
+        return savedOrder;
     }
 
     @Override

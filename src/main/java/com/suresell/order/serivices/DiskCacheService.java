@@ -71,7 +71,7 @@ public class DiskCacheService {
             Path tempFile = Files.createTempFile(cacheBasePath, ".tmp-", ".json");
 
             objectMapper.writeValue(tempFile.toFile(), data);
-            Files.move(tempFile, filePath, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+            Files.move(tempFile, filePath, StandardCopyOption.REPLACE_EXISTING);
 
             lastUpdateTimes.put(cacheKey, LocalDateTime.now());
             log.debug("Cache saved: {} ({} bytes)", cacheKey, Files.size(filePath));

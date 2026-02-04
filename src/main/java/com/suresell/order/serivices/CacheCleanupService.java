@@ -62,7 +62,7 @@ public class CacheCleanupService {
      * Ejecuta la limpieza de órdenes sincronizadas.
      * Retorna estadísticas del proceso.
      */
-    public CleanupStats cleanupSyncedOrders() {
+    public CleanupStats cleanupSyncedOrders() throws IOException {
         List<OfflineOrderRecord> allOrders = resilientOrderService.getOfflineOrdersIndex();
 
         // Separar: pendientes vs sincronizadas
@@ -98,7 +98,9 @@ public class CacheCleanupService {
         }
 
         // Actualizar índice: solo mantener órdenes pendientes
-        diskCacheService.save("offline-orders-index", pendingOrders);
+        if (!diskCacheService.save("offline-orders-index", pendingOrders)) {
+            throw new IOException("Failed to save updated offline index after cleanup.");
+        }
 
         return new CleanupStats(deletedCount, pendingOrders.size(), freedBytes);
     }
