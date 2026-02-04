@@ -2,6 +2,7 @@ package com.suresell.order.controller;
 
 import com.suresell.order.serivices.DiskCacheService;
 import com.suresell.order.serivices.ResilientOrderService;
+import com.suresell.order.serivices.LocalErrorLogService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -12,6 +13,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -26,12 +28,60 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class CacheViewController {
 
-    private final DiskCacheService diskCacheService;
-    private final ResilientOrderService resilientOrderService;
+        private final DiskCacheService diskCacheService;
 
-    /**
-     * Lista todos los archivos en cache
-     * GET http://localhost:8081/api/cache/files
+        private final ResilientOrderService resilientOrderService;
+
+        private final LocalErrorLogService localErrorLogService;
+
+    
+
+    
+
+        /**
+         * Obtiene el historial de errores locales del archivo JSON.
+         * GET http://localhost:8081/api/cache/local-errors
+         */
+        @GetMapping("/local-errors")
+        public ResponseEntity<List<LocalErrorLogService.ErrorLogEntry>> getLocalErrors() {
+            try {
+                return ResponseEntity.ok(localErrorLogService.getAllErrors().orElse(new ArrayList<>()));
+            } catch (Exception e) {
+                return ResponseEntity.internalServerError().body(new ArrayList<>());
+            }
+        }
+
+        /**
+         * Marca un error local como resuelto en el archivo JSON.
+         * POST http://localhost:8081/api/cache/local-errors/resolve/{id}
+         */
+        @org.springframework.web.bind.annotation.PostMapping("/local-errors/resolve/{id}")
+        public ResponseEntity<Map<String, Object>> resolveLocalError(@org.springframework.web.bind.annotation.PathVariable int id) {
+            Map<String, Object> response = new HashMap<>();
+            try {
+                boolean success = localErrorLogService.markErrorAsResolved(id);
+                if (success) {
+                    response.put("success", true);
+                    response.put("message", "Error ID " + id + " marcado como resuelto localmente.");
+                    return ResponseEntity.ok(response);
+                } else {
+                    response.put("success", false);
+                    response.put("message", "No se pudo marcar el error ID " + id + " como resuelto (quizás ya lo estaba o no existe).");
+                    return ResponseEntity.badRequest().body(response);
+                }
+            } catch (Exception e) {
+                response.put("success", false);
+                response.put("error", "Fallo al intentar marcar el error ID " + id + " como resuelto: " + e.getMessage());
+                return ResponseEntity.internalServerError().body(response);
+            }
+        }
+
+
+        /**
+
+         * Lista todos los archivos en cache
+
+         * GET http://localhost:8081/api/cache/files
      */
     @GetMapping("/files")
     public ResponseEntity<Map<String, Object>> listCacheFiles() {
@@ -652,7 +702,15 @@ public class CacheViewController {
                             </div>
                         </div>
 
-
+                        <div class="card">
+                            <h2>⚠️ Historial de Errores Locales</h2>
+                            <div id="local-error-history">
+                                <div class="loading">
+                                    <div class="spinner"></div>
+                                    Cargando historial de errores locales...
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
@@ -680,6 +738,7 @@ public class CacheViewController {
                         loadStats();
                         loadOfflineOrders();
                         loadKitchenOrders();
+                        loadLocalErrors(); // NEW
                     }
 
                     function loadStats() {
@@ -983,6 +1042,76 @@ public class CacheViewController {
                             closeModal();
                         }
                     });
+
+                    function loadLocalErrors() {
+                        fetch('/api/cache/local-errors')
+                            .then(r => r.json())
+                            .then(data => {
+                                const errorHistoryDiv = document.getElementById('local-error-history');
+                                if (data.length === 0) {
+                                    errorHistoryDiv.innerHTML = `
+                                        <div class="empty-state">
+                                            <div class="icon">✅</div>
+                                            <h3>Sin errores locales registrados</h3>
+                                            <p>¡Todo parece estar funcionando correctamente!</p>
+                                        </div>
+                                    `;
+                                    return;
+                                }
+
+                                let html = '<table><thead><tr>';
+                                html += '<th>ID</th>';
+                                html += '<th>Fecha</th>';
+                                html += '<th>Componente</th>';
+                                html += '<th>Clave Caché</th>';
+                                html += '<th>Mensaje</th>';
+                                html += '<th>Estado</th>';
+                                html += '<th>Acción</th>';
+                                html += '</tr></thead><tbody>';
+
+                                data.forEach(error => {
+                                    const statusBadge = error.resuelta ?
+                                        '<span class="badge success">✅ Resuelto</span>' :
+                                        '<span class="badge danger">❌ Pendiente</span>';
+                                    const actionButton = error.resuelta ?
+                                        '' :
+                                        `<button class="btn-view btn-success" onclick="markLocalErrorAsResolved(${error.id})">Resolver</button>`;
+
+                                    html += `<tr>
+                                        <td>${error.id}</td>
+                                        <td><span class="timestamp">${formatDate(error.timestamp)}</span></td>
+                                        <td>${error.componente}</td>
+                                        <td>${error.cache_key || 'N/A'}</td>
+                                        <td>${error.mensaje_error}</td>
+                                        <td>${statusBadge}</td>
+                                        <td>${actionButton}</td>
+                                    </tr>`;
+                                });
+
+                                html += '</tbody></table>';
+                                errorHistoryDiv.innerHTML = html;
+                            })
+                            .catch(err => {
+                                document.getElementById('local-error-history').innerHTML =
+                                    '<div class="alert alert-warning">❌ Error al cargar historial de errores locales</div>';
+                            });
+                    }
+
+                    function markLocalErrorAsResolved(id) {
+                        if (confirm(`¿Marcar el error ID ${id} como resuelto?`)) {
+                            fetch(`/api/cache/local-errors/resolve/${id}`, { method: 'POST' })
+                                .then(r => r.json())
+                                .then(data => {
+                                    if (data.success) {
+                                        alert('✅ ' + data.message);
+                                        loadLocalErrors(); // Reload errors to update status
+                                    } else {
+                                        alert('❌ Error: ' + data.message);
+                                    }
+                                })
+                                .catch(err => alert('❌ Error al resolver el error local: ' + err));
+                        }
+                    }
 
                     // Cargar datos al inicio
                     loadData();

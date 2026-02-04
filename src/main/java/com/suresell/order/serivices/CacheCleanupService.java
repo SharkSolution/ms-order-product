@@ -25,6 +25,7 @@ public class CacheCleanupService {
 
     private final DiskCacheService diskCacheService;
     private final ResilientOrderService resilientOrderService;
+    private final LocalErrorLogService localErrorLogService; // NEW FIELD
 
     @Value("${cache.path:./cache}")
     private String cachePath;
@@ -94,12 +95,16 @@ public class CacheCleanupService {
             } catch (IOException e) {
                 log.error("Error al eliminar archivo de orden {}: {}",
                          order.localOrderId(), e.getMessage());
+                localErrorLogService.logError("CacheCleanupService", order.localOrderId(), "Error al eliminar archivo de orden: " + e.getMessage());
             }
         }
 
         // Actualizar índice: solo mantener órdenes pendientes
         if (!diskCacheService.save("offline-orders-index", pendingOrders)) {
-            throw new IOException("Failed to save updated offline index after cleanup.");
+            String errorMessage = "Failed to save updated offline index after cleanup.";
+            log.error(errorMessage);
+            localErrorLogService.logError("CacheCleanupService", "offline-orders-index", errorMessage);
+            throw new IOException(errorMessage); // Keep throwing IOException for callers to handle
         }
 
         return new CleanupStats(deletedCount, pendingOrders.size(), freedBytes);

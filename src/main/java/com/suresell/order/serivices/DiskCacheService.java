@@ -30,6 +30,7 @@ public class DiskCacheService {
     private final ObjectMapper objectMapper;
     private final Path cacheBasePath;
     private final Map<String, LocalDateTime> lastUpdateTimes = new ConcurrentHashMap<>();
+    private final LocalErrorLogService localErrorLogService; // NEW FIELD
 
     @Value("${cache.enabled:true}")
     private boolean cacheEnabled;
@@ -37,8 +38,9 @@ public class DiskCacheService {
     @Value("${cache.ttl-minutes:60}")
     private int ttlMinutes;
 
-    public DiskCacheService(@Value("${cache.path:./cache}") String cachePath) {
+    public DiskCacheService(@Value("${cache.path:./cache}") String cachePath, LocalErrorLogService localErrorLogService) { // NEW PARAMETER
         this.cacheBasePath = Paths.get(cachePath).toAbsolutePath().normalize();
+        this.localErrorLogService = localErrorLogService; // ASSIGN NEW FIELD
 
         this.objectMapper = new ObjectMapper();
         this.objectMapper.registerModule(new JavaTimeModule());
@@ -55,6 +57,7 @@ public class DiskCacheService {
             log.info("Cache directory ready: {}", cacheBasePath);
         } catch (IOException e) {
             log.error("CRITICAL: Cannot create cache directory: {}", cacheBasePath, e);
+            localErrorLogService.logError("DiskCacheService", null, "CRITICAL: Cannot create cache directory: " + e.getMessage());
         }
     }
 
@@ -78,6 +81,7 @@ public class DiskCacheService {
             return true;
         } catch (IOException e) {
             log.error("Failed to save cache '{}': {}", cacheKey, e.getMessage());
+            localErrorLogService.logError("DiskCacheService", cacheKey, "Failed to save cache: " + e.getMessage());
             return false;
         }
     }
