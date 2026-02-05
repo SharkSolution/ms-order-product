@@ -77,6 +77,12 @@ implements DailyClosureService {
         for (Object[] result : results) {
             String paymentMethod = (String)result[0];
             BigDecimal sumTotal = BigDecimal.valueOf(((Long)result[1]).doubleValue());
+
+            if (paymentMethod == null) {
+                log.warn("Método de pago nulo encontrado en resultado de consulta, ignorando registro");
+                continue;
+            }
+
             switch (paymentMethod) {
                 case "CASH": {
                     totalCash = sumTotal;
