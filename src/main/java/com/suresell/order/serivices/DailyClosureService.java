@@ -1,16 +1,7 @@
-/*
- * Decompiled with CFR 0.152.
- * 
- * Could not load the following classes:
- *  com.suresell.order.model.record.ClosurePreviewResponse
- *  com.suresell.order.model.record.ClosureRequest
- *  com.suresell.order.model.record.ClosureResponse
- *  com.suresell.order.serivices.DailyClosureService
- */
-package com.suresell.order.serivices;
-import com.suresell.order.model.record.ClosurePreviewResponse;
-import com.suresell.order.model.record.ClosureRequest;
-import com.suresell.order.model.record.ClosureResponse;
+package com.suresell.orders.domain.port.in;
+import com.suresell.orders.application.dto.ClosurePreviewResponse;
+import com.suresell.orders.application.dto.ClosureRequest;
+import com.suresell.orders.application.dto.ClosureResponse;
 import java.util.List;
 public interface DailyClosureService {
     public ClosurePreviewResponse getClosurePreview();

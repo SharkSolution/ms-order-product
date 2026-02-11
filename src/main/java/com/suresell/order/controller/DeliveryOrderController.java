@@ -1,8 +1,8 @@
-package com.suresell.order.controller;
+package com.suresell.orders.infrastructure.web;
 
-import com.suresell.order.model.record.CreateDeliveryOrderRequest;
-import com.suresell.order.model.record.DeliveryOrderResponse;
-import com.suresell.order.serivices.DeliveryOrderService;
+import com.suresell.orders.application.dto.CreateDeliveryOrderRequest;
+import com.suresell.orders.application.dto.DeliveryOrderResponse;
+import com.suresell.orders.domain.port.in.DeliveryOrderService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -21,13 +21,13 @@ public class DeliveryOrderController {
 
     @PostMapping
     public ResponseEntity<DeliveryOrderResponse> createDeliveryOrder(@Valid @RequestBody CreateDeliveryOrderRequest request) {
-        com.suresell.order.model.entity.DeliveryOrder createdOrder = deliveryOrderService.createDeliveryOrder(request);
+        com.suresell.orders.domain.model.DeliveryOrder createdOrder = deliveryOrderService.createDeliveryOrder(request);
         return new ResponseEntity<>(DeliveryOrderResponse.fromEntity(createdOrder), HttpStatus.CREATED);
     }
 
     @GetMapping("/pending")
     public ResponseEntity<List<DeliveryOrderResponse>> getPendingOrders() {
-        List<com.suresell.order.model.entity.DeliveryOrder> pendingOrders = deliveryOrderService.findPendingOrders();
+        List<com.suresell.orders.domain.model.DeliveryOrder> pendingOrders = deliveryOrderService.findPendingOrders();
         List<DeliveryOrderResponse> response = pendingOrders.stream()
                 .map(DeliveryOrderResponse::fromEntity)
                 .collect(Collectors.toList());
@@ -36,7 +36,7 @@ public class DeliveryOrderController {
 
     @PatchMapping("/{orderId}/delivered")
     public ResponseEntity<DeliveryOrderResponse> markAsDelivered(@PathVariable Integer orderId) {
-        com.suresell.order.model.entity.DeliveryOrder updatedOrder = deliveryOrderService.markAsDelivered(orderId);
+        com.suresell.orders.domain.model.DeliveryOrder updatedOrder = deliveryOrderService.markAsDelivered(orderId);
         return ResponseEntity.ok(DeliveryOrderResponse.fromEntity(updatedOrder));
     }
 }

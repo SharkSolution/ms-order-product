@@ -1,10 +1,4 @@
-/*
- * Decompiled with CFR 0.152.
- * 
- * Could not load the following classes:
- *  com.suresell.order.exception.MesaDuplicadaException
- */
-package com.suresell.order.exception;
+package com.suresell.orders.shared.exception;
 public class MesaDuplicadaException
 extends RuntimeException {
     private final String flag;

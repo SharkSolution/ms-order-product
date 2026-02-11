@@ -1,15 +1,6 @@
-/*
- * Decompiled with CFR 0.152.
- * 
- * Could not load the following classes:
- *  com.suresell.order.model.record.ClosureResponse
- *  com.suresell.order.serivices.export.DailyClosureExcelExporter
- *  org.apache.poi.xssf.usermodel.XSSFWorkbook
- *  org.springframework.stereotype.Service
- */
-package com.suresell.order.serivices.export;
+package com.suresell.orders.domain.service.export;
 
-import com.suresell.order.model.record.ClosureResponse;
+import com.suresell.orders.application.dto.ClosureResponse;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -35,8 +26,6 @@ public class DailyClosureExcelExporter {
         try (XSSFWorkbook workbook = new XSSFWorkbook(); ByteArrayOutputStream out = new ByteArrayOutputStream();) {
             Sheet sheet = workbook.createSheet("Historial de Cierres");
 
-            // --- Cell Styles ---
-            // Header Style
             CellStyle headerStyle = workbook.createCellStyle();
             Font headerFont = workbook.createFont();
             headerFont.setBold(true);
@@ -46,15 +35,11 @@ public class DailyClosureExcelExporter {
             headerStyle.setFillPattern(FillPatternType.SOLID_FOREGROUND);
             headerStyle.setAlignment(HorizontalAlignment.CENTER);
 
-            // Currency Style
             CellStyle currencyStyle = workbook.createCellStyle();
             currencyStyle.setDataFormat(workbook.createDataFormat().getFormat("$#,##0.00"));
 
-            // Date Style
-            CellStyle dateStyle = workbook.createCellStyle();
             DateTimeFormatter dateFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
-            // Status Styles
             CellStyle statusBalancedStyle = workbook.createCellStyle();
             statusBalancedStyle.setFillForegroundColor(IndexedColors.LIGHT_GREEN.getIndex());
             statusBalancedStyle.setFillPattern(FillPatternType.SOLID_FOREGROUND);
@@ -68,7 +53,6 @@ public class DailyClosureExcelExporter {
             statusNegativeDiffStyle.setFillPattern(FillPatternType.SOLID_FOREGROUND);
 
 
-            // --- Header ---
             Row headerRow = sheet.createRow(0);
             for (int col = 0; col < columns.length; col++) {
                 Cell cell = headerRow.createCell(col);
@@ -76,7 +60,6 @@ public class DailyClosureExcelExporter {
                 cell.setCellStyle(headerStyle);
             }
 
-            // --- Data ---
             int rowIdx = 1;
             for (ClosureResponse closure : closures) {
                 Row row = sheet.createRow(rowIdx++);
@@ -133,7 +116,6 @@ public class DailyClosureExcelExporter {
                 Cell statusCell = row.createCell(15);
                 statusCell.setCellValue(closure.status());
 
-                // Conditional Formatting for Status
                 if (closure.differenceAmount().compareTo(BigDecimal.ZERO) == 0) {
                     statusCell.setCellStyle(statusBalancedStyle);
                 } else if (closure.differenceAmount().compareTo(BigDecimal.ZERO) > 0) {
@@ -142,11 +124,9 @@ public class DailyClosureExcelExporter {
                     statusCell.setCellStyle(statusNegativeDiffStyle);
                 }
 
-
                 row.createCell(16).setCellValue(closure.notes());
             }
 
-            // Auto-size columns
             for (int i = 0; i < columns.length; i++) {
                 sheet.autoSizeColumn(i);
             }

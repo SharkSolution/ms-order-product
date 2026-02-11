@@ -1,11 +1,8 @@
-package com.suresell.order.model.record;
+package com.suresell.orders.application.dto;
 
-/**
- * Respuesta del endpoint de sincronización idempotente.
- */
 public record OrderSyncResponse(
         boolean success,
-        String status,           // "CREATED" | "ALREADY_EXISTS" | "ERROR"
+        String status,
         Long orderId,
         String message
 ) {

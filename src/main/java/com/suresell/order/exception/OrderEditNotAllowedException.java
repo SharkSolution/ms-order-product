@@ -1,4 +1,4 @@
-package com.suresell.order.exception;
+package com.suresell.orders.shared.exception;
 
 public class OrderEditNotAllowedException extends RuntimeException {
 

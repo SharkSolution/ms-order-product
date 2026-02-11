@@ -1,16 +1,4 @@
-/*
- * Decompiled with CFR 0.152.
- * 
- * Could not load the following classes:
- *  com.suresell.order.config.CorsConfig
- *  org.springframework.context.annotation.Bean
- *  org.springframework.context.annotation.Configuration
- *  org.springframework.web.cors.CorsConfiguration
- *  org.springframework.web.cors.CorsConfigurationSource
- *  org.springframework.web.cors.UrlBasedCorsConfigurationSource
- *  org.springframework.web.filter.CorsFilter
- */
-package com.suresell.order.config;
+package com.suresell.orders.infrastructure.config;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.cors.CorsConfiguration;

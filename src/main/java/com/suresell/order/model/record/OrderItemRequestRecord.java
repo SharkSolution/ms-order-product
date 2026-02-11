@@ -1,4 +1,4 @@
-package com.suresell.order.model.record;
+package com.suresell.orders.application.dto;
 
 public record OrderItemRequestRecord(
     String productId,

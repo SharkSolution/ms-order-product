@@ -1,7 +1,7 @@
-package com.suresell.order.serivices;
+package com.suresell.orders.domain.port.in;
 
-import com.suresell.order.model.record.CreateDeliveryOrderRequest;
-import com.suresell.order.model.entity.DeliveryOrder;
+import com.suresell.orders.application.dto.CreateDeliveryOrderRequest;
+import com.suresell.orders.domain.model.DeliveryOrder;
 
 import java.util.List;
 

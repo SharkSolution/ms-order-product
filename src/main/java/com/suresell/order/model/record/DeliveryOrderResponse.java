@@ -1,13 +1,17 @@
-package com.suresell.order.model.record;
+package com.suresell.orders.application.dto;
 
-import com.suresell.order.model.enums.DeliveryStatus;
+import com.suresell.orders.domain.model.DeliveryStatus;
 import lombok.Builder;
 import lombok.Data;
+import lombok.AllArgsConstructor;
+import lombok.NoArgsConstructor;
 
 import java.time.LocalDateTime;
 
 @Data
 @Builder
+@NoArgsConstructor
+@AllArgsConstructor
 public class DeliveryOrderResponse {
     private Long id;
     private Integer orderId;
@@ -20,21 +24,4 @@ public class DeliveryOrderResponse {
     private DeliveryStatus deliveryStatus;
     private LocalDateTime deliveredAt;
     private LocalDateTime createdAt;
-
-    // Método estático para facilitar la conversión desde la entidad
-    public static DeliveryOrderResponse fromEntity(com.suresell.order.model.entity.DeliveryOrder entity) {
-        return DeliveryOrderResponse.builder()
-                .id(entity.getId())
-                .orderId(entity.getOrderId())
-                .customerName(entity.getCustomerName())
-                .building(entity.getBuilding())
-                .deliveryNotes(entity.getDeliveryNotes())
-                .orderSummary(entity.getOrderSummary())
-                .phone(entity.getPhone())
-                .paymentMethod(entity.getPaymentMethod())
-                .deliveryStatus(entity.getDeliveryStatus())
-                .deliveredAt(entity.getDeliveredAt())
-                .createdAt(entity.getCreatedAt())
-                .build();
-    }
 }
