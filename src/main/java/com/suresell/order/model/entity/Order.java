@@ -66,6 +66,8 @@ public class Order {
     private Integer discountAmount;
     @Column(name="elapsed_seconds_to_deliver")
     private Integer elapsedSecondsToDeliver;
+    @Column(name="idempotency_key", unique=true)
+    private String idempotencyKey;
     @OneToMany(mappedBy="order", cascade={CascadeType.ALL}, orphanRemoval=true)
     private List<OrderItem> items;
     @Generated
@@ -119,6 +121,10 @@ public class Order {
     @Generated
     public Integer getElapsedSecondsToDeliver() {
         return this.elapsedSecondsToDeliver;
+    }
+    @Generated
+    public String getIdempotencyKey() {
+        return this.idempotencyKey;
     }
     @Generated
     public List<OrderItem> getItems() {
@@ -175,6 +181,10 @@ public class Order {
     @Generated
     public void setElapsedSecondsToDeliver(Integer elapsedSecondsToDeliver) {
         this.elapsedSecondsToDeliver = elapsedSecondsToDeliver;
+    }
+    @Generated
+    public void setIdempotencyKey(String idempotencyKey) {
+        this.idempotencyKey = idempotencyKey;
     }
     @Generated
     public void setItems(List<OrderItem> items) {

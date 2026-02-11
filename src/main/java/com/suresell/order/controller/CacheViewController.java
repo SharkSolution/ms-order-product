@@ -367,6 +367,11 @@ public class CacheViewController {
                         color: #0c5460;
                     }
 
+                    .badge.primary {
+                        background: #cfe2ff;
+                        color: #084298;
+                    }
+
                     .btn {
                         padding: 12px 24px;
                         border: none;
@@ -664,6 +669,33 @@ public class CacheViewController {
                         background: #667eea;
                         color: white;
                     }
+
+                    .idempotency-key {
+                        background: #f8f9fa;
+                        padding: 8px 12px;
+                        border-radius: 6px;
+                        border-left: 4px solid #667eea;
+                        font-family: 'Courier New', monospace;
+                        font-size: 11px;
+                        word-break: break-all;
+                        color: #495057;
+                    }
+
+                    .error-permanent {
+                        background: #fff5f5;
+                        border-left: 4px solid #d32f2f;
+                        padding: 12px;
+                        border-radius: 6px;
+                        margin-top: 10px;
+                    }
+
+                    .sync-success {
+                        background: #f0fdf4;
+                        border-left: 4px solid #28a745;
+                        padding: 12px;
+                        border-radius: 6px;
+                        margin-top: 10px;
+                    }
                 </style>
             </head>
             <body>
@@ -807,18 +839,38 @@ public class CacheViewController {
                                     const itemCount = order.orderData.items.length;
                                     const total = order.orderData.items.reduce((sum, item) =>
                                         sum + (item.quantity * item.unitPrice), 0);
-                                    const status = order.synced ?
-                                        '<span class="badge success">✅ Sincronizada</span>' :
-                                        '<span class="badge warning">⏳ Pendiente</span>';
 
-                                    html += `<tr>
+                                    // Determinar estado mejorado
+                                    let status;
+                                    let attempts;
+                                    const isPermanentFailure = order.lastError && order.lastError.includes('PERMANENT FAILURE');
+                                    const isMaxRetries = order.lastError && order.lastError.includes('Max retries exceeded');
+
+                                    if (order.synced) {
+                                        status = '<span class="badge success">✅ Sincronizada</span>';
+                                        attempts = `<strong>${order.syncAttempts}</strong> ${order.syncAttempts === 1 ? 'intento' : 'intentos'}`;
+                                    } else if (isPermanentFailure) {
+                                        status = '<span class="badge danger">🚫 Fallo Permanente</span>';
+                                        attempts = `<strong>${order.syncAttempts}</strong> <span style="color: #999;">(detenido)</span>`;
+                                    } else if (isMaxRetries) {
+                                        status = '<span class="badge danger">⚠️ Max Reintentos</span>';
+                                        attempts = `<strong>${order.syncAttempts}</strong> / 5`;
+                                    } else {
+                                        status = '<span class="badge warning">⏳ Pendiente</span>';
+                                        attempts = `<strong>${order.syncAttempts}</strong> / 5`;
+                                    }
+
+                                    // Color de fila según estado
+                                    const rowStyle = isPermanentFailure || isMaxRetries ? 'style="background-color: #fff5f5;"' : '';
+
+                                    html += `<tr ${rowStyle}>
                                         <td><small>${order.localOrderId.substring(6, 16)}...</small></td>
-                                        <td>${order.externalOrderId || 'N/A'}</td>
+                                        <td>${order.externalOrderId || '<span style="color: #999;">N/A</span>'}</td>
                                         <td><span class="timestamp">${formatDate(order.createdAt)}</span></td>
                                         <td>${itemCount} item(s)</td>
                                         <td>${formatCurrency(total)}</td>
                                         <td>${status}</td>
-                                        <td>${order.syncAttempts}</td>
+                                        <td>${attempts}</td>
                                         <td>
                                             <button class="btn-view" onclick='viewOfflineOrder(${JSON.stringify(order)})'>
                                                 👁️ Ver
@@ -910,14 +962,30 @@ public class CacheViewController {
                         document.getElementById('modalSubtitle').textContent =
                             `Creada: ${formatDate(order.createdAt)}`;
 
+                        // Determinar tipo de error
+                        const isPermanentFailure = order.lastError && order.lastError.includes('PERMANENT FAILURE');
+                        const isMaxRetries = order.lastError && order.lastError.includes('Max retries exceeded');
+                        const isValidationError = order.lastError && (order.lastError.includes('Validation') || order.lastError.includes('inválido'));
+
                         let html = '<div class="detail-section">';
                         html += '<h3>📋 Información General</h3>';
+
+                        // ID Externo
                         if (order.externalOrderId) {
                             html += `<div class="detail-row">
-                                <span class="detail-label">ID Externo (AWS):</span>
-                                <span class="detail-value">${order.externalOrderId}</span>
+                                <span class="detail-label">✅ ID Externo (AWS):</span>
+                                <span class="detail-value" style="color: #28a745; font-weight: bold;">${order.externalOrderId}</span>
                             </div>`;
                         }
+
+                        // Idempotency Key (NUEVO)
+                        if (order.idempotencyKey) {
+                            html += `<div class="detail-row">
+                                <span class="detail-label">🔑 Idempotency Key:</span>
+                                <span class="detail-value" style="font-family: monospace; font-size: 11px;">${order.idempotencyKey}</span>
+                            </div>`;
+                        }
+
                         html += `<div class="detail-row">
                             <span class="detail-label">Pager:</span>
                             <span class="detail-value"><span class="pager-badge">${order.orderData.pagerColor} #${order.orderData.pagerNumber}</span></span>
@@ -926,20 +994,68 @@ public class CacheViewController {
                             <span class="detail-label">Método de Pago:</span>
                             <span class="detail-value">${order.orderData.paymentMethod}</span>
                         </div>`;
+
+                        // Estado de Sync (MEJORADO)
                         html += `<div class="detail-row">
                             <span class="detail-label">Estado de Sync:</span>
-                            <span class="detail-value">${order.synced ?
-                                '<span class="status-badge-large badge success">✅ Sincronizada</span>' :
-                                '<span class="status-badge-large badge warning">⏳ Pendiente de Sincronización</span>'}</span>
-                        </div>`;
+                            <span class="detail-value">`;
+
+                        if (order.synced) {
+                            html += '<span class="status-badge-large badge success">✅ Sincronizada</span>';
+                            if (order.syncedAt) {
+                                html += `<br><small style="color: #666;">Sincronizada: ${formatDate(order.syncedAt)}</small>`;
+                            }
+                        } else if (isPermanentFailure) {
+                            html += '<span class="status-badge-large badge danger">❌ Fallo Permanente</span>';
+                        } else if (isMaxRetries) {
+                            html += '<span class="status-badge-large badge danger">⚠️ Max Reintentos Alcanzado</span>';
+                        } else if (isValidationError) {
+                            html += '<span class="status-badge-large badge danger">⚠️ Error de Validación</span>';
+                        } else {
+                            html += '<span class="status-badge-large badge warning">⏳ Pendiente de Sincronización</span>';
+                        }
+
+                        html += `</span></div>`;
+
+                        // Intentos de Sync (MEJORADO - lógica diferente según estado)
                         html += `<div class="detail-row">
                             <span class="detail-label">Intentos de Sync:</span>
-                            <span class="detail-value">${order.syncAttempts}</span>
-                        </div>`;
+                            <span class="detail-value">`;
+
+                        if (order.synced) {
+                            html += `${order.syncAttempts} ${order.syncAttempts === 1 ? 'intento' : 'intentos'}`;
+                        } else if (isPermanentFailure) {
+                            html += `${order.syncAttempts} <span style="color: #999;">(detenido - no se reintentará)</span>`;
+                        } else if (isMaxRetries) {
+                            html += `${order.syncAttempts} / 5 <span style="color: #ff9800;">(máximo alcanzado)</span>`;
+                        } else {
+                            html += `${order.syncAttempts} / 5 <span style="color: #999;">(reintentando...)</span>`;
+                        }
+
+                        html += `</span></div>`;
+
+                        // Último Error (MEJORADO)
                         if (order.lastError) {
+                            let errorColor = '#f44336';
+                            let errorIcon = '❌';
+
+                            if (isPermanentFailure) {
+                                errorColor = '#d32f2f';
+                                errorIcon = '🚫';
+                            } else if (isMaxRetries) {
+                                errorColor = '#ff9800';
+                                errorIcon = '⚠️';
+                            } else if (order.lastError.includes('Timeout')) {
+                                errorColor = '#ff9800';
+                                errorIcon = '⏱️';
+                            } else if (order.lastError.includes('Connection')) {
+                                errorColor = '#2196f3';
+                                errorIcon = '🌐';
+                            }
+
                             html += `<div class="detail-row">
-                                <span class="detail-label">Último Error:</span>
-                                <span class="detail-value" style="color: #f44336;">${order.lastError}</span>
+                                <span class="detail-label">${errorIcon} Último Error:</span>
+                                <span class="detail-value" style="color: ${errorColor}; font-weight: 500;">${order.lastError}</span>
                             </div>`;
                         }
                         html += '</div>';
@@ -1054,6 +1170,11 @@ public class CacheViewController {
                                             <div class="icon">✅</div>
                                             <h3>Sin errores locales registrados</h3>
                                             <p>¡Todo parece estar funcionando correctamente!</p>
+                                            <small style="color: #999; display: block; margin-top: 10px;">
+                                                📝 Nota: Esta sección muestra errores de cache y sincronización.<br>
+                                                Si hay órdenes con "Max retries exceeded" o "Fallo Permanente",<br>
+                                                aparecerán aquí automáticamente.
+                                            </small>
                                         </div>
                                     `;
                                     return;

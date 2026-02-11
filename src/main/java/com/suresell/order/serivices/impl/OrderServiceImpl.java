@@ -12,9 +12,11 @@ import com.suresell.order.model.record.ApplyDiscountCommand;
 import com.suresell.order.model.record.ApplyDiscountResult;
 import com.suresell.order.model.record.LinkOrderCouponCommand;
 import com.suresell.order.model.record.OrderItemDto;
+import com.suresell.order.model.record.OrderItemRequestRecord;
 import com.suresell.order.model.record.OrderItemResponseRecord;
 import com.suresell.order.model.record.OrderRequestRecord;
 import com.suresell.order.model.record.OrderResponseRecord;
+import com.suresell.order.model.record.OrderSyncResponse;
 import com.suresell.order.model.record.ProductResponse;
 import com.suresell.order.repository.OrderEditHistoryRepository;
 import com.suresell.order.repository.OrderItemRepository;
@@ -24,6 +26,7 @@ import com.suresell.order.serivices.DiscountService;
 import com.suresell.order.serivices.OrderService;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -39,6 +42,7 @@ import java.util.Optional;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class OrderServiceImpl implements OrderService {
 
     private final OrderRepository orderRepository;
@@ -55,20 +59,11 @@ public class OrderServiceImpl implements OrderService {
     @Override
     @Transactional
     public Order createOrUpdateOrder(OrderRequestRecord dto) {
-        if (dto.paymentMethod() == null || !List.of("CASH", "CARD", "NEQUI", "QR").contains(dto.paymentMethod())) {
-            throw new IllegalArgumentException("Método de pago inválido. Debe ser: CASH, CARD, NEQUI o QR");
-        }
+        // Validaciones usando métodos privados
+        validatePaymentMethod(dto.paymentMethod());
+        validatePagerAvailability(dto.pagerColor(), dto.pagerNumber(), null);
 
-        Optional<Order> existingPagerOrder = orderRepository.findByPagerColorAndPagerNumberAndStatusAndDeliveredAt(
-                dto.pagerColor(), dto.pagerNumber(), OrderStatus.pagado, "No");
-
-        if (existingPagerOrder.isPresent()) {
-            throw new PagerOcupadoException(
-                    String.format("El pager %s %s ya está en uso por la orden #%d",
-                            dto.pagerColor(), dto.pagerNumber(), existingPagerOrder.get().getIdOrder()),
-                    "PAGER_OCUPADO");
-        }
-
+        // Crear orden
         Order order = new Order();
         order.setPagerColor(dto.pagerColor());
         order.setPagerNumber(dto.pagerNumber());
@@ -77,71 +72,24 @@ public class OrderServiceImpl implements OrderService {
         order.setPaymentMethod(dto.paymentMethod());
         order.setCreatedAt(LocalDateTime.now(BOGOTA_ZONE));
 
-        List<OrderItem> items = dto.items().stream().map(itemDto -> {
-            OrderItem item = new OrderItem();
-            item.setOrder(order);
-            item.setProductId(itemDto.productId());
-            item.setQuantity(itemDto.quantity());
-            item.setUnitPrice(itemDto.unitPrice());
-            item.setTotalPrice(itemDto.quantity() * itemDto.unitPrice());
-            item.setInstructions(itemDto.instructions());
-            item.setComboGroup(itemDto.comboGroup());
-            return item;
-        }).toList();
-
+        // Crear items usando método privado
+        List<OrderItem> items = createOrderItems(order, dto.items());
         order.setItems(items);
 
+        // Calcular totales
         int subtotal = order.getItems().stream().mapToInt(OrderItem::getTotalPrice).sum();
         order.setSubtotal(subtotal);
-        int total = subtotal;
 
-        if (dto.discountCode() != null && !dto.discountCode().trim().isEmpty()) {
-            List<OrderItemDto> itemsForDiscount = order.getItems().stream().map(item -> {
-                ProductResponse productDetails = productClient.getProductDetails(item.getProductId());
-                Long productIdLong = null;
-                try {
-                    productIdLong = Long.parseLong(item.getProductId());
-                } catch (NumberFormatException ignored) {
-                }
-                return new OrderItemDto(
-                        item.getProductId(),
-                        productIdLong,
-                        productDetails != null ? productDetails.nameProduct() : null,
-                        productDetails != null ? productDetails.categoryName() : null,
-                        item.getQuantity(),
-                        BigDecimal.valueOf(item.getUnitPrice()));
-            }).toList();
-
-            ApplyDiscountCommand command = new ApplyDiscountCommand(
-                    dto.discountCode(),
-                    LocalDateTime.now(BOGOTA_ZONE),
-                    itemsForDiscount,
-                    BigDecimal.valueOf(subtotal));
-
-            ApplyDiscountResult discountResult = discountService.applyDiscount(command);
-
-            if (discountResult.valid()) {
-                order.setDiscountCode(discountResult.discountCode());
-                order.setDiscountAmount(discountResult.discountAmount().intValue());
-                if (discountResult.discountPercentage() != null) {
-                    order.setDiscountPercentage(discountResult.discountPercentage().doubleValue());
-                }
-                total = discountResult.newSubtotal().intValue();
-            }
-        }
-
+        // Aplicar descuento usando método privado
+        int total = applyDiscountIfPresent(order, dto.discountCode(), subtotal);
         order.setTotal(total);
+
+        // Guardar
         Order savedOrder = orderRepository.save(order);
 
-        if (savedOrder.getDiscountCode() != null) {
-            LinkOrderCouponCommand linkCommand = new LinkOrderCouponCommand(
-                    savedOrder.getIdOrder(),
-                    savedOrder.getDiscountCode(),
-                    BigDecimal.valueOf(savedOrder.getSubtotal()),
-                    BigDecimal.valueOf(savedOrder.getDiscountAmount()),
-                    BigDecimal.valueOf(savedOrder.getTotal()));
-            discountService.linkOrderWithCoupon(linkCommand);
-        }
+        // Vincular cupón usando método privado
+        linkCouponIfPresent(savedOrder);
+
         return savedOrder;
     }
 
@@ -322,16 +270,9 @@ public class OrderServiceImpl implements OrderService {
                     "ORDER_EDIT_TIME_EXCEEDED");
         }
 
-        // Validar pager no ocupado por otra orden
+        // Validar pager no ocupado por otra orden (solo si cambió)
         if (!(order.getPagerColor().equals(dto.pagerColor()) && order.getPagerNumber().equals(dto.pagerNumber()))) {
-            Optional<Order> existingPagerOrder = orderRepository.findByPagerColorAndPagerNumberAndStatusAndDeliveredAt(
-                    dto.pagerColor(), dto.pagerNumber(), OrderStatus.pagado, "No");
-
-            if (existingPagerOrder.isPresent() && !existingPagerOrder.get().getIdOrder().equals(orderId)) {
-                throw new PagerOcupadoException(
-                        String.format("El pager %s %s ya está en uso", dto.pagerColor(), dto.pagerNumber()),
-                        "PAGER_OCUPADO");
-            }
+            validatePagerAvailability(dto.pagerColor(), dto.pagerNumber(), orderId);
         }
 
         // Guardar estado anterior para auditoría
@@ -342,71 +283,19 @@ public class OrderServiceImpl implements OrderService {
         order.setPagerColor(dto.pagerColor());
         order.setPagerNumber(dto.pagerNumber());
 
-        // Actualizar items
+        // Actualizar items usando método reutilizable
         order.getItems().clear();
-        List<OrderItem> newItems = dto.items().stream().map(itemDto -> {
-            OrderItem item = new OrderItem();
-            item.setOrder(order);
-            item.setProductId(itemDto.productId());
-            item.setQuantity(itemDto.quantity());
-            item.setUnitPrice(itemDto.unitPrice());
-            item.setTotalPrice(itemDto.quantity() * itemDto.unitPrice());
-            item.setInstructions(itemDto.instructions());
-            item.setComboGroup(itemDto.comboGroup());
-            return item;
-        }).toList();
+        List<OrderItem> newItems = createOrderItems(order, dto.items());
         order.getItems().addAll(newItems);
 
         // Recalcular totales
         int subtotal = order.getItems().stream().mapToInt(OrderItem::getTotalPrice).sum();
         order.setSubtotal(subtotal);
-        int total = subtotal;
 
-        // Aplicar descuento si existe
-        if (dto.discountCode() != null && !dto.discountCode().trim().isEmpty()) {
-            List<OrderItemDto> itemsForDiscount = order.getItems().stream().map(item -> {
-                ProductResponse productDetails = productClient.getProductDetails(item.getProductId());
-                Long productIdLong = null;
-                try {
-                    productIdLong = Long.parseLong(item.getProductId());
-                } catch (NumberFormatException ignored) {
-                }
-                return new OrderItemDto(
-                        item.getProductId(),
-                        productIdLong,
-                        productDetails != null ? productDetails.nameProduct() : null,
-                        productDetails != null ? productDetails.categoryName() : null,
-                        item.getQuantity(),
-                        BigDecimal.valueOf(item.getUnitPrice()));
-            }).toList();
-
-            ApplyDiscountCommand command = new ApplyDiscountCommand(
-                    dto.discountCode(),
-                    LocalDateTime.now(BOGOTA_ZONE),
-                    itemsForDiscount,
-                    BigDecimal.valueOf(subtotal));
-
-            ApplyDiscountResult discountResult = discountService.applyDiscount(command);
-
-            if (discountResult.valid()) {
-                order.setDiscountCode(discountResult.discountCode());
-                order.setDiscountAmount(discountResult.discountAmount().intValue());
-                if (discountResult.discountPercentage() != null) {
-                    order.setDiscountPercentage(discountResult.discountPercentage().doubleValue());
-                }
-                total = discountResult.newSubtotal().intValue();
-            } else {
-                order.setDiscountCode(null);
-                order.setDiscountAmount(0);
-                order.setDiscountPercentage(null);
-            }
-        } else {
-            order.setDiscountCode(null);
-            order.setDiscountAmount(0);
-            order.setDiscountPercentage(null);
-        }
-
+        // Aplicar descuento si existe usando método reutilizable
+        int total = applyDiscountIfPresent(order, dto.discountCode(), subtotal);
         order.setTotal(total);
+
         orderRepository.save(order);
 
         // Registrar cambios en auditoría
@@ -618,5 +507,180 @@ public class OrderServiceImpl implements OrderService {
             return orderEditHistoryRepository.findByOrderIdOrderByEditedAtDesc(orderId, pageable);
         }
         return orderEditHistoryRepository.findAllByOrderByEditedAtDesc(pageable);
+    }
+
+    @Override
+    @Transactional
+    public OrderSyncResponse syncOrderIdempotent(String idempotencyKey, OrderRequestRecord dto) {
+        // 1. Verificar si ya existe una orden con este idempotencyKey
+        Optional<Order> existingOrder = orderRepository.findByIdempotencyKey(idempotencyKey);
+
+        if (existingOrder.isPresent()) {
+            // ✅ Orden ya existe - retornar la existente (IDEMPOTENCIA)
+            Order order = existingOrder.get();
+            log.info("Order with idempotencyKey {} already exists: Order ID {}",
+                    idempotencyKey, order.getIdOrder());
+            return OrderSyncResponse.alreadyExists(order.getIdOrder());
+        }
+
+        // 2. No existe - crear nueva orden
+        try {
+            // Validaciones usando métodos privados
+            validatePaymentMethod(dto.paymentMethod());
+            validatePagerAvailability(dto.pagerColor(), dto.pagerNumber(), null);
+
+            // Crear orden
+            Order order = new Order();
+            order.setIdempotencyKey(idempotencyKey);  // ✅ GUARDAR IDEMPOTENCY KEY
+            order.setPagerColor(dto.pagerColor());
+            order.setPagerNumber(dto.pagerNumber());
+            order.setStatus(OrderStatus.pagado);
+            order.setDeliveredAt("No");
+            order.setPaymentMethod(dto.paymentMethod());
+            order.setCreatedAt(LocalDateTime.now(BOGOTA_ZONE));
+
+            // Crear items usando método privado
+            List<OrderItem> items = createOrderItems(order, dto.items());
+            order.setItems(items);
+
+            // Calcular totales
+            int subtotal = order.getItems().stream().mapToInt(OrderItem::getTotalPrice).sum();
+            order.setSubtotal(subtotal);
+
+            // Aplicar descuento usando método privado
+            int total = applyDiscountIfPresent(order, dto.discountCode(), subtotal);
+            order.setTotal(total);
+
+            // Guardar
+            Order savedOrder = orderRepository.save(order);
+
+            // Vincular cupón usando método privado
+            linkCouponIfPresent(savedOrder);
+
+            log.info("Order created with idempotencyKey {}: Order ID {}",
+                    idempotencyKey, savedOrder.getIdOrder());
+
+            return OrderSyncResponse.created(savedOrder.getIdOrder());
+
+        } catch (IllegalArgumentException | PagerOcupadoException e) {
+            // Errores de validación - retornar error descriptivo
+            log.warn("Validation error creating order with idempotencyKey {}: {}", idempotencyKey, e.getMessage());
+            return OrderSyncResponse.error(e.getMessage());
+        } catch (Exception e) {
+            // Errores inesperados
+            log.error("Error creating order with idempotencyKey {}: {}", idempotencyKey, e.getMessage(), e);
+            return OrderSyncResponse.error("Error al crear orden: " + e.getMessage());
+        }
+    }
+
+    @Override
+    public Order findByIdempotencyKey(String idempotencyKey) {
+        return orderRepository.findByIdempotencyKey(idempotencyKey)
+                .orElse(null);
+    }
+
+    // ==================== MÉTODOS PRIVADOS PARA EVITAR DUPLICACIÓN ====================
+
+    /**
+     * Valida que el método de pago sea válido.
+     */
+    private void validatePaymentMethod(String paymentMethod) {
+        if (paymentMethod == null || !List.of("CASH", "CARD", "NEQUI", "QR").contains(paymentMethod)) {
+            throw new IllegalArgumentException("Método de pago inválido. Debe ser: CASH, CARD, NEQUI o QR");
+        }
+    }
+
+    /**
+     * Valida que el pager no esté ocupado por otra orden.
+     * @param excludeOrderId ID de orden a excluir de la validación (para updates)
+     */
+    private void validatePagerAvailability(String pagerColor, String pagerNumber, Long excludeOrderId) {
+        Optional<Order> existingPagerOrder = orderRepository.findByPagerColorAndPagerNumberAndStatusAndDeliveredAt(
+                pagerColor, pagerNumber, OrderStatus.pagado, "No");
+
+        if (existingPagerOrder.isPresent() &&
+            (excludeOrderId == null || !existingPagerOrder.get().getIdOrder().equals(excludeOrderId))) {
+            throw new PagerOcupadoException(
+                    String.format("El pager %s %s ya está en uso por la orden #%d",
+                            pagerColor, pagerNumber, existingPagerOrder.get().getIdOrder()),
+                    "PAGER_OCUPADO");
+        }
+    }
+
+    /**
+     * Crea los OrderItems a partir del DTO.
+     */
+    private List<OrderItem> createOrderItems(Order order, List<OrderItemRequestRecord> itemDtos) {
+        return itemDtos.stream().map(itemDto -> {
+            OrderItem item = new OrderItem();
+            item.setOrder(order);
+            item.setProductId(itemDto.productId());
+            item.setQuantity(itemDto.quantity());
+            item.setUnitPrice(itemDto.unitPrice());
+            item.setTotalPrice(itemDto.quantity() * itemDto.unitPrice());
+            item.setInstructions(itemDto.instructions());
+            item.setComboGroup(itemDto.comboGroup());
+            return item;
+        }).toList();
+    }
+
+    /**
+     * Aplica descuento a la orden si existe código de descuento.
+     * @return total después de aplicar descuento
+     */
+    private int applyDiscountIfPresent(Order order, String discountCode, int subtotal) {
+        if (discountCode == null || discountCode.trim().isEmpty()) {
+            return subtotal;
+        }
+
+        List<OrderItemDto> itemsForDiscount = order.getItems().stream().map(item -> {
+            ProductResponse productDetails = productClient.getProductDetails(item.getProductId());
+            Long productIdLong = null;
+            try {
+                productIdLong = Long.parseLong(item.getProductId());
+            } catch (NumberFormatException ignored) {
+            }
+            return new OrderItemDto(
+                    item.getProductId(),
+                    productIdLong,
+                    productDetails != null ? productDetails.nameProduct() : null,
+                    productDetails != null ? productDetails.categoryName() : null,
+                    item.getQuantity(),
+                    BigDecimal.valueOf(item.getUnitPrice()));
+        }).toList();
+
+        ApplyDiscountCommand command = new ApplyDiscountCommand(
+                discountCode,
+                LocalDateTime.now(BOGOTA_ZONE),
+                itemsForDiscount,
+                BigDecimal.valueOf(subtotal));
+
+        ApplyDiscountResult discountResult = discountService.applyDiscount(command);
+
+        if (discountResult.valid()) {
+            order.setDiscountCode(discountResult.discountCode());
+            order.setDiscountAmount(discountResult.discountAmount().intValue());
+            if (discountResult.discountPercentage() != null) {
+                order.setDiscountPercentage(discountResult.discountPercentage().doubleValue());
+            }
+            return discountResult.newSubtotal().intValue();
+        }
+
+        return subtotal;
+    }
+
+    /**
+     * Vincula el cupón con la orden si tiene descuento.
+     */
+    private void linkCouponIfPresent(Order order) {
+        if (order.getDiscountCode() != null) {
+            LinkOrderCouponCommand linkCommand = new LinkOrderCouponCommand(
+                    order.getIdOrder(),
+                    order.getDiscountCode(),
+                    BigDecimal.valueOf(order.getSubtotal()),
+                    BigDecimal.valueOf(order.getDiscountAmount()),
+                    BigDecimal.valueOf(order.getTotal()));
+            discountService.linkOrderWithCoupon(linkCommand);
+        }
     }
 }

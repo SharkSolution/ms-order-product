@@ -4,8 +4,10 @@ import com.suresell.order.model.entity.Order;
 import com.suresell.order.model.entity.OrderEditHistory;
 import com.suresell.order.model.record.OrderRequestRecord;
 import com.suresell.order.model.record.OrderResponseRecord;
+import com.suresell.order.model.record.OrderSyncResponse;
 import org.springframework.data.domain.Page;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 public interface OrderService {
@@ -35,4 +37,17 @@ public interface OrderService {
     void markAsDelivered(Long orderId, Integer elapsedSeconds);
 
     Page<OrderEditHistory> getOrderEditHistory(Long orderId, String adminPassword, int page, int size);
+
+    /**
+     * Sincroniza una orden de forma idempotente.
+     * Si ya existe una orden con el mismo idempotencyKey, retorna la existente.
+     * Si no existe, crea una nueva.
+     */
+    OrderSyncResponse syncOrderIdempotent(String idempotencyKey, OrderRequestRecord dto);
+
+    /**
+     * Busca una orden por idempotencyKey.
+     * Usado para verificación post-timeout.
+     */
+    Order findByIdempotencyKey(String idempotencyKey);
 }

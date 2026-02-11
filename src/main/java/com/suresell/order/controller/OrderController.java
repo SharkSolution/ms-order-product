@@ -5,6 +5,7 @@ import com.suresell.order.model.entity.OrderEditHistory;
 import com.suresell.order.model.record.OrderItemResponseRecord;
 import com.suresell.order.model.record.OrderRequestRecord;
 import com.suresell.order.model.record.OrderResponseRecord;
+import com.suresell.order.model.record.OrderSyncResponse;
 import com.suresell.order.model.record.PageResponse;
 import com.suresell.order.serivices.OrderService;
 import com.suresell.order.serivices.ResilientOrderService;
@@ -54,6 +55,48 @@ public class OrderController {
             log.error("Critical error creating order: {}", e.getMessage(), e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(Map.of("error", "Error al crear orden. Por favor intente nuevamente."));
+        }
+    }
+
+    /**
+     * Endpoint idempotente para sincronización de órdenes offline.
+     * Usa idempotencyKey en el header para prevenir duplicados.
+     *
+     * Si ya existe una orden con el mismo idempotencyKey, retorna la existente.
+     * Si no existe, crea una nueva.
+     *
+     * Uso:
+     * POST /orders/sync
+     * Header: X-Idempotency-Key: uuid-aqui
+     * Body: { mismo formato que /orders/create }
+     */
+    @PostMapping("/sync")
+    public ResponseEntity<OrderSyncResponse> syncOrder(
+            @RequestHeader("X-Idempotency-Key") String idempotencyKey,
+            @RequestBody Map<String, Object> payload) {
+        try {
+            log.info("🔄 [SYNC] Received sync request with idempotencyKey: {}", idempotencyKey);
+
+            OrderRequestRecord dto = orderRequestAdapter.normalize(payload);
+            OrderSyncResponse response = orderService.syncOrderIdempotent(idempotencyKey, dto);
+
+            if (response.success()) {
+                if ("CREATED".equals(response.status())) {
+                    log.info("✅ [SYNC] Order created: ID {}", response.orderId());
+                    return ResponseEntity.status(HttpStatus.CREATED).body(response);
+                } else {
+                    log.info("✅ [SYNC] Order already exists: ID {}", response.orderId());
+                    return ResponseEntity.ok(response);
+                }
+            } else {
+                log.error("❌ [SYNC] Failed: {}", response.message());
+                return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
+            }
+
+        } catch (Exception e) {
+            log.error("❌ [SYNC] Critical error: {}", e.getMessage(), e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(OrderSyncResponse.error("Error interno: " + e.getMessage()));
         }
     }
 

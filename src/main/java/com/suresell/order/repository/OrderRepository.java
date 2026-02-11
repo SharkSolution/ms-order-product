@@ -55,4 +55,9 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
     // Keyset pagination (recomendado para escalar)
     @Query("SELECT o FROM Order o WHERE o.idOrder < :afterId ORDER BY o.idOrder DESC")
     List<Order> findOrdersAfter(@Param("afterId") Long afterId, Pageable pageable);
+
+    // NUEVOS MÉTODOS PARA IDEMPOTENCIA
+
+    // Buscar orden por idempotency key (para verificación post-timeout)
+    Optional<Order> findByIdempotencyKey(String idempotencyKey);
 }
