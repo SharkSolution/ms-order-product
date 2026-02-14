@@ -1,5 +1,7 @@
 package com.suresell.orders.application.usecase;
 
+import org.springframework.context.annotation.Primary;
+
 import com.suresell.orders.shared.exception.AdminPasswordException;
 import com.suresell.orders.shared.exception.OrderEditNotAllowedException;
 import com.suresell.orders.shared.exception.PagerOcupadoException;
@@ -41,6 +43,7 @@ import java.util.Optional;
 import java.util.stream.Collectors;
 
 @Service
+@Primary
 @RequiredArgsConstructor
 @Slf4j
 public class OrderHandler implements OrderPort {

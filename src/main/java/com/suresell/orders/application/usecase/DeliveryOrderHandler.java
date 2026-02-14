@@ -9,6 +9,7 @@ import com.suresell.orders.shared.exception.OrderNotFoundException;
 import com.suresell.orders.domain.port.in.DeliveryPort;
 import com.suresell.orders.domain.port.out.DeliveryOrderRepositoryPort;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -16,6 +17,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 @Service
+@Primary
 @RequiredArgsConstructor
 public class DeliveryOrderHandler implements DeliveryPort {
 

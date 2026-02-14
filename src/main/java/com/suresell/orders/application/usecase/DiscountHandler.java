@@ -1,5 +1,6 @@
 package com.suresell.orders.application.usecase;
 
+import com.suresell.orders.domain.port.in.DiscountPort;
 import com.suresell.orders.domain.model.CouponProduct;
 import com.suresell.orders.domain.model.DiscountCoupon;
 import com.suresell.orders.domain.model.DiscountUsage;
@@ -28,7 +29,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 @Service
-public class DiscountHandler {
+public class DiscountHandler implements DiscountPort {
     private static final Logger logger = LoggerFactory.getLogger(DiscountHandler.class);
     @Autowired
     private DiscountCouponRepositoryPort couponRepositoryPort;

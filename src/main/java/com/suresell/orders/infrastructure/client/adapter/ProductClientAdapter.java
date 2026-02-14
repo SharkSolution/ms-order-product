@@ -12,7 +12,7 @@ public class ProductClientAdapter implements ProductClientPort {
     private final RestTemplate restTemplate;
     private final String productServiceBaseUrl;
 
-    public ProductClientAdapter(RestTemplate restTemplate, @Value("${app.product-service.base-url}") String productServiceBaseUrl) {
+    public ProductClientAdapter(RestTemplate restTemplate, @Value("${products.service.url}") String productServiceBaseUrl) {
         this.restTemplate = restTemplate;
         this.productServiceBaseUrl = productServiceBaseUrl;
     }

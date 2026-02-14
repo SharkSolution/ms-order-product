@@ -4,7 +4,7 @@ import com.suresell.orders.application.dto.ClosurePreviewResponse;
 import com.suresell.orders.application.dto.ClosureRequest;
 import com.suresell.orders.application.dto.ClosureResponse;
 import com.suresell.orders.domain.port.in.DailyClosurePort;
-import com.suresell.orders.infrastructure.persistence.repository.DailyClosureJpaRepository;
+import com.suresell.orders.domain.port.out.DailyClosureRepositoryPort;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -12,10 +12,10 @@ import java.util.List;
 @Service
 public class DailyClosureDomainService implements DailyClosurePort {
 
-    private final DailyClosureJpaRepository dailyClosureJpaRepository;
+    private final DailyClosureRepositoryPort dailyClosureRepositoryPort;
 
-    public DailyClosureDomainService(DailyClosureJpaRepository dailyClosureJpaRepository) {
-        this.dailyClosureJpaRepository = dailyClosureJpaRepository;
+    public DailyClosureDomainService(DailyClosureRepositoryPort dailyClosureRepositoryPort) {
+        this.dailyClosureRepositoryPort = dailyClosureRepositoryPort;
     }
 
     @Override
