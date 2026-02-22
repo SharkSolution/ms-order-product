@@ -13,13 +13,13 @@ import org.springframework.data.repository.query.Param;
 
 
 public interface OrderRepository extends JpaRepository<Order, Long> {
-  Optional<Order> findByPagerColorAndPagerNumberAndStatusAndDeliveredAt(
-      String var1, String var2, OrderStatus var3, String var4);
+  Optional<Order> findByPagerColorAndPagerNumberAndStatusAndDeliveredAtIsNull(
+      String var1, String var2, OrderStatus var3);
 
     @Query(value="SELECT o FROM Order o WHERE o.status = :status")
     List<Order> findActiveOrders(@Param("status") OrderStatus status);
 
-    @Query("SELECT DISTINCT o FROM Order o LEFT JOIN FETCH o.items WHERE o.status = :status AND o.deliveredAt = 'No'")
+    @Query("SELECT DISTINCT o FROM Order o LEFT JOIN FETCH o.items WHERE o.status = :status AND o.deliveredAt IS NULL")
     List<Order> findActiveOrdersWithItems(@Param("status") OrderStatus status);
 
     @Query("SELECT o.paymentMethod, SUM(o.total) FROM Order o WHERE o.status = :status AND o.createdAt BETWEEN :startOfDay AND :endOfDay GROUP BY o.paymentMethod")
@@ -40,6 +40,11 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
             @Param("startOfDay") LocalDateTime startOfDay,
             @Param("endOfDay") LocalDateTime endOfDay);
 
+    List<Order> findByStatusAndPaymentMethodIsNotNullAndCreatedAtBetween(
+            OrderStatus status,
+            LocalDateTime startOfDay,
+            LocalDateTime endOfDay);
+
     Optional<Order> findFirstByOrderByCreatedAtAsc();
 
     @Query("SELECT MIN(o.createdAt) FROM Order o")
@@ -54,5 +59,4 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
     @Query("SELECT o FROM Order o WHERE o.idOrder < :afterId ORDER BY o.idOrder DESC")
     List<Order> findOrdersAfter(@Param("afterId") Long afterId, Pageable pageable);
 
-    Optional<Order> findByIdempotencyKey(String idempotencyKey);
 }

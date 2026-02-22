@@ -2,30 +2,22 @@ server:
   port: 8081
 
 spring:
-  # AWS RDS - Base de datos principal
   datasource:
-    url: jdbc:postgresql://database-surresell.c740uem2quei.us-east-2.rds.amazonaws.com:5432/pos_db
-    username: postgres
-    password: Sharkcol2025*
+    driver-class-name: org.sqlite.JDBC
+    url: jdbc:sqlite:./data/ms_order_product.db
     hikari:
-      connection-timeout: 15000      # 15 segundos (antes 3) - internet lento
-      validation-timeout: 10000      # 10 segundos para validar conexiones
-      maximum-pool-size: 5           # Reducido de 10 a 5 - menos concurrencia
+      maximum-pool-size: 1
       minimum-idle: 1
-      idle-timeout: 300000           # 5 minutos
-      max-lifetime: 600000           # 10 minutos
-      leak-detection-threshold: 120000  # 2 minutos - detectar conexiones colgadas
 
   jpa:
     properties:
       hibernate:
+        dialect: org.hibernate.community.dialect.SQLiteDialect
         format_sql: true
         use_sql_comments: true
     hibernate:
       ddl-auto: update
     show-sql: false
-
-
 
 logging:
   level:
@@ -35,10 +27,11 @@ logging:
   application:
     name: ms-order-product
 
-# Servicio de productos en AWS
-products:
-  service:
-    url: http://localhost:8082
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
 
 # Cupones
 coupon:
@@ -54,22 +47,3 @@ cache:
   cleanup:
     enabled: true
     cron: "0 0 19 * * ?"  # 19:00 todos los días (zona America/Bogota)
-
-# Sincronización automática
-sync:
-  enabled: true
-  interval-seconds: 60               # Aumentado de 30 a 60 - menos presión en internet malo
-  batch-size: 5                      # Reducido de 10 a 5 - procesar menos por ciclo
-  max-retries: 5
-  request-timeout-ms: 20000          # 20 segundos para enviar petición
-  read-timeout-ms: 25000             # 25 segundos para leer respuesta
-  retry-strategy: exponential        # exponential | linear
-  initial-delay-seconds: 30          # Delay inicial entre reintentos
-  max-delay-seconds: 300             # Máximo 5 minutos entre reintentos
-  backoff-multiplier: 2              # Duplicar delay en cada intento
-
-# Verificación de conectividad
-connectivity:
-  check-interval-seconds: 30         # Aumentado de 10 a 30 - menos frecuente
-  timeout-ms: 5000                   # Aumentado de 2000 a 5000 - 5 segundos
-  max-consecutive-failures: 3        # Marcar AWS como down tras 3 fallos consecutivos

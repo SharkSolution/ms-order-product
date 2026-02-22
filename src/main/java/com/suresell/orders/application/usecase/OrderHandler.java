@@ -1,14 +1,5 @@
 package com.suresell.orders.application.usecase;
 
-import org.springframework.context.annotation.Primary;
-
-import com.suresell.orders.shared.exception.AdminPasswordException;
-import com.suresell.orders.shared.exception.OrderEditNotAllowedException;
-import com.suresell.orders.shared.exception.PagerOcupadoException;
-import com.suresell.orders.domain.model.Order;
-import com.suresell.orders.domain.model.OrderEditHistory;
-import com.suresell.orders.domain.model.OrderItem;
-import com.suresell.orders.domain.model.OrderStatus;
 import com.suresell.orders.application.dto.ApplyDiscountCommand;
 import com.suresell.orders.application.dto.ApplyDiscountResult;
 import com.suresell.orders.application.dto.LinkOrderCouponCommand;
@@ -17,30 +8,38 @@ import com.suresell.orders.application.dto.OrderItemRequestRecord;
 import com.suresell.orders.application.dto.OrderItemResponseRecord;
 import com.suresell.orders.application.dto.OrderRequestRecord;
 import com.suresell.orders.application.dto.OrderResponseRecord;
-import com.suresell.orders.application.dto.OrderSyncResponse;
-import com.suresell.orders.application.usecase.DiscountHandler;
 import com.suresell.orders.application.dto.ProductResponse;
-import com.suresell.orders.infrastructure.persistence.OrderEditHistoryRepository;
-import com.suresell.orders.infrastructure.client.adapter.ProductClientAdapter;
+import com.suresell.orders.domain.model.Order;
+import com.suresell.orders.domain.model.OrderEditHistory;
+import com.suresell.orders.domain.model.OrderItem;
+import com.suresell.orders.domain.model.OrderStatus;
+import com.suresell.orders.domain.port.in.DiscountPort;
 import com.suresell.orders.domain.port.in.OrderPort;
+import com.suresell.orders.domain.port.out.OrderEditHistoryRepositoryPort;
 import com.suresell.orders.domain.port.out.OrderItemRepositoryPort;
 import com.suresell.orders.domain.port.out.OrderRepositoryPort;
+import com.suresell.orders.domain.port.out.ProductCatalogPort;
+import com.suresell.orders.shared.exception.OrderEditNotAllowedException;
+import com.suresell.orders.shared.exception.PagerOcupadoException;
 import jakarta.transaction.Transactional;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageRequest;
-import org.springframework.data.domain.Pageable;
-import org.springframework.stereotype.Service;
-
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.stream.Collectors;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.annotation.Primary;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.stereotype.Service;
 
 @Service
 @Primary
@@ -50,13 +49,12 @@ public class OrderHandler implements OrderPort {
 
     private final OrderRepositoryPort orderRepositoryPort;
     private final OrderItemRepositoryPort orderItemRepositoryPort;
-    private final ProductClientAdapter productClient;
-    private final DiscountHandler discountService;
-    private final OrderEditHistoryRepository orderEditHistoryRepository;
+    private final ProductCatalogPort productCatalogPort;
+    private final DiscountPort discountService;
+    private final OrderEditHistoryRepositoryPort orderEditHistoryRepository;
 
     private static final ZoneId BOGOTA_ZONE = ZoneId.of("America/Bogota");
     private static final int MAX_EDIT_MINUTES = 7;
-    private static final String ADMIN_PASSWORD = "Admin2025*";
 
     @Override
     @Transactional
@@ -68,42 +66,31 @@ public class OrderHandler implements OrderPort {
         order.setPagerColor(dto.pagerColor());
         order.setPagerNumber(dto.pagerNumber());
         order.setStatus(OrderStatus.pagado);
-        order.setDeliveredAt("No");
+        order.setDeliveredAt(null);
         order.setPaymentMethod(dto.paymentMethod());
         order.setCreatedAt(LocalDateTime.now(BOGOTA_ZONE));
 
         List<OrderItem> items = createOrderItems(order, dto.items());
         order.setItems(items);
 
-        int subtotal = order.getItems().stream().mapToInt(OrderItem::getTotalPrice).sum();
+        BigDecimal subtotal = order.getItems().stream()
+                .map(OrderItem::getTotalPrice)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
         order.setSubtotal(subtotal);
 
-        int total = applyDiscountIfPresent(order, dto.discountCode(), subtotal);
+        BigDecimal total = applyDiscountIfPresent(order, dto.discountCode(), subtotal);
         order.setTotal(total);
 
         Order savedOrder = orderRepositoryPort.save(order);
-
         linkCouponIfPresent(savedOrder);
-
         return savedOrder;
-    }
-
-    @Override
-    public List<OrderResponseRecord> getKitchenOrders() {
-        List<Order> orders = orderRepositoryPort.findActiveOrdersWithItems(OrderStatus.pagado);
-
-        return orders.stream()
-                .map(this::toOrderResponseRecord)
-                .toList();
     }
 
     @Override
     public List<OrderResponseRecord> getAllOrders() {
         List<Order> orders = orderRepositoryPort.findAllWithItems();
-
-        return orders.stream()
-                .map(this::toOrderResponseRecord)
-                .toList();
+        Map<String, String> productNames = buildProductNameCacheFromOrders(orders);
+        return orders.stream().map(order -> toOrderResponseRecord(order, productNames)).toList();
     }
 
     @Override
@@ -115,26 +102,19 @@ public class OrderHandler implements OrderPort {
             return Page.empty(pageable);
         }
 
-        List<Long> orderIds = ordersPage.getContent().stream()
-                .map(Order::getIdOrder)
-                .toList();
-
+        List<Long> orderIds = ordersPage.getContent().stream().map(Order::getIdOrder).toList();
         List<OrderItem> items = orderItemRepositoryPort.findByOrderIds(orderIds);
 
-        var itemsByOrderId = items.stream()
-                .collect(Collectors.groupingBy(
-                        oi -> oi.getOrder().getIdOrder()
-                ));
+        Map<Long, List<OrderItem>> itemsByOrderId = items.stream()
+                .collect(Collectors.groupingBy(oi -> oi.getOrder().getIdOrder()));
 
         ordersPage.getContent().forEach(order -> {
-            List<OrderItem> orderItems = itemsByOrderId.getOrDefault(
-                    order.getIdOrder(),
-                    new ArrayList<>()
-            );
+            List<OrderItem> orderItems = itemsByOrderId.getOrDefault(order.getIdOrder(), new ArrayList<>());
             order.setItems(orderItems);
         });
 
-        return ordersPage.map(this::toOrderResponseRecord);
+        Map<String, String> productNames = buildProductNameCacheFromOrders(ordersPage.getContent());
+        return ordersPage.map(order -> toOrderResponseRecord(order, productNames));
     }
 
     @Override
@@ -146,28 +126,19 @@ public class OrderHandler implements OrderPort {
             return new ArrayList<>();
         }
 
-        List<Long> orderIds = orders.stream()
-                .map(Order::getIdOrder)
-                .toList();
-
+        List<Long> orderIds = orders.stream().map(Order::getIdOrder).toList();
         List<OrderItem> items = orderItemRepositoryPort.findByOrderIds(orderIds);
 
-        var itemsByOrderId = items.stream()
-                .collect(Collectors.groupingBy(
-                        oi -> oi.getOrder().getIdOrder()
-                ));
+        Map<Long, List<OrderItem>> itemsByOrderId = items.stream()
+                .collect(Collectors.groupingBy(oi -> oi.getOrder().getIdOrder()));
 
         orders.forEach(order -> {
-            List<OrderItem> orderItems = itemsByOrderId.getOrDefault(
-                    order.getIdOrder(),
-                    new ArrayList<>()
-            );
+            List<OrderItem> orderItems = itemsByOrderId.getOrDefault(order.getIdOrder(), new ArrayList<>());
             order.setItems(orderItems);
         });
 
-        return orders.stream()
-                .map(this::toOrderResponseRecord)
-                .toList();
+        Map<String, String> productNames = buildProductNameCacheFromOrders(orders);
+        return orders.stream().map(order -> toOrderResponseRecord(order, productNames)).toList();
     }
 
     @Override
@@ -175,23 +146,8 @@ public class OrderHandler implements OrderPort {
         Order order = orderRepositoryPort.findById(orderId)
                 .orElseThrow(() -> new RuntimeException("Orden no encontrada con ID: " + orderId));
 
-        return toOrderResponseRecord(order);
-    }
-
-    @Override
-    public void updateStatus(Long orderId, String newStatus) {
-        Order order = orderRepositoryPort.findById(orderId)
-                .orElseThrow(() -> new RuntimeException("Order not found"));
-
-        OrderStatus status;
-        try {
-            status = OrderStatus.fromString(newStatus);
-        } catch (IllegalArgumentException e) {
-            throw new IllegalArgumentException("Estado inválido: " + newStatus + ". Estado permitido: PAGADO");
-        }
-
-        order.setStatus(status);
-        orderRepositoryPort.save(order);
+        Map<String, String> productNames = buildProductNameCache(order.getItems());
+        return toOrderResponseRecord(order, productNames);
     }
 
     @Override
@@ -205,8 +161,11 @@ public class OrderHandler implements OrderPort {
 
         if (minutesSinceCreation > MAX_EDIT_MINUTES) {
             throw new OrderEditNotAllowedException(
-                    String.format("No se puede editar la orden #%d. Han pasado %d minutos desde su creación (máximo permitido: %d minutos)",
-                            orderId, minutesSinceCreation, MAX_EDIT_MINUTES),
+                    String.format(
+                            "No se puede editar la orden #%d. Han pasado %d minutos desde su creación (máximo permitido: %d minutos)",
+                            orderId,
+                            minutesSinceCreation,
+                            MAX_EDIT_MINUTES),
                     "ORDER_EDIT_TIME_EXCEEDED");
         }
 
@@ -215,7 +174,7 @@ public class OrderHandler implements OrderPort {
         }
 
         List<OrderItem> previousItems = new ArrayList<>(order.getItems());
-        int previousTotal = order.getTotal();
+        BigDecimal previousTotal = order.getTotal();
 
         order.setPagerColor(dto.pagerColor());
         order.setPagerNumber(dto.pagerNumber());
@@ -224,31 +183,34 @@ public class OrderHandler implements OrderPort {
         List<OrderItem> newItems = createOrderItems(order, dto.items());
         order.getItems().addAll(newItems);
 
-        int subtotal = order.getItems().stream().mapToInt(OrderItem::getTotalPrice).sum();
+        BigDecimal subtotal = order.getItems().stream()
+                .map(OrderItem::getTotalPrice)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
         order.setSubtotal(subtotal);
 
-        int total = applyDiscountIfPresent(order, dto.discountCode(), subtotal);
+        BigDecimal total = applyDiscountIfPresent(order, dto.discountCode(), subtotal);
         order.setTotal(total);
 
         orderRepositoryPort.save(order);
-
         saveEditHistory(orderId, previousItems, order.getItems(), previousTotal, order.getTotal());
     }
 
-    private void saveEditHistory(Long orderId, List<OrderItem> oldItems, List<OrderItem> newItems,
-                                 int oldTotal, int newTotal) {
+    private void saveEditHistory(Long orderId, List<OrderItem> oldItems, List<OrderItem> newItems, BigDecimal oldTotal, BigDecimal newTotal) {
         LocalDateTime now = LocalDateTime.now(BOGOTA_ZONE);
+        Set<String> productIds = new LinkedHashSet<>();
+        oldItems.forEach(item -> productIds.add(item.getProductId()));
+        newItems.forEach(item -> productIds.add(item.getProductId()));
+        Map<String, String> productNames = buildProductNameCacheByIds(productIds);
 
         for (OrderItem oldItem : oldItems) {
-            boolean found = newItems.stream()
-                    .anyMatch(n -> n.getProductId().equals(oldItem.getProductId()));
+            boolean found = newItems.stream().anyMatch(n -> n.getProductId().equals(oldItem.getProductId()));
 
             if (!found) {
                 OrderEditHistory history = new OrderEditHistory();
                 history.setOrderId(orderId);
                 history.setEditType("ITEM_REMOVED");
                 history.setProductId(oldItem.getProductId());
-                history.setProductName(productClient.getProductById(oldItem.getProductId()).nameProduct());
+                history.setProductName(productNames.getOrDefault(oldItem.getProductId(), oldItem.getProductId()));
                 history.setOldQuantity(oldItem.getQuantity());
                 history.setNewQuantity(0);
                 history.setOldTotal(oldTotal);
@@ -269,7 +231,7 @@ public class OrderHandler implements OrderPort {
                 history.setOrderId(orderId);
                 history.setEditType("ITEM_ADDED");
                 history.setProductId(newItem.getProductId());
-                history.setProductName(productClient.getProductById(newItem.getProductId()).nameProduct());
+                history.setProductName(productNames.getOrDefault(newItem.getProductId(), newItem.getProductId()));
                 history.setOldQuantity(0);
                 history.setNewQuantity(newItem.getQuantity());
                 history.setOldTotal(oldTotal);
@@ -281,7 +243,7 @@ public class OrderHandler implements OrderPort {
                 history.setOrderId(orderId);
                 history.setEditType("ITEM_QUANTITY_CHANGED");
                 history.setProductId(newItem.getProductId());
-                history.setProductName(productClient.getProductById(newItem.getProductId()).nameProduct());
+                history.setProductName(productNames.getOrDefault(newItem.getProductId(), newItem.getProductId()));
                 history.setOldQuantity(oldItem.getQuantity());
                 history.setNewQuantity(newItem.getQuantity());
                 history.setOldTotal(oldTotal);
@@ -290,30 +252,6 @@ public class OrderHandler implements OrderPort {
                 orderEditHistoryRepository.save(history);
             }
         }
-    }
-
-    @Override
-    public List<OrderResponseRecord> getSalesReport() {
-        List<Order> orders = orderRepositoryPort.findAll();
-        List<OrderResponseRecord> report = new ArrayList<>();
-        for (Order order : orders) {
-            report.add(toOrderResponseRecord(order));
-        }
-        return report;
-    }
-
-    @Override
-    @Transactional
-    public void updatePaymentMethod(Long orderId, String paymentMethod) {
-        Order order = orderRepositoryPort.findById(orderId)
-                .orElseThrow(() -> new RuntimeException("Orden no encontrada con ID: " + orderId));
-
-        if (!List.of("CASH", "CARD", "NEQUI", "QR").contains(paymentMethod)) {
-            throw new IllegalArgumentException("Método de pago inválido. Debe ser: CASH, CARD, NEQUI o QR");
-        }
-
-        order.setPaymentMethod(paymentMethod);
-        orderRepositoryPort.save(order);
     }
 
     @Override
@@ -326,10 +264,11 @@ public class OrderHandler implements OrderPort {
             throw new IllegalStateException("La orden ya tiene un descuento aplicado: " + order.getDiscountCode());
         }
 
-        int subtotal = order.getSubtotal();
+        BigDecimal subtotal = order.getSubtotal();
+        Map<String, ProductResponse> productCache = buildProductCache(order.getItems());
 
         List<OrderItemDto> itemsForDiscount = order.getItems().stream().map(item -> {
-            ProductResponse productDetails = productClient.getProductById(item.getProductId());
+            ProductResponse productDetails = productCache.get(item.getProductId());
             Long productIdLong = null;
             try {
                 productIdLong = Long.parseLong(item.getProductId());
@@ -341,14 +280,14 @@ public class OrderHandler implements OrderPort {
                     productDetails != null ? productDetails.nameProduct() : null,
                     productDetails != null ? productDetails.categoryName() : null,
                     item.getQuantity(),
-                    BigDecimal.valueOf(item.getUnitPrice()));
+                    item.getUnitPrice());
         }).toList();
 
         ApplyDiscountCommand command = new ApplyDiscountCommand(
                 discountCode,
                 LocalDateTime.now(BOGOTA_ZONE),
                 itemsForDiscount,
-                BigDecimal.valueOf(subtotal));
+                subtotal);
 
         ApplyDiscountResult discountResult = discountService.applyDiscount(command);
 
@@ -357,12 +296,10 @@ public class OrderHandler implements OrderPort {
         }
 
         order.setDiscountCode(discountResult.discountCode());
-        order.setDiscountAmount(discountResult.discountAmount().intValue());
-        if (discountResult.discountPercentage() != null) {
-            order.setDiscountPercentage(discountResult.discountPercentage().doubleValue());
-        }
+        order.setDiscountAmount(discountResult.discountAmount());
+        order.setDiscountPercentage(discountResult.discountPercentage());
 
-        int total = discountResult.newSubtotal().intValue();
+        BigDecimal total = discountResult.newSubtotal();
         order.setTotal(total);
 
         Order savedOrder = orderRepositoryPort.save(order);
@@ -370,104 +307,23 @@ public class OrderHandler implements OrderPort {
         LinkOrderCouponCommand linkCommand = new LinkOrderCouponCommand(
                 savedOrder.getIdOrder(),
                 savedOrder.getDiscountCode(),
-                BigDecimal.valueOf(savedOrder.getSubtotal()),
-                BigDecimal.valueOf(savedOrder.getDiscountAmount()),
-                BigDecimal.valueOf(savedOrder.getTotal()));
+                savedOrder.getSubtotal(),
+                savedOrder.getDiscountAmount(),
+                savedOrder.getTotal());
 
         discountService.linkOrderWithCoupon(linkCommand);
 
-        return toOrderResponseRecord(savedOrder);
+        return toOrderResponseRecord(savedOrder, buildProductNameCache(savedOrder.getItems()));
     }
 
     @Override
-    @Transactional
-    public void markAsDelivered(Long orderId, Integer elapsedSeconds) {
-        Order order = orderRepositoryPort.findById(orderId)
-                .orElseThrow(() -> new RuntimeException("Orden no encontrada con ID: " + orderId));
-
-        if ("Si".equals(order.getDeliveredAt())) {
-            throw new IllegalStateException("La orden ya fue marcada como entregada");
-        }
-
-        if (order.getStatus() != OrderStatus.pagado) {
-            throw new IllegalStateException("Solo se pueden marcar como entregadas las órdenes en estado PAGADO. Estado actual: " + order.getStatus());
-        }
-
-        order.setDeliveredAt("Si");
-        order.setElapsedSecondsToDeliver(elapsedSeconds);
-        orderRepositoryPort.save(order);
-    }
-
-    @Override
-    public Page<OrderEditHistory> getOrderEditHistory(Long orderId, String adminPassword, int page, int size) {
-        if (!ADMIN_PASSWORD.equals(adminPassword)) {
-            throw new AdminPasswordException("Contraseña de administrador incorrecta");
-        }
-
+    public Page<OrderEditHistory> getOrderEditHistory(Long orderId, int page, int size) {
         Pageable pageable = PageRequest.of(page, size);
 
         if (orderId != null) {
             return orderEditHistoryRepository.findByOrderIdOrderByEditedAtDesc(orderId, pageable);
         }
         return orderEditHistoryRepository.findAllByOrderByEditedAtDesc(pageable);
-    }
-
-    @Override
-    @Transactional
-    public OrderSyncResponse syncOrderIdempotent(String idempotencyKey, OrderRequestRecord dto) {
-        Optional<Order> existingOrder = orderRepositoryPort.findByIdempotencyKey(idempotencyKey);
-
-        if (existingOrder.isPresent()) {
-            Order order = existingOrder.get();
-            log.info("Order with idempotencyKey {} already exists: Order ID {}",
-                    idempotencyKey, order.getIdOrder());
-            return OrderSyncResponse.alreadyExists(order.getIdOrder());
-        }
-
-        try {
-            validatePaymentMethod(dto.paymentMethod());
-            validatePagerAvailability(dto.pagerColor(), dto.pagerNumber(), null);
-
-            Order order = new Order();
-            order.setIdempotencyKey(idempotencyKey);
-            order.setPagerColor(dto.pagerColor());
-            order.setPagerNumber(dto.pagerNumber());
-            order.setStatus(OrderStatus.pagado);
-            order.setDeliveredAt("No");
-            order.setPaymentMethod(dto.paymentMethod());
-            order.setCreatedAt(LocalDateTime.now(BOGOTA_ZONE));
-
-            List<OrderItem> items = createOrderItems(order, dto.items());
-            order.setItems(items);
-
-            int subtotal = order.getItems().stream().mapToInt(OrderItem::getTotalPrice).sum();
-            order.setSubtotal(subtotal);
-
-            int total = applyDiscountIfPresent(order, dto.discountCode(), subtotal);
-            order.setTotal(total);
-
-            Order savedOrder = orderRepositoryPort.save(order);
-
-            linkCouponIfPresent(savedOrder);
-
-            log.info("Order created with idempotencyKey {}: Order ID {}",
-                    idempotencyKey, savedOrder.getIdOrder());
-
-            return OrderSyncResponse.created(savedOrder.getIdOrder());
-
-        } catch (IllegalArgumentException | PagerOcupadoException e) {
-            log.warn("Validation error creating order with idempotencyKey {}: {}", idempotencyKey, e.getMessage());
-            return OrderSyncResponse.error(e.getMessage());
-        } catch (Exception e) {
-            log.error("Error creating order with idempotencyKey {}: {}", idempotencyKey, e.getMessage(), e);
-            return OrderSyncResponse.error("Error al crear orden: " + e.getMessage());
-        }
-    }
-
-    @Override
-    public Order findByIdempotencyKey(String idempotencyKey) {
-        return orderRepositoryPort.findByIdempotencyKey(idempotencyKey)
-                .orElse(null);
     }
 
     private void validatePaymentMethod(String paymentMethod) {
@@ -477,14 +333,17 @@ public class OrderHandler implements OrderPort {
     }
 
     private void validatePagerAvailability(String pagerColor, String pagerNumber, Long excludeOrderId) {
-        Optional<Order> existingPagerOrder = orderRepositoryPort.findByPagerColorAndPagerNumberAndStatusAndDeliveredAt(
-                pagerColor, pagerNumber, OrderStatus.pagado, "No");
+        Optional<Order> existingPagerOrder = orderRepositoryPort.findByPagerColorAndPagerNumberAndStatusAndDeliveredAtIsNull(
+                pagerColor, pagerNumber, OrderStatus.pagado);
 
-        if (existingPagerOrder.isPresent() &&
-            (excludeOrderId == null || !existingPagerOrder.get().getIdOrder().equals(excludeOrderId))) {
+        if (existingPagerOrder.isPresent()
+                && (excludeOrderId == null || !existingPagerOrder.get().getIdOrder().equals(excludeOrderId))) {
             throw new PagerOcupadoException(
-                    String.format("El pager %s %s ya está en uso por la orden #%d",
-                            pagerColor, pagerNumber, existingPagerOrder.get().getIdOrder()),
+                    String.format(
+                            "El pager %s %s ya está en uso por la orden #%d",
+                            pagerColor,
+                            pagerNumber,
+                            existingPagerOrder.get().getIdOrder()),
                     "PAGER_OCUPADO");
         }
     }
@@ -496,20 +355,22 @@ public class OrderHandler implements OrderPort {
             item.setProductId(itemDto.productId());
             item.setQuantity(itemDto.quantity());
             item.setUnitPrice(itemDto.unitPrice());
-            item.setTotalPrice(itemDto.quantity() * itemDto.unitPrice());
+            item.setTotalPrice(itemDto.unitPrice().multiply(BigDecimal.valueOf(itemDto.quantity())));
             item.setInstructions(itemDto.instructions());
             item.setComboGroup(itemDto.comboGroup());
             return item;
         }).toList();
     }
 
-    private int applyDiscountIfPresent(Order order, String discountCode, int subtotal) {
+    private BigDecimal applyDiscountIfPresent(Order order, String discountCode, BigDecimal subtotal) {
         if (discountCode == null || discountCode.trim().isEmpty()) {
             return subtotal;
         }
 
+        Map<String, ProductResponse> productCache = buildProductCache(order.getItems());
+
         List<OrderItemDto> itemsForDiscount = order.getItems().stream().map(item -> {
-            ProductResponse productDetails = productClient.getProductById(item.getProductId());
+            ProductResponse productDetails = productCache.get(item.getProductId());
             Long productIdLong = null;
             try {
                 productIdLong = Long.parseLong(item.getProductId());
@@ -521,24 +382,22 @@ public class OrderHandler implements OrderPort {
                     productDetails != null ? productDetails.nameProduct() : null,
                     productDetails != null ? productDetails.categoryName() : null,
                     item.getQuantity(),
-                    BigDecimal.valueOf(item.getUnitPrice()));
+                    item.getUnitPrice());
         }).toList();
 
         ApplyDiscountCommand command = new ApplyDiscountCommand(
                 discountCode,
                 LocalDateTime.now(BOGOTA_ZONE),
                 itemsForDiscount,
-                BigDecimal.valueOf(subtotal));
+                subtotal);
 
         ApplyDiscountResult discountResult = discountService.applyDiscount(command);
 
         if (discountResult.valid()) {
             order.setDiscountCode(discountResult.discountCode());
-            order.setDiscountAmount(discountResult.discountAmount().intValue());
-            if (discountResult.discountPercentage() != null) {
-                order.setDiscountPercentage(discountResult.discountPercentage().doubleValue());
-            }
-            return discountResult.newSubtotal().intValue();
+            order.setDiscountAmount(discountResult.discountAmount());
+            order.setDiscountPercentage(discountResult.discountPercentage());
+            return discountResult.newSubtotal();
         }
 
         return subtotal;
@@ -549,17 +408,17 @@ public class OrderHandler implements OrderPort {
             LinkOrderCouponCommand linkCommand = new LinkOrderCouponCommand(
                     order.getIdOrder(),
                     order.getDiscountCode(),
-                    BigDecimal.valueOf(order.getSubtotal()),
-                    BigDecimal.valueOf(order.getDiscountAmount()),
-                    BigDecimal.valueOf(order.getTotal()));
+                    order.getSubtotal(),
+                    order.getDiscountAmount(),
+                    order.getTotal());
             discountService.linkOrderWithCoupon(linkCommand);
         }
     }
 
-    private OrderResponseRecord toOrderResponseRecord(Order order) {
-        List<OrderItemResponseRecord> items = order.getItems().stream()
-                .map(this::toOrderItemResponseRecord)
-                .toList();
+    private OrderResponseRecord toOrderResponseRecord(Order order, Map<String, String> productNames) {
+        List<OrderItemResponseRecord> items = order.getItems() == null
+                ? List.of()
+                : order.getItems().stream().map(item -> toOrderItemResponseRecord(item, productNames)).toList();
 
         return new OrderResponseRecord(
                 order.getIdOrder(),
@@ -574,22 +433,66 @@ public class OrderHandler implements OrderPort {
                 order.getDiscountPercentage(),
                 order.getDiscountAmount(),
                 order.getDeliveredAt(),
+                order.getDeliveredAt() != null,
                 order.getElapsedSecondsToDeliver(),
-                items
-        );
+                items);
     }
 
-    private OrderItemResponseRecord toOrderItemResponseRecord(OrderItem item) {
-        String productName = productClient.getProductById(item.getProductId()).nameProduct();
-
+    private OrderItemResponseRecord toOrderItemResponseRecord(OrderItem item, Map<String, String> productNames) {
         return new OrderItemResponseRecord(
                 item.getProductId(),
-                productName,
+                productNames.getOrDefault(item.getProductId(), item.getProductId()),
                 item.getQuantity(),
                 item.getUnitPrice(),
                 item.getTotalPrice(),
                 item.getInstructions(),
-                item.getComboGroup()
-        );
+                item.getComboGroup());
+    }
+
+    private Map<String, String> buildProductNameCacheFromOrders(List<Order> orders) {
+        Set<String> productIds = new LinkedHashSet<>();
+        for (Order order : orders) {
+            if (order.getItems() != null) {
+                order.getItems().forEach(item -> productIds.add(item.getProductId()));
+            }
+        }
+        return buildProductNameCacheByIds(productIds);
+    }
+
+    private Map<String, String> buildProductNameCache(List<OrderItem> items) {
+        if (items == null || items.isEmpty()) {
+            return Map.of();
+        }
+
+        Set<String> productIds = items.stream()
+                .map(OrderItem::getProductId)
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+        return buildProductNameCacheByIds(productIds);
+    }
+
+    private Map<String, String> buildProductNameCacheByIds(Set<String> productIds) {
+        if (productIds.isEmpty()) {
+            return Map.of();
+        }
+
+        Map<String, ProductResponse> productCache = productCatalogPort.findProductsByIds(productIds);
+        Map<String, String> names = productCache.entrySet().stream()
+                .collect(Collectors.toMap(Map.Entry::getKey, e -> e.getValue().nameProduct()));
+
+        for (String productId : productIds) {
+            names.putIfAbsent(productId, productId);
+        }
+        return names;
+    }
+
+    private Map<String, ProductResponse> buildProductCache(List<OrderItem> items) {
+        if (items == null || items.isEmpty()) {
+            return Map.of();
+        }
+
+        Set<String> productIds = items.stream()
+                .map(OrderItem::getProductId)
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+        return productCatalogPort.findProductsByIds(productIds);
     }
 }

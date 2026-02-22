@@ -5,6 +5,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 import lombok.AllArgsConstructor;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 
@@ -30,9 +31,9 @@ public class OrderEditHistory {
     @Column(name = "new_quantity")
     private Integer newQuantity;
     @Column(name = "old_total")
-    private Integer oldTotal;
+    private BigDecimal oldTotal;
     @Column(name = "new_total")
-    private Integer newTotal;
+    private BigDecimal newTotal;
     @Column(name = "edited_at", updatable = false)
     private LocalDateTime editedAt;
     private static final ZoneId BOGOTA_ZONE = ZoneId.of("America/Bogota");

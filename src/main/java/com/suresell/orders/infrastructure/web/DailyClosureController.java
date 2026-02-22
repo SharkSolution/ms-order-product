@@ -4,6 +4,8 @@ import com.suresell.orders.application.dto.ClosureRequest;
 import com.suresell.orders.application.dto.ClosureResponse;
 import com.suresell.orders.domain.port.in.DailyClosurePort; // Renamed from DailyClosureService
 import com.suresell.orders.shared.export.DailyClosureExcelExporter; // Changed package
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
@@ -30,6 +32,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping(value={"/api/closures"})
+@Tag(name = "Daily Closures", description = "Gestión de cierres diarios de caja")
 public class DailyClosureController {
     private static final Logger log = LoggerFactory.getLogger(DailyClosureController.class);
     private final DailyClosurePort dailyClosurePort;
@@ -37,6 +40,7 @@ public class DailyClosureController {
     private static final ZoneId BOGOTA_ZONE = ZoneId.of("America/Bogota");
 
     @GetMapping(value={"/export/excel"})
+    @Operation(summary = "Exportar historial de cierres a Excel")
     public ResponseEntity<Resource> exportClosuresToExcel() {
         try {
             List closures = this.dailyClosurePort.getAllClosures();
@@ -54,6 +58,7 @@ public class DailyClosureController {
         }
     }
     @GetMapping(value={"/preview"})
+    @Operation(summary = "Obtener preview del cierre diario")
     public ResponseEntity<ClosurePreviewResponse> getClosurePreview() {
         try {
             ClosurePreviewResponse preview = this.dailyClosurePort.getClosurePreview();
@@ -64,6 +69,7 @@ public class DailyClosureController {
         }
     }
     @PostMapping
+    @Operation(summary = "Ejecutar cierre de caja")
     public ResponseEntity<?> executeClosure(@Valid @RequestBody ClosureRequest request) {
         try {
             ClosureResponse response = this.dailyClosurePort.executeClosure(request);
@@ -77,6 +83,7 @@ public class DailyClosureController {
         }
     }
     @GetMapping(value={"/history"})
+    @Operation(summary = "Listar historial de cierres")
     public ResponseEntity<List<ClosureResponse>> getAllClosures() {
         try {
             List closures = this.dailyClosurePort.getAllClosures();

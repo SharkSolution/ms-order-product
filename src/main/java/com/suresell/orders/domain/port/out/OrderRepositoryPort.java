@@ -15,8 +15,8 @@ public interface OrderRepositoryPort {
     List<Order> findAll();
     Page<Order> findAll(Pageable pageable);
 
-    Optional<Order> findByPagerColorAndPagerNumberAndStatusAndDeliveredAt(
-            String pagerColor, String pagerNumber, OrderStatus status, String deliveredAt);
+    Optional<Order> findByPagerColorAndPagerNumberAndStatusAndDeliveredAtIsNull(
+            String pagerColor, String pagerNumber, OrderStatus status);
 
     List<Order> findActiveOrders(OrderStatus status);
     List<Order> findActiveOrdersWithItems(OrderStatus status);
@@ -35,5 +35,7 @@ public interface OrderRepositoryPort {
     List<Order> findAllWithItems();
     Page<Order> findAllOrdersOnly(Pageable pageable);
     List<Order> findOrdersAfter(Long afterId, Pageable pageable);
-    Optional<Order> findByIdempotencyKey(String idempotencyKey);
+
+    List<Order> findByStatusAndPaymentMethodIsNotNullAndCreatedAtBetween(
+            OrderStatus status, LocalDateTime startOfDay, LocalDateTime endOfDay);
 }

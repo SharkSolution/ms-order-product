@@ -5,6 +5,7 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -25,9 +26,9 @@ public class Order {
     @Column(name = "created_at")
     private LocalDateTime createdAt;
     @Column(name = "delivered_at")
-    private String deliveredAt;
-    private int subtotal;
-    private int total;
+    private LocalDateTime deliveredAt;
+    private BigDecimal subtotal;
+    private BigDecimal total;
     @Enumerated(EnumType.STRING) // Assuming OrderStatus is an enum
     private OrderStatus status;
     @Column(name = "payment_method")
@@ -35,13 +36,11 @@ public class Order {
     @Column(name = "discount_code")
     private String discountCode;
     @Column(name = "discount_percentage")
-    private Double discountPercentage;
+    private BigDecimal discountPercentage;
     @Column(name = "discount_amount")
-    private Integer discountAmount;
+    private BigDecimal discountAmount;
     @Column(name = "elapsed_seconds_to_deliver")
     private Integer elapsedSecondsToDeliver;
-    @Column(name = "idempotency_key")
-    private String idempotencyKey;
     @OneToMany(mappedBy = "order", cascade = CascadeType.ALL, orphanRemoval = true) // Assuming a one-to-many relationship with OrderItem
     private List<OrderItem> items;
 }

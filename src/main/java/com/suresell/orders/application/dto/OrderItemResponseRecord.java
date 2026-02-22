@@ -4,8 +4,8 @@ public record OrderItemResponseRecord(
     String productId,
     String nameProduct,
     int quantity,
-    int unitPrice,
-    int totalPrice,
+    java.math.BigDecimal unitPrice,
+    java.math.BigDecimal totalPrice,
     String instructions,
     Integer comboGroup
 ) {}

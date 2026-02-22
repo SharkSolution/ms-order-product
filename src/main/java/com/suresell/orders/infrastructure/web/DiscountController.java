@@ -1,14 +1,14 @@
 
 package com.suresell.orders.infrastructure.web;
-import com.suresell.orders.shared.exception.AdminPasswordException;
 import com.suresell.orders.domain.model.DiscountCoupon;
-import com.suresell.orders.application.dto.AdminActionRequest;
 import com.suresell.orders.application.dto.ApplyDiscountCommand;
 import com.suresell.orders.application.dto.ApplyDiscountResult;
 import com.suresell.orders.application.dto.CreateCouponRequest;
 import com.suresell.orders.application.dto.LinkOrderCouponCommand;
 import com.suresell.orders.application.dto.UpdateCouponRequest;
 import com.suresell.orders.domain.port.in.DiscountPort; // Changed
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import java.util.List;
 import java.util.Map;
 import org.slf4j.Logger;
@@ -28,6 +28,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping(value={"/api/discounts"})
+@Tag(name = "Discounts", description = "Gestión de cupones y descuentos")
 public class DiscountController {
     private static final Logger logger = LoggerFactory.getLogger(DiscountController.class);
     private final DiscountPort discountPort;
@@ -36,6 +37,7 @@ public class DiscountController {
         this.discountPort = discountPort;
     }
     @PostMapping(value={"/apply"})
+    @Operation(summary = "Validar y aplicar cupón sobre una orden")
     public ResponseEntity<ApplyDiscountResult> applyDiscount(@RequestBody ApplyDiscountCommand command) {
         logger.info("POST /api/discounts/apply - Aplicando cup\u00f3n: {}", (Object)command.code());
         try {
@@ -57,6 +59,7 @@ public class DiscountController {
         }
     }
     @PostMapping(value={"/link-order"})
+    @Operation(summary = "Registrar uso de cupón en una orden")
     public ResponseEntity<Map<String, Object>> linkOrderWithCoupon(@RequestBody LinkOrderCouponCommand command) {
         logger.info("POST /api/discounts/link-order - Registrando cup\u00f3n {} para orden {}", (Object)command.code(), (Object)command.orderId());
         try {
@@ -78,6 +81,7 @@ public class DiscountController {
         }
     }
     @GetMapping(value={"/active"})
+    @Operation(summary = "Listar cupones activos")
     public ResponseEntity<?> getActiveCoupons() {
         logger.info("GET /api/discounts/active - Obteniendo cupones activos");
         try {
@@ -90,6 +94,7 @@ public class DiscountController {
         }
     }
     @PostMapping
+    @Operation(summary = "Crear cupón")
     public ResponseEntity<?> createCoupon(@RequestBody CreateCouponRequest request) {
         logger.info("POST /api/discounts - Creando cup\u00f3n: {}", (Object)request.code());
         try {
@@ -116,6 +121,7 @@ public class DiscountController {
         }
     }
     @PutMapping(value={"/{id}"})
+    @Operation(summary = "Actualizar cupón")
     public ResponseEntity<?> updateCoupon(@PathVariable Long id, @RequestBody UpdateCouponRequest request) {
         logger.info("PUT /api/discounts/{} - Actualizando cup\u00f3n", (Object)id);
         try {
@@ -142,6 +148,7 @@ public class DiscountController {
         }
     }
     @PatchMapping(value={"/{id}/deactivate"})
+    @Operation(summary = "Desactivar cupón")
     public ResponseEntity<?> deactivateCoupon(@PathVariable Long id) {
         logger.info("PATCH /api/discounts/{}/deactivate - Desactivando cup\u00f3n", (Object)id);
         try {
@@ -159,6 +166,7 @@ public class DiscountController {
         }
     }
     @GetMapping
+    @Operation(summary = "Listar cupones por estado")
     public ResponseEntity<?> listAllCoupons(@RequestParam(defaultValue="all") String status) {
         logger.info("GET /api/discounts - Listando cupones con filtro: {}", (Object)status);
         try {
@@ -171,6 +179,7 @@ public class DiscountController {
         }
     }
     @DeleteMapping(value={"/{id}"})
+    @Operation(summary = "Eliminar cupón")
     public ResponseEntity<?> deleteCoupon(@PathVariable Long id) {
         logger.info("DELETE /api/discounts/{} - Eliminando cup\u00f3n", (Object)id);
         try {

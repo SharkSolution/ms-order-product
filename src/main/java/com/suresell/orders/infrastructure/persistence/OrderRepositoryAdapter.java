@@ -39,10 +39,10 @@ public class OrderRepositoryAdapter implements OrderRepositoryPort {
     }
 
     @Override
-    public Optional<Order> findByPagerColorAndPagerNumberAndStatusAndDeliveredAt(
-            String pagerColor, String pagerNumber, OrderStatus status, String deliveredAt) {
-        return orderRepository.findByPagerColorAndPagerNumberAndStatusAndDeliveredAt(
-                pagerColor, pagerNumber, status, deliveredAt);
+    public Optional<Order> findByPagerColorAndPagerNumberAndStatusAndDeliveredAtIsNull(
+            String pagerColor, String pagerNumber, OrderStatus status) {
+        return orderRepository.findByPagerColorAndPagerNumberAndStatusAndDeliveredAtIsNull(
+                pagerColor, pagerNumber, status);
     }
 
     @Override
@@ -99,7 +99,10 @@ public class OrderRepositoryAdapter implements OrderRepositoryPort {
     }
 
     @Override
-    public Optional<Order> findByIdempotencyKey(String idempotencyKey) {
-        return orderRepository.findByIdempotencyKey(idempotencyKey);
+    public List<Order> findByStatusAndPaymentMethodIsNotNullAndCreatedAtBetween(
+            OrderStatus status, LocalDateTime startOfDay, LocalDateTime endOfDay) {
+        return orderRepository.findByStatusAndPaymentMethodIsNotNullAndCreatedAtBetween(
+                status, startOfDay, endOfDay);
     }
+
 }

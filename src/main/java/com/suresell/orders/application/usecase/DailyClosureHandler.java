@@ -5,9 +5,9 @@ import com.suresell.orders.domain.model.OrderStatus;
 import com.suresell.orders.application.dto.ClosurePreviewResponse;
 import com.suresell.orders.application.dto.ClosureRequest;
 import com.suresell.orders.application.dto.ClosureResponse;
-import com.suresell.orders.infrastructure.persistence.OrderRepository;
 import com.suresell.orders.domain.port.in.DailyClosurePort;
 import com.suresell.orders.domain.port.out.DailyClosureRepositoryPort;
+import com.suresell.orders.domain.port.out.OrderRepositoryPort;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -27,7 +27,7 @@ public class DailyClosureHandler
 implements DailyClosurePort {
     private static final Logger log = LoggerFactory.getLogger(DailyClosureHandler.class);
     private final DailyClosureRepositoryPort closureRepositoryPort;
-    private final OrderRepository orderRepository;
+    private final OrderRepositoryPort orderRepositoryPort;
     private static final String PAYMENT_CASH = "CASH";
     private static final String PAYMENT_CARD = "CARD";
     private static final String PAYMENT_NEQUI = "NEQUI";
@@ -42,9 +42,9 @@ implements DailyClosurePort {
         LocalDateTime startOfDay = LocalDate.now(BOGOTA_ZONE).atStartOfDay();
         LocalDateTime endOfDay = LocalDateTime.now(BOGOTA_ZONE).with(LocalTime.MAX);
 
-        List<Object[]> results = this.orderRepository.findTotalByPaymentMethodAndStatus(OrderStatus.pagado, startOfDay, endOfDay);
-        Optional<LocalDateTime> minCreatedAt = this.orderRepository.findMinCreatedAtByStatus(OrderStatus.pagado, startOfDay, endOfDay);
-        Integer countOrders = this.orderRepository.countByStatus(OrderStatus.pagado, startOfDay, endOfDay);
+        List<Object[]> results = this.orderRepositoryPort.findTotalByPaymentMethodAndStatus(OrderStatus.pagado, startOfDay, endOfDay);
+        Optional<LocalDateTime> minCreatedAt = this.orderRepositoryPort.findMinCreatedAtByStatus(OrderStatus.pagado, startOfDay, endOfDay);
+        Integer countOrders = this.orderRepositoryPort.countByStatus(OrderStatus.pagado, startOfDay, endOfDay);
 
         BigDecimal totalCash = BigDecimal.ZERO;
         BigDecimal totalCard = BigDecimal.ZERO;
@@ -55,7 +55,7 @@ implements DailyClosurePort {
 
         for (Object[] result : results) {
             String paymentMethod = (String)result[0];
-            BigDecimal sumTotal = BigDecimal.valueOf(((Long)result[1]).doubleValue());
+            BigDecimal sumTotal = result[1] == null ? BigDecimal.ZERO : (BigDecimal) result[1];
 
             if (paymentMethod == null) {
                 continue;
@@ -86,14 +86,24 @@ implements DailyClosurePort {
         LocalDateTime currentTime = LocalDateTime.now(BOGOTA_ZONE);
         LocalDateTime openingTime = minCreatedAt.orElse(startOfDay);
         int totalOrders = countOrders != null ? countOrders : 0;
-        return new ClosurePreviewResponse(openingTime, currentTime, totalOrders, "Preview de cierre generado correctamente para el d\u00eda actual.");
+        return new ClosurePreviewResponse(
+                openingTime,
+                currentTime,
+                totalOrders,
+                totalCash,
+                totalCard,
+                totalNequi,
+                totalQr,
+                totalExpected,
+                baseBalance,
+                "Preview de cierre generado correctamente para el d\u00eda actual.");
     }
 
     @Transactional
     public ClosureResponse executeClosure(ClosureRequest request) {
         LocalDateTime openingTime = this.determineOpeningTime();
         LocalDateTime closingTime = LocalDateTime.now(BOGOTA_ZONE);
-        List orders = this.getOrdersForPeriod(openingTime, closingTime);
+        List<Order> orders = this.getOrdersForPeriod(openingTime, closingTime);
         BigDecimal expectedCash = this.calculateTotalByPaymentMethod(orders, PAYMENT_CASH);
         BigDecimal expectedCard = this.calculateTotalByPaymentMethod(orders, PAYMENT_CARD);
         BigDecimal expectedNequi = this.calculateTotalByPaymentMethod(orders, PAYMENT_NEQUI);
@@ -132,18 +142,20 @@ implements DailyClosurePort {
     }    
     private LocalDateTime determineOpeningTime() {
         return this.closureRepositoryPort.findLastClosure().map(DailyClosure::getClosingTime).orElseGet(() -> {
-            return this.orderRepository.findFirstByOrderByCreatedAtAsc().map(Order::getCreatedAt).orElse(LocalDateTime.now(BOGOTA_ZONE));
+            return this.orderRepositoryPort.findFirstByOrderByCreatedAtAsc()
+                    .map(Order::getCreatedAt)
+                    .orElse(LocalDateTime.now(BOGOTA_ZONE));
         });
     }
     private List<Order> getOrdersForPeriod(LocalDateTime from, LocalDateTime to) {
-        return this.orderRepository.findAll().stream().filter(order -> OrderStatus.pagado.equals(order.getStatus())).filter(order -> order.getPaymentMethod() != null).filter(order -> {
-            LocalDateTime orderTime = order.getCreatedAt();
-            return !orderTime.isBefore(from) && !orderTime.isAfter(to);
-        }).toList();
+        return this.orderRepositoryPort.findByStatusAndPaymentMethodIsNotNullAndCreatedAtBetween(
+                OrderStatus.pagado, from, to);
     }
     private BigDecimal calculateTotalByPaymentMethod(List<Order> orders, String paymentMethod) {
-        long total = orders.stream().filter(order -> paymentMethod.equalsIgnoreCase(order.getPaymentMethod())).mapToLong(Order::getTotal).sum();
-        return BigDecimal.valueOf(total);
+        return orders.stream()
+                .filter(order -> paymentMethod.equalsIgnoreCase(order.getPaymentMethod()))
+                .map(Order::getTotal)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
     }
     private String determineStatus(BigDecimal difference) {
         int comparison = difference.compareTo(BigDecimal.ZERO);
@@ -181,8 +193,8 @@ implements DailyClosurePort {
         BigDecimal totalCounted = countedCash.add(countedCard).add(countedNequi).add(countedQr);
         return new ClosureResponse(closure.getId(), closure.getUserName(), closure.getOpeningTime(), closure.getClosingTime(), expectedCash, expectedCard, expectedNequi, expectedQr, totalExpected, countedCash, countedCard, countedNequi, countedQr, totalCounted, closure.getDifferenceAmount(), closure.getStatus(), closure.getNotes(), this.generateClosureMessage(closure.getStatus(), closure.getDifferenceAmount()), closure.getBaseBalanceForNextDay());
     }
-    public DailyClosureHandler(DailyClosureRepositoryPort closureRepositoryPort, OrderRepository orderRepository) {
+    public DailyClosureHandler(DailyClosureRepositoryPort closureRepositoryPort, OrderRepositoryPort orderRepositoryPort) {
         this.closureRepositoryPort = closureRepositoryPort;
-        this.orderRepository = orderRepository;
+        this.orderRepositoryPort = orderRepositoryPort;
     }
 }

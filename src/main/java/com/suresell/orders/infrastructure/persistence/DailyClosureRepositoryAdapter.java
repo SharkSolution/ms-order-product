@@ -32,7 +32,7 @@ public class DailyClosureRepositoryAdapter implements DailyClosureRepositoryPort
 
     @Override
     public Optional<DailyClosure> findLastClosure() {
-        return dailyClosureRepository.findLastClosure();
+        return dailyClosureRepository.findTopByOrderByClosingTimeDesc();
     }
 
     @Override

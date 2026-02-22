@@ -1,6 +1,5 @@
 package com.suresell.orders.application.dto;
 
-import com.suresell.orders.domain.model.PagerColor;
 import com.suresell.orders.application.dto.OrderItemRequestRecord;
 import jakarta.validation.constraints.NotBlank;
 import java.util.List;

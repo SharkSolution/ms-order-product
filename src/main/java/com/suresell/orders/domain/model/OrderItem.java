@@ -5,6 +5,8 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 import lombok.AllArgsConstructor;
 
+import java.math.BigDecimal;
+
 @Entity
 @Table(name = "order_item") // Assuming the table name is 'order_item'
 @Data
@@ -24,9 +26,9 @@ public class OrderItem {
     private String productId;
     private int quantity;
     @Column(name = "unit_price")
-    private int unitPrice;
+    private BigDecimal unitPrice;
     @Column(name = "total_price")
-    private int totalPrice;
+    private BigDecimal totalPrice;
     private String instructions;
     @Column(name = "combo_group")
     private Integer comboGroup;

@@ -9,8 +9,8 @@ import org.springframework.stereotype.Repository;
 @Repository
 public interface DailyClosureRepository
 extends JpaRepository<DailyClosure, UUID> {
-    @Query(value="SELECT dc FROM DailyClosure dc ORDER BY dc.closingTime DESC LIMIT 1")
-    public Optional<DailyClosure> findLastClosure();
+    public Optional<DailyClosure> findTopByOrderByClosingTimeDesc();
+
     @Query(value="SELECT dc FROM DailyClosure dc ORDER BY dc.closingTime DESC")
     public List<DailyClosure> findAllClosuresOrderByDateDesc();
 }
