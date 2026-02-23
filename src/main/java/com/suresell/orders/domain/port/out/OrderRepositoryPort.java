@@ -15,7 +15,7 @@ public interface OrderRepositoryPort {
     List<Order> findAll();
     Page<Order> findAll(Pageable pageable);
 
-    Optional<Order> findByPagerColorAndPagerNumberAndStatusAndDeliveredAtIsNull(
+    Optional<Order> findOccupiedPagerOrder(
             String pagerColor, String pagerNumber, OrderStatus status);
 
     List<Order> findActiveOrders(OrderStatus status);

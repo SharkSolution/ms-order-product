@@ -9,16 +9,22 @@ import com.suresell.orders.application.dto.OrderItemResponseRecord;
 import com.suresell.orders.application.dto.OrderRequestRecord;
 import com.suresell.orders.application.dto.OrderResponseRecord;
 import com.suresell.orders.application.dto.ProductResponse;
+import com.suresell.orders.domain.model.OrderSyncOutbox;
 import com.suresell.orders.domain.model.Order;
+import com.suresell.orders.domain.model.OrderDeliveryTracking;
 import com.suresell.orders.domain.model.OrderEditHistory;
 import com.suresell.orders.domain.model.OrderItem;
 import com.suresell.orders.domain.model.OrderStatus;
+import com.suresell.orders.domain.port.out.OrderSyncOutboxRepositoryPort;
 import com.suresell.orders.domain.port.in.DiscountPort;
 import com.suresell.orders.domain.port.in.OrderPort;
 import com.suresell.orders.domain.port.out.OrderEditHistoryRepositoryPort;
+import com.suresell.orders.domain.port.out.OrderDeliveryTrackingRepositoryPort;
 import com.suresell.orders.domain.port.out.OrderItemRepositoryPort;
 import com.suresell.orders.domain.port.out.OrderRepositoryPort;
 import com.suresell.orders.domain.port.out.ProductCatalogPort;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.suresell.orders.shared.exception.OrderEditNotAllowedException;
 import com.suresell.orders.shared.exception.PagerOcupadoException;
 import jakarta.transaction.Transactional;
@@ -27,6 +33,7 @@ import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -48,10 +55,13 @@ import org.springframework.stereotype.Service;
 public class OrderHandler implements OrderPort {
 
     private final OrderRepositoryPort orderRepositoryPort;
+    private final OrderDeliveryTrackingRepositoryPort orderDeliveryTrackingRepositoryPort;
+    private final OrderSyncOutboxRepositoryPort orderSyncOutboxRepositoryPort;
     private final OrderItemRepositoryPort orderItemRepositoryPort;
     private final ProductCatalogPort productCatalogPort;
     private final DiscountPort discountService;
     private final OrderEditHistoryRepositoryPort orderEditHistoryRepository;
+    private final ObjectMapper objectMapper;
 
     private static final ZoneId BOGOTA_ZONE = ZoneId.of("America/Bogota");
     private static final int MAX_EDIT_MINUTES = 7;
@@ -66,7 +76,6 @@ public class OrderHandler implements OrderPort {
         order.setPagerColor(dto.pagerColor());
         order.setPagerNumber(dto.pagerNumber());
         order.setStatus(OrderStatus.pagado);
-        order.setDeliveredAt(null);
         order.setPaymentMethod(dto.paymentMethod());
         order.setCreatedAt(LocalDateTime.now(BOGOTA_ZONE));
 
@@ -82,6 +91,8 @@ public class OrderHandler implements OrderPort {
         order.setTotal(total);
 
         Order savedOrder = orderRepositoryPort.save(order);
+        OrderDeliveryTracking tracking = createInitialDeliveryTracking(savedOrder);
+        saveOrderCreatedOutbox(savedOrder, tracking);
         linkCouponIfPresent(savedOrder);
         return savedOrder;
     }
@@ -332,8 +343,85 @@ public class OrderHandler implements OrderPort {
         }
     }
 
+    private OrderDeliveryTracking createInitialDeliveryTracking(Order order) {
+        OrderDeliveryTracking tracking = new OrderDeliveryTracking();
+        tracking.setOrder(order);
+        tracking.setDelivered(false);
+        tracking.setPreparationDurationSeconds(null);
+        return orderDeliveryTrackingRepositoryPort.save(tracking);
+    }
+
+    private void saveOrderCreatedOutbox(Order order, OrderDeliveryTracking tracking) {
+        long now = System.currentTimeMillis();
+        OrderSyncOutbox outbox = new OrderSyncOutbox();
+        outbox.setAggregateType("ORDER");
+        outbox.setAggregateId(order.getIdOrder());
+        outbox.setEventType("ORDER_CREATED");
+        outbox.setPayloadJson(buildOrderCreatedPayload(order, tracking));
+        outbox.setStatus("PENDING");
+        outbox.setAttempts(0);
+        outbox.setNextRetryAt(now);
+        outbox.setLastError(null);
+        outbox.setCreatedAt(now);
+        outbox.setUpdatedAt(now);
+        outbox.setSyncedAt(null);
+        orderSyncOutboxRepositoryPort.save(outbox);
+    }
+
+    private String buildOrderCreatedPayload(Order order, OrderDeliveryTracking tracking) {
+        Map<String, Object> trackingPayload = new HashMap<>();
+        trackingPayload.put("orderId", order.getIdOrder());
+        trackingPayload.put("delivered", Boolean.TRUE.equals(tracking.getDelivered()));
+        trackingPayload.put("preparationDurationSeconds", tracking.getPreparationDurationSeconds());
+
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("eventType", "ORDER_CREATED");
+        payload.put("aggregateType", "ORDER");
+        payload.put("aggregateId", order.getIdOrder());
+        payload.put("order", buildOrderPayload(order));
+        payload.put("tracking", trackingPayload);
+        payload.put("createdAt", LocalDateTime.now(BOGOTA_ZONE).toString());
+        try {
+            return objectMapper.writeValueAsString(payload);
+        } catch (JsonProcessingException ex) {
+            throw new IllegalStateException("No se pudo serializar el payload del outbox para la orden " + order.getIdOrder(), ex);
+        }
+    }
+
+    private Map<String, Object> buildOrderPayload(Order order) {
+        List<Map<String, Object>> items = order.getItems() == null
+                ? List.of()
+                : order.getItems().stream()
+                        .map(item -> {
+                            Map<String, Object> itemPayload = new HashMap<>();
+                            itemPayload.put("idOrderItem", item.getIdOrderItem());
+                            itemPayload.put("productId", item.getProductId());
+                            itemPayload.put("quantity", item.getQuantity());
+                            itemPayload.put("unitPrice", item.getUnitPrice());
+                            itemPayload.put("totalPrice", item.getTotalPrice());
+                            itemPayload.put("instructions", item.getInstructions());
+                            itemPayload.put("comboGroup", item.getComboGroup());
+                            return itemPayload;
+                        })
+                        .toList();
+        Map<String, Object> orderPayload = new HashMap<>();
+        orderPayload.put("idOrder", order.getIdOrder());
+        orderPayload.put("pagerColor", order.getPagerColor());
+        orderPayload.put("pagerNumber", order.getPagerNumber());
+        orderPayload.put("createdAt", order.getCreatedAt());
+        orderPayload.put("status", order.getStatus().name());
+        orderPayload.put("paymentMethod", order.getPaymentMethod());
+        orderPayload.put("subtotal", order.getSubtotal());
+        orderPayload.put("total", order.getTotal());
+        orderPayload.put("discountCode", order.getDiscountCode());
+        orderPayload.put("discountPercentage", order.getDiscountPercentage());
+        orderPayload.put("discountAmount", order.getDiscountAmount());
+        orderPayload.put("items", items);
+        return orderPayload;
+    }
+
     private void validatePagerAvailability(String pagerColor, String pagerNumber, Long excludeOrderId) {
-        Optional<Order> existingPagerOrder = orderRepositoryPort.findByPagerColorAndPagerNumberAndStatusAndDeliveredAtIsNull(
+        Optional<Order> existingPagerOrder = orderRepositoryPort.findOccupiedPagerOrder(
                 pagerColor, pagerNumber, OrderStatus.pagado);
 
         if (existingPagerOrder.isPresent()
@@ -419,6 +507,11 @@ public class OrderHandler implements OrderPort {
         List<OrderItemResponseRecord> items = order.getItems() == null
                 ? List.of()
                 : order.getItems().stream().map(item -> toOrderItemResponseRecord(item, productNames)).toList();
+        OrderDeliveryTracking deliveryTracking = order.getDeliveryTracking();
+        boolean delivered = deliveryTracking != null && Boolean.TRUE.equals(deliveryTracking.getDelivered());
+        Integer preparationDurationSeconds = deliveryTracking != null
+                ? deliveryTracking.getPreparationDurationSeconds()
+                : null;
 
         return new OrderResponseRecord(
                 order.getIdOrder(),
@@ -432,9 +525,8 @@ public class OrderHandler implements OrderPort {
                 order.getDiscountCode(),
                 order.getDiscountPercentage(),
                 order.getDiscountAmount(),
-                order.getDeliveredAt(),
-                order.getDeliveredAt() != null,
-                order.getElapsedSecondsToDeliver(),
+                delivered,
+                preparationDurationSeconds,
                 items);
     }
 

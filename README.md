@@ -15,10 +15,10 @@ Microservicio Spring Boot para gestionar órdenes de restaurante, catálogo loca
 ## Modelo actual de órdenes
 
 - La orden se registra con `status = pagado`.
-- El estado de entrega se maneja con `deliveredAt`:
-- `delivered = false` cuando `deliveredAt` es `null`.
-- `delivered = true` cuando `deliveredAt` tiene fecha.
-- En las respuestas del API se expone `delivered` (boolean) además de `status`.
+- El estado de entrega se maneja en la tabla `order_delivery_tracking`.
+- `delivered = false` cuando no existe registro o cuando la columna `delivered` está en `false`.
+- `delivered = true` cuando `order_delivery_tracking.delivered = true`.
+- También se expone `preparationDurationSeconds` para la duración de preparación.
 
 ## Endpoints principales
 

@@ -39,10 +39,9 @@ public class OrderRepositoryAdapter implements OrderRepositoryPort {
     }
 
     @Override
-    public Optional<Order> findByPagerColorAndPagerNumberAndStatusAndDeliveredAtIsNull(
+    public Optional<Order> findOccupiedPagerOrder(
             String pagerColor, String pagerNumber, OrderStatus status) {
-        return orderRepository.findByPagerColorAndPagerNumberAndStatusAndDeliveredAtIsNull(
-                pagerColor, pagerNumber, status);
+        return orderRepository.findOccupiedPagerOrders(pagerColor, pagerNumber, status, Boolean.FALSE).stream().findFirst();
     }
 
     @Override
@@ -52,7 +51,7 @@ public class OrderRepositoryAdapter implements OrderRepositoryPort {
 
     @Override
     public List<Order> findActiveOrdersWithItems(OrderStatus status) {
-        return orderRepository.findActiveOrdersWithItems(status);
+        return orderRepository.findActiveOrdersWithItems(status, Boolean.FALSE);
     }
 
     @Override

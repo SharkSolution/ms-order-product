@@ -6,17 +6,23 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.json.JsonMapper;
 import com.suresell.orders.application.dto.OrderItemRequestRecord;
 import com.suresell.orders.application.dto.OrderRequestRecord;
 import com.suresell.orders.application.dto.OrderResponseRecord;
 import com.suresell.orders.application.dto.ProductResponse;
 import com.suresell.orders.domain.model.Order;
+import com.suresell.orders.domain.model.OrderDeliveryTracking;
+import com.suresell.orders.domain.model.OrderSyncOutbox;
 import com.suresell.orders.domain.model.OrderItem;
 import com.suresell.orders.domain.model.OrderStatus;
 import com.suresell.orders.domain.port.in.DiscountPort;
+import com.suresell.orders.domain.port.out.OrderDeliveryTrackingRepositoryPort;
 import com.suresell.orders.domain.port.out.OrderEditHistoryRepositoryPort;
 import com.suresell.orders.domain.port.out.OrderItemRepositoryPort;
 import com.suresell.orders.domain.port.out.OrderRepositoryPort;
+import com.suresell.orders.domain.port.out.OrderSyncOutboxRepositoryPort;
 import com.suresell.orders.domain.port.out.ProductCatalogPort;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -37,6 +43,12 @@ class OrderHandlerTest {
     private OrderRepositoryPort orderRepositoryPort;
 
     @Mock
+    private OrderDeliveryTrackingRepositoryPort orderDeliveryTrackingRepositoryPort;
+
+    @Mock
+    private OrderSyncOutboxRepositoryPort orderSyncOutboxRepositoryPort;
+
+    @Mock
     private OrderItemRepositoryPort orderItemRepositoryPort;
 
     @Mock
@@ -48,16 +60,22 @@ class OrderHandlerTest {
     @Mock
     private OrderEditHistoryRepositoryPort orderEditHistoryRepositoryPort;
 
+    private ObjectMapper objectMapper;
+
     private OrderHandler orderHandler;
 
     @BeforeEach
     void setUp() {
+        objectMapper = JsonMapper.builder().findAndAddModules().build();
         orderHandler = new OrderHandler(
                 orderRepositoryPort,
+                orderDeliveryTrackingRepositoryPort,
+                orderSyncOutboxRepositoryPort,
                 orderItemRepositoryPort,
                 productCatalogPort,
                 discountPort,
-                orderEditHistoryRepositoryPort);
+                orderEditHistoryRepositoryPort,
+                objectMapper);
     }
 
     @Test
@@ -67,7 +85,6 @@ class OrderHandlerTest {
         order.setPagerColor("AZUL");
         order.setPagerNumber("3");
         order.setStatus(OrderStatus.pagado);
-        order.setDeliveredAt(null);
         order.setPaymentMethod("CASH");
         order.setCreatedAt(LocalDateTime.now());
         order.setSubtotal(BigDecimal.valueOf(10000));
@@ -113,9 +130,17 @@ class OrderHandlerTest {
                 null,
                 "CASH");
 
-        when(orderRepositoryPort.findByPagerColorAndPagerNumberAndStatusAndDeliveredAtIsNull(
+        when(orderRepositoryPort.findOccupiedPagerOrder(
                 "AZUL", "10", OrderStatus.pagado)).thenReturn(Optional.empty());
-        when(orderRepositoryPort.save(any(Order.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(orderRepositoryPort.save(any(Order.class))).thenAnswer(invocation -> {
+            Order toSave = invocation.getArgument(0);
+            toSave.setIdOrder(501L);
+            return toSave;
+        });
+        when(orderDeliveryTrackingRepositoryPort.save(any(OrderDeliveryTracking.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+        when(orderSyncOutboxRepositoryPort.save(any(OrderSyncOutbox.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
 
         Order created = orderHandler.createOrUpdateOrder(request);
 
@@ -123,5 +148,7 @@ class OrderHandlerTest {
         assertEquals(BigDecimal.valueOf(9000), created.getTotal());
         assertEquals(2, created.getItems().size());
         verify(orderRepositoryPort, times(1)).save(any(Order.class));
+        verify(orderDeliveryTrackingRepositoryPort, times(1)).save(any(OrderDeliveryTracking.class));
+        verify(orderSyncOutboxRepositoryPort, times(1)).save(any(OrderSyncOutbox.class));
     }
 }

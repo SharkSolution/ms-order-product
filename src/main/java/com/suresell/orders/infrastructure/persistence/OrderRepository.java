@@ -13,14 +13,34 @@ import org.springframework.data.repository.query.Param;
 
 
 public interface OrderRepository extends JpaRepository<Order, Long> {
-  Optional<Order> findByPagerColorAndPagerNumberAndStatusAndDeliveredAtIsNull(
-      String var1, String var2, OrderStatus var3);
+    @Query("""
+            SELECT o
+            FROM Order o
+            LEFT JOIN o.deliveryTracking dt
+            WHERE o.pagerColor = :pagerColor
+              AND o.pagerNumber = :pagerNumber
+              AND o.status = :status
+              AND (dt IS NULL OR dt.delivered = :delivered)
+            ORDER BY o.idOrder DESC
+            """)
+    List<Order> findOccupiedPagerOrders(
+            @Param("pagerColor") String pagerColor,
+            @Param("pagerNumber") String pagerNumber,
+            @Param("status") OrderStatus status,
+            @Param("delivered") Boolean delivered);
 
     @Query(value="SELECT o FROM Order o WHERE o.status = :status")
     List<Order> findActiveOrders(@Param("status") OrderStatus status);
 
-    @Query("SELECT DISTINCT o FROM Order o LEFT JOIN FETCH o.items WHERE o.status = :status AND o.deliveredAt IS NULL")
-    List<Order> findActiveOrdersWithItems(@Param("status") OrderStatus status);
+    @Query("""
+            SELECT DISTINCT o
+            FROM Order o
+            LEFT JOIN FETCH o.items
+            LEFT JOIN FETCH o.deliveryTracking dt
+            WHERE o.status = :status
+              AND (dt IS NULL OR dt.delivered = :delivered)
+            """)
+    List<Order> findActiveOrdersWithItems(@Param("status") OrderStatus status, @Param("delivered") Boolean delivered);
 
     @Query("SELECT o.paymentMethod, SUM(o.total) FROM Order o WHERE o.status = :status AND o.createdAt BETWEEN :startOfDay AND :endOfDay GROUP BY o.paymentMethod")
     List<Object[]> findTotalByPaymentMethodAndStatus(
@@ -50,7 +70,7 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
     @Query("SELECT MIN(o.createdAt) FROM Order o")
     Optional<LocalDateTime> findMinCreatedAt();
 
-    @Query("SELECT DISTINCT o FROM Order o LEFT JOIN FETCH o.items")
+    @Query("SELECT DISTINCT o FROM Order o LEFT JOIN FETCH o.items LEFT JOIN FETCH o.deliveryTracking")
     List<Order> findAllWithItems();
 
     @Query("SELECT o FROM Order o ORDER BY o.idOrder DESC")

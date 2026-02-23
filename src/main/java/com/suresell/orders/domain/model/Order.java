@@ -25,8 +25,6 @@ public class Order {
     private String pagerNumber;
     @Column(name = "created_at")
     private LocalDateTime createdAt;
-    @Column(name = "delivered_at")
-    private LocalDateTime deliveredAt;
     private BigDecimal subtotal;
     private BigDecimal total;
     @Enumerated(EnumType.STRING) // Assuming OrderStatus is an enum
@@ -39,8 +37,8 @@ public class Order {
     private BigDecimal discountPercentage;
     @Column(name = "discount_amount")
     private BigDecimal discountAmount;
-    @Column(name = "elapsed_seconds_to_deliver")
-    private Integer elapsedSecondsToDeliver;
     @OneToMany(mappedBy = "order", cascade = CascadeType.ALL, orphanRemoval = true) // Assuming a one-to-many relationship with OrderItem
     private List<OrderItem> items;
+    @OneToOne(mappedBy = "order", fetch = FetchType.EAGER)
+    private OrderDeliveryTracking deliveryTracking;
 }
