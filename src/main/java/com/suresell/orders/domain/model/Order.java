@@ -15,16 +15,24 @@ import java.util.List;
 @NoArgsConstructor
 @AllArgsConstructor
 public class Order {
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY) // Assuming auto-increment for Long ID
     @Column(name = "id_order")
     private Long idOrder;
+
     @Column(name = "pager_color")
     private String pagerColor;
+
     @Column(name = "pager_number")
     private String pagerNumber;
+
     @Column(name = "created_at")
     private LocalDateTime createdAt;
+
+    @Column(name = "delivered_at")
+    private LocalDateTime deliveredAt;
+
     private BigDecimal subtotal;
     private BigDecimal total;
     @Enumerated(EnumType.STRING) // Assuming OrderStatus is an enum
