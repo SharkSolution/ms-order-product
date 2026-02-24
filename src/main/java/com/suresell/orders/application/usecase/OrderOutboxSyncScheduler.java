@@ -39,21 +39,26 @@ public class OrderOutboxSyncScheduler {
         }
 
         for (OrderSyncOutbox outbox : pending) {
-            processOutboxRecord(outbox);
+            boolean success = processOutboxRecord(outbox);
+            if (!success) {
+                // FIFO estricto: no procesar órdenes más nuevas si una más vieja falla.
+                break;
+            }
         }
     }
 
-    private void processOutboxRecord(OrderSyncOutbox outbox) {
+    private boolean processOutboxRecord(OrderSyncOutbox outbox) {
         long processingTime = System.currentTimeMillis();
         boolean claimed = orderSyncOutboxRepositoryPort.markInProgress(outbox.getId(), processingTime);
         if (!claimed) {
-            return;
+            return true;
         }
 
         try {
             orderCloudSyncPort.syncOrderCreatedPayload(outbox.getPayloadJson());
             long syncedAt = System.currentTimeMillis();
             orderSyncOutboxRepositoryPort.markSynced(outbox.getId(), syncedAt, syncedAt);
+            return true;
         } catch (Exception ex) {
             int attempts = (outbox.getAttempts() == null ? 0 : outbox.getAttempts()) + 1;
             long backoffSeconds = calculateBackoffSeconds(attempts);
@@ -71,6 +76,7 @@ public class OrderOutboxSyncScheduler {
                     attempts,
                     nextRetryAt,
                     ex.getMessage());
+            return false;
         }
     }
 

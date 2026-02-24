@@ -3,6 +3,7 @@ package com.suresell.orders.application.usecase;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -75,5 +76,32 @@ class OrderOutboxSyncSchedulerTest {
                 eq(1),
                 any(Long.class),
                 any(Long.class));
+    }
+
+    @Test
+    void syncPendingOrdersStopsProcessingNextRecordsWhenFirstFails() {
+        OrderSyncOutbox first = new OrderSyncOutbox();
+        first.setId(20L);
+        first.setAggregateId(100L);
+        first.setPayloadJson("{\"id\":1}");
+        first.setAttempts(0);
+
+        OrderSyncOutbox second = new OrderSyncOutbox();
+        second.setId(21L);
+        second.setAggregateId(101L);
+        second.setPayloadJson("{\"id\":2}");
+        second.setAttempts(0);
+
+        when(orderSyncOutboxRepositoryPort.findReadyForSync(any(Long.class), eq(20)))
+                .thenReturn(List.of(first, second));
+        when(orderSyncOutboxRepositoryPort.markInProgress(eq(20L), any(Long.class))).thenReturn(true);
+        org.mockito.Mockito.doThrow(new RuntimeException("Cloud down"))
+                .when(orderCloudSyncPort).syncOrderCreatedPayload("{\"id\":1}");
+
+        scheduler.syncPendingOrders();
+
+        verify(orderCloudSyncPort, times(1)).syncOrderCreatedPayload("{\"id\":1}");
+        verify(orderCloudSyncPort, never()).syncOrderCreatedPayload("{\"id\":2}");
+        verify(orderSyncOutboxRepositoryPort, never()).markInProgress(eq(21L), any(Long.class));
     }
 }

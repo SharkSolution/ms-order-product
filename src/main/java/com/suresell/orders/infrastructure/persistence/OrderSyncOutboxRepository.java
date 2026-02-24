@@ -14,7 +14,7 @@ public interface OrderSyncOutboxRepository extends JpaRepository<OrderSyncOutbox
             FROM OrderSyncOutbox o
             WHERE o.status IN ('PENDING', 'FAILED')
               AND o.nextRetryAt <= :now
-            ORDER BY o.createdAt ASC
+            ORDER BY o.aggregateId ASC, o.createdAt ASC
             """)
     List<OrderSyncOutbox> findReadyForSync(@Param("now") Long now, Pageable pageable);
 
