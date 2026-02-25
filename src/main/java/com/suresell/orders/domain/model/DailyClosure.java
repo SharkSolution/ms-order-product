@@ -16,6 +16,8 @@ import java.util.UUID;
 @NoArgsConstructor
 @AllArgsConstructor
 public class DailyClosure {
+    @Transient
+    private static final ZoneId BOGOTA_ZONE = ZoneId.of("America/Bogota");
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
     @Column(name = "id", updatable = false, nullable = false)
@@ -42,11 +44,12 @@ public class DailyClosure {
     private BigDecimal totalCountedNequi;
     @Column(name = "total_counted_qr")
     private BigDecimal totalCountedQr;
+    @Column(name = "cash_count_audit", columnDefinition = "TEXT")
+    private String cashCountAudit;
     @Column(name = "difference_amount")
     private BigDecimal differenceAmount;
     private String status;
     private String notes;
     @Column(name = "base_balance_for_next_day")
     private BigDecimal baseBalanceForNextDay;
-    private static final ZoneId BOGOTA_ZONE = ZoneId.of("America/Bogota");
 }

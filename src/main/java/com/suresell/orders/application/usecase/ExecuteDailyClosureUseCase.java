@@ -1,10 +1,14 @@
 package com.suresell.orders.application.usecase;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.suresell.orders.application.dto.request.ExecuteClosureRequest;
 import com.suresell.orders.application.dto.responses.CashierClosureResponse;
 import com.suresell.orders.domain.model.DailyClosure;
+import com.suresell.orders.domain.service.CashflowCalculator;
 import com.suresell.orders.infrastructure.persistence.DailyClosureRepository;
 import com.suresell.orders.infrastructure.persistence.OrderRepository;
+import lombok.extern.log4j.Log4j2;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -14,23 +18,31 @@ import java.time.ZoneId;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.UUID;
 
+@Log4j2
 @Service
 public class ExecuteDailyClosureUseCase {
 
+    private static final ZoneId BOGOTA_ZONE = ZoneId.of("America/Bogota");
     private final OrderRepository orderRepository;
     private final DailyClosureRepository closureRepository;
+    private final CashflowCalculator cashflowCalculator;
+    private final ObjectMapper objectMapper;
 
-    private static final ZoneId BOGOTA_ZONE = ZoneId.of("America/Bogota");
-
-    public ExecuteDailyClosureUseCase(OrderRepository orderRepository, DailyClosureRepository closureRepository) {
+    public ExecuteDailyClosureUseCase(OrderRepository orderRepository, DailyClosureRepository closureRepository, CashflowCalculator cashflowCalculator, ObjectMapper objectMapper) {
         this.orderRepository = orderRepository;
         this.closureRepository = closureRepository;
+        this.cashflowCalculator = cashflowCalculator;
+        this.objectMapper = objectMapper;
     }
 
     @Transactional
     public CashierClosureResponse execute(ExecuteClosureRequest request, String userName) {
+
+        BigDecimal calculatedTotalCash = cashflowCalculator.calculateTotalCash(request.cashDetail());
+
+        BigDecimal calculatedBase = cashflowCalculator.calculateBaseForNextDay(request.cashDetail());
+
         LocalDateTime closingTime = LocalDateTime.now(BOGOTA_ZONE);
 
         LocalDateTime openingTime = getOpeningTime(request.sellerId());
@@ -44,14 +56,15 @@ public class ExecuteDailyClosureUseCase {
         );
         Map<String, BigDecimal> expected = parseTotals(totals);
 
-        BigDecimal diffCash = request.countedCash().subtract(expected.getOrDefault("CASH", BigDecimal.ZERO));
+        BigDecimal diffCash = calculatedTotalCash.subtract(expected.getOrDefault("CASH", BigDecimal.ZERO));
         BigDecimal diffCard = request.countedCard().subtract(expected.getOrDefault("CARD", BigDecimal.ZERO));
         BigDecimal diffNequi = request.countedNequi().subtract(expected.getOrDefault("NEQUI", BigDecimal.ZERO));
         BigDecimal diffQr = request.countedQr().subtract(expected.getOrDefault("QR", BigDecimal.ZERO));
 
         BigDecimal totalDifference = diffCash.add(diffCard).add(diffNequi).add(diffQr);
 
-        saveClosureAudit(request, expected, totalDifference, openingTime, closingTime, userName);
+        saveClosureAudit(request, expected, totalDifference, openingTime, closingTime,
+                userName, calculatedTotalCash, calculatedBase);
 
         Map<String, BigDecimal> shortages = new HashMap<>();
 
@@ -83,20 +96,35 @@ public class ExecuteDailyClosureUseCase {
     }
 
 
-    private void saveClosureAudit(ExecuteClosureRequest request, Map<String, BigDecimal> expected,
-                                  BigDecimal totalDifference, LocalDateTime openingTime,
-                                  LocalDateTime closingTime, String userName) {
+    private void saveClosureAudit(ExecuteClosureRequest request,
+                                  Map<String, BigDecimal> expected,
+                                  BigDecimal totalDifference,
+                                  LocalDateTime openingTime,
+                                  LocalDateTime closingTime,
+                                  String userName,
+                                  BigDecimal calculatedTotalCash,
+                                  BigDecimal calculatedBase) {
 
         DailyClosure entity = new DailyClosure();
+
         entity.setOpeningTime(openingTime);
         entity.setClosingTime(closingTime);
         entity.setUserName(userName);
         entity.setNotes(request.notes());
 
-        entity.setBaseBalanceForNextDay(request.baseBalanceForNextDay() != null ?
-                request.baseBalanceForNextDay() : BigDecimal.ZERO);
+        entity.setBaseBalanceForNextDay(calculatedBase != null ? calculatedBase : BigDecimal.ZERO);
+        entity.setTotalCountedCash(calculatedTotalCash != null ? calculatedTotalCash : BigDecimal.ZERO);
 
-        entity.setTotalCountedCash(request.countedCash() != null ? request.countedCash() : BigDecimal.ZERO);
+        try {
+            if (request.cashDetail() != null) {
+                String jsonAudit = objectMapper.writeValueAsString(request.cashDetail());
+                entity.setCashCountAudit(jsonAudit);
+            }
+        } catch (JsonProcessingException e) {
+            log.error("Error serializando auditoría de billetes", e);
+            entity.setCashCountAudit("ERROR_SERIALIZING_AUDIT");
+        }
+
         entity.setTotalCountedCard(request.countedCard() != null ? request.countedCard() : BigDecimal.ZERO);
         entity.setTotalCountedNequi(request.countedNequi() != null ? request.countedNequi() : BigDecimal.ZERO);
         entity.setTotalCountedQr(request.countedQr() != null ? request.countedQr() : BigDecimal.ZERO);
