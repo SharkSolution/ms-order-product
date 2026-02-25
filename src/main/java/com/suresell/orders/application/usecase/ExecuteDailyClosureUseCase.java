@@ -43,6 +43,11 @@ public class ExecuteDailyClosureUseCase {
 
         BigDecimal calculatedBase = cashflowCalculator.calculateBaseForNextDay(request.cashDetail());
 
+        BigDecimal amountToDeposit = calculatedTotalCash.subtract(calculatedBase);
+        if (amountToDeposit.compareTo(BigDecimal.ZERO) < 0) {
+            amountToDeposit = BigDecimal.ZERO;
+        }
+
         LocalDateTime closingTime = LocalDateTime.now(BOGOTA_ZONE);
 
         LocalDateTime openingTime = getOpeningTime(request.sellerId());
@@ -73,11 +78,17 @@ public class ExecuteDailyClosureUseCase {
         if (diffNequi.compareTo(BigDecimal.ZERO) < 0) shortages.put("Nequi", diffNequi);
         if (diffQr.compareTo(BigDecimal.ZERO) < 0) shortages.put("QR", diffQr);
 
-        if (shortages.isEmpty()) {
-            return new CashierClosureResponse("SUCCESS", "Cierre de caja registrado correctamente.", null);
-        } else {
-            return new CashierClosureResponse("SHORTAGE", "Se detectaron faltantes en el conteo.", shortages);
-        }
+        String message = (shortages.isEmpty())
+                ? "Cierre exitoso. Por favor ajuste la base."
+                : "Cierre con novedades. Se detectaron faltantes. ¡Notificacion enviada a Administrador!";
+
+        return new CashierClosureResponse(
+                (shortages.isEmpty() ? "SUCCESS" : "SHORTAGE"),
+                message,
+                shortages,
+                calculatedBase,
+                amountToDeposit
+        );
     }
 
     private Map<String, BigDecimal> parseTotals(List<Object[]> queryResults) {
