@@ -6,5 +6,7 @@ import java.util.Map;
 public record CashierClosureResponse(
         String status,
         String message,
-        Map<String, BigDecimal> shortages
+        Map<String, BigDecimal> shortages,
+        BigDecimal baseToKeep,
+        BigDecimal amountToDeposit
 ) {}
