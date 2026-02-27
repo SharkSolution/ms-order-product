@@ -61,7 +61,7 @@ public class ExecuteDailyClosureUseCase {
         if (diffQr.compareTo(BigDecimal.ZERO) < 0) shortages.put("QR", diffQr);
 
         if (shortages.isEmpty()) {
-            return new CashierClosureResponse("SUCCESS", "Cierre de caja registrado correctamente.", null);
+            return new CashierClosureResponse("OK", "Cierre de caja registrado correctamente.", Map.of());
         } else {
             return new CashierClosureResponse("SHORTAGE", "Se detectaron faltantes en el conteo.", shortages);
         }
