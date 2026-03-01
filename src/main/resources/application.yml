@@ -1,6 +1,5 @@
 server:
   port: 8081
-
 spring:
   datasource:
     driver-class-name: org.sqlite.JDBC
@@ -8,7 +7,6 @@ spring:
     hikari:
       maximum-pool-size: 1
       minimum-idle: 1
-
   jpa:
     properties:
       hibernate:
@@ -18,7 +16,6 @@ spring:
     hibernate:
       ddl-auto: update
     show-sql: false
-
 logging:
   level:
     org.hibernate.SQL: DEBUG
@@ -26,19 +23,14 @@ logging:
     com.suresell.order.serivices: INFO
   application:
     name: ms-order-product
-
 springdoc:
   api-docs:
     path: /v3/api-docs
   swagger-ui:
     path: /swagger-ui.html
-
-# Cupones
 coupon:
   admin:
     password: Admin2025*
-
-# CONFIGURACIÓN OFFLINE-FIRST
 sync:
   scheduler:
     fixed-delay-ms: 5000

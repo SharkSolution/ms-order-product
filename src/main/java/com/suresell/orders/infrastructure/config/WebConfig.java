@@ -9,7 +9,7 @@ public class WebConfig implements WebMvcConfigurer {
         .addMapping("/**")
         .allowedOrigins(
             new String[] {
-              "http://localhost:4200", "http://suresell-pos.s3-website-us-east-1.amazonaws.com"
+              "http: 
             })
         .allowedMethods(new String[] {"GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"})
         .allowedHeaders(new String[] {"*"})

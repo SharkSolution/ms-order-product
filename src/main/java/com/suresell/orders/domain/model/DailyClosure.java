@@ -1,15 +1,12 @@
 package com.suresell.orders.domain.model;
-
 import jakarta.persistence.*;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import lombok.AllArgsConstructor;
-
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.UUID;
-
 @Entity
 @Table(name = "daily_closure")
 @Data

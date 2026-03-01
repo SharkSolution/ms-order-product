@@ -28,6 +28,8 @@ implements DailyClosurePort {
     private static final Logger log = LoggerFactory.getLogger(DailyClosureHandler.class);
     private final DailyClosureRepositoryPort closureRepositoryPort;
     private final OrderRepositoryPort orderRepositoryPort;
+    private final com.suresell.orders.domain.port.out.SyncOutboxRepositoryPort syncOutboxRepositoryPort;
+    private final com.fasterxml.jackson.databind.ObjectMapper objectMapper;
     private static final String PAYMENT_CASH = "CASH";
     private static final String PAYMENT_CARD = "CARD";
     private static final String PAYMENT_NEQUI = "NEQUI";
@@ -36,31 +38,24 @@ implements DailyClosurePort {
     private static final String STATUS_POSITIVE_DIFF = "POSITIVE_DIFF";
     private static final String STATUS_NEGATIVE_DIFF = "NEGATIVE_DIFF";
     private static final ZoneId BOGOTA_ZONE = ZoneId.of("America/Bogota");
-
     @Transactional(readOnly=true)
     public ClosurePreviewResponse getClosurePreview() {
         LocalDateTime startOfDay = LocalDate.now(BOGOTA_ZONE).atStartOfDay();
         LocalDateTime endOfDay = LocalDateTime.now(BOGOTA_ZONE).with(LocalTime.MAX);
-
         List<Object[]> results = this.orderRepositoryPort.findTotalByPaymentMethodAndStatus(OrderStatus.pagado, startOfDay, endOfDay);
         Optional<LocalDateTime> minCreatedAt = this.orderRepositoryPort.findMinCreatedAtByStatus(OrderStatus.pagado, startOfDay, endOfDay);
         Integer countOrders = this.orderRepositoryPort.countByStatus(OrderStatus.pagado, startOfDay, endOfDay);
-
         BigDecimal totalCash = BigDecimal.ZERO;
         BigDecimal totalCard = BigDecimal.ZERO;
         BigDecimal totalNequi = BigDecimal.ZERO;
         BigDecimal totalQr = BigDecimal.ZERO;
         BigDecimal baseBalance = this.closureRepositoryPort.findLastClosure().map(DailyClosure::getBaseBalanceForNextDay).orElse(BigDecimal.ZERO);
-
-
         for (Object[] result : results) {
             String paymentMethod = (String)result[0];
             BigDecimal sumTotal = result[1] == null ? BigDecimal.ZERO : (BigDecimal) result[1];
-
             if (paymentMethod == null) {
                 continue;
             }
-
             switch (paymentMethod) {
                 case "CASH": {
                     totalCash = sumTotal;
@@ -98,7 +93,6 @@ implements DailyClosurePort {
                 baseBalance,
                 "Preview de cierre generado correctamente para el d\u00eda actual.");
     }
-
     @Transactional
     public ClosureResponse executeClosure(ClosureRequest request) {
         LocalDateTime openingTime = this.determineOpeningTime();
@@ -108,14 +102,11 @@ implements DailyClosurePort {
         BigDecimal expectedCard = this.calculateTotalByPaymentMethod(orders, PAYMENT_CARD);
         BigDecimal expectedNequi = this.calculateTotalByPaymentMethod(orders, PAYMENT_NEQUI);
         BigDecimal expectedQr = this.calculateTotalByPaymentMethod(orders, PAYMENT_QR);
-
         BigDecimal previousBaseBalance = this.closureRepositoryPort.findLastClosure().map(DailyClosure::getBaseBalanceForNextDay).orElse(BigDecimal.ZERO);
-
         BigDecimal countedCash = request.totalCountedCash().subtract(previousBaseBalance);
         BigDecimal countedCard = request.totalCountedCard();
         BigDecimal countedNequi = request.totalCountedNequi();
         BigDecimal countedQr = request.totalCountedQr();
-        
         BigDecimal totalExpected = expectedCash.add(expectedCard).add(expectedNequi).add(expectedQr);
         BigDecimal totalCounted = countedCash.add(countedCard).add(countedNequi).add(countedQr);
         BigDecimal difference = totalCounted.subtract(totalExpected);
@@ -138,7 +129,29 @@ implements DailyClosurePort {
         closure.setNotes(request.notes());
         closure.setBaseBalanceForNextDay(request.baseBalanceForNextDay());
         DailyClosure savedClosure = this.closureRepositoryPort.save(closure);
+        saveClosureToOutbox(savedClosure);
         return new ClosureResponse(savedClosure.getId(), savedClosure.getUserName(), savedClosure.getOpeningTime(), savedClosure.getClosingTime(), expectedCash, expectedCard, expectedNequi, expectedQr, totalExpected, countedCash, countedCard, countedNequi, countedQr, totalCounted, difference, status, savedClosure.getNotes(), this.generateClosureMessage(status, difference), previousBaseBalance);
+    }
+    private void saveClosureToOutbox(DailyClosure closure) {
+        try {
+            java.util.Map<String, Object> payload = new java.util.HashMap<>();
+            payload.put("eventType", "CLOSURE_CREATED");
+            payload.put("closure", closure);
+            com.suresell.orders.domain.model.SyncOutbox outbox = new com.suresell.orders.domain.model.SyncOutbox();
+            outbox.setAggregateType("DAILY_CLOSURE");
+            outbox.setAggregateUuid(closure.getId());
+            outbox.setAggregateId(0L); 
+            outbox.setEventType("CLOSURE_CREATED");
+            outbox.setPayloadJson(objectMapper.writeValueAsString(payload));
+            outbox.setStatus("PENDING");
+            outbox.setAttempts(0);
+            outbox.setNextRetryAt(System.currentTimeMillis());
+            outbox.setCreatedAt(System.currentTimeMillis());
+            outbox.setUpdatedAt(System.currentTimeMillis());
+            syncOutboxRepositoryPort.save(outbox);
+        } catch (Exception e) {
+            log.error("Error encolando sincronización de cierre: {}", e.getMessage());
+        }
     }    
     private LocalDateTime determineOpeningTime() {
         return this.closureRepositoryPort.findLastClosure().map(DailyClosure::getClosingTime).orElseGet(() -> {
@@ -175,26 +188,10 @@ implements DailyClosurePort {
             default -> "Cierre ejecutado";
         };
     }
-    @Transactional(readOnly=true)
-    public List<ClosureResponse> getAllClosures() {
-        List<DailyClosure> closures = this.closureRepositoryPort.findAllClosuresOrderByDateDesc();
-        return closures.stream().map(arg_0 -> this.mapToClosureResponse(arg_0)).toList();
-    }
-    private ClosureResponse mapToClosureResponse(DailyClosure closure) {
-        BigDecimal expectedCash = closure.getTotalExpectedCash() != null ? closure.getTotalExpectedCash() : BigDecimal.ZERO;
-        BigDecimal expectedCard = closure.getTotalExpectedCard() != null ? closure.getTotalExpectedCard() : BigDecimal.ZERO;
-        BigDecimal expectedNequi = closure.getTotalExpectedNequi() != null ? closure.getTotalExpectedNequi() : BigDecimal.ZERO;
-        BigDecimal expectedQr = closure.getTotalExpectedQr() != null ? closure.getTotalExpectedQr() : BigDecimal.ZERO;
-        BigDecimal countedCash = closure.getTotalCountedCash() != null ? closure.getTotalCountedCash() : BigDecimal.ZERO;
-        BigDecimal countedCard = closure.getTotalCountedCard() != null ? closure.getTotalCountedCard() : BigDecimal.ZERO;
-        BigDecimal countedNequi = closure.getTotalCountedNequi() != null ? closure.getTotalCountedNequi() : BigDecimal.ZERO;
-        BigDecimal countedQr = closure.getTotalCountedQr() != null ? closure.getTotalCountedQr() : BigDecimal.ZERO;
-        BigDecimal totalExpected = expectedCash.add(expectedCard).add(expectedNequi).add(expectedQr);
-        BigDecimal totalCounted = countedCash.add(countedCard).add(countedNequi).add(countedQr);
-        return new ClosureResponse(closure.getId(), closure.getUserName(), closure.getOpeningTime(), closure.getClosingTime(), expectedCash, expectedCard, expectedNequi, expectedQr, totalExpected, countedCash, countedCard, countedNequi, countedQr, totalCounted, closure.getDifferenceAmount(), closure.getStatus(), closure.getNotes(), this.generateClosureMessage(closure.getStatus(), closure.getDifferenceAmount()), closure.getBaseBalanceForNextDay());
-    }
-    public DailyClosureHandler(DailyClosureRepositoryPort closureRepositoryPort, OrderRepositoryPort orderRepositoryPort) {
+    public DailyClosureHandler(DailyClosureRepositoryPort closureRepositoryPort, OrderRepositoryPort orderRepositoryPort, com.suresell.orders.domain.port.out.SyncOutboxRepositoryPort syncOutboxRepositoryPort, com.fasterxml.jackson.databind.ObjectMapper objectMapper) {
         this.closureRepositoryPort = closureRepositoryPort;
         this.orderRepositoryPort = orderRepositoryPort;
+        this.syncOutboxRepositoryPort = syncOutboxRepositoryPort;
+        this.objectMapper = objectMapper;
     }
 }

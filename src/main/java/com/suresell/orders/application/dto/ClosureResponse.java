@@ -1,10 +1,8 @@
 package com.suresell.orders.application.dto;
-
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.UUID;
-
 @Schema(description = "Respuesta detallada del resultado del cierre de caja")
 public record ClosureResponse(
     @Schema(description = "ID único del cierre", example = "550e8400-e29b-41d4-a716-446655440000")

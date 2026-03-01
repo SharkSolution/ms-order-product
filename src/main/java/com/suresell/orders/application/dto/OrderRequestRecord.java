@@ -1,10 +1,8 @@
 package com.suresell.orders.application.dto;
-
 import com.suresell.orders.application.dto.OrderItemRequestRecord;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
 import java.util.List;
-
 @Schema(description = "Solicitud para crear o actualizar una orden")
 public record OrderRequestRecord(
     @NotBlank(message="El nombre/color es obligatorio") 

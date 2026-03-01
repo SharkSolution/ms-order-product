@@ -1,4 +1,3 @@
-
 package com.suresell.orders.infrastructure.web;
 import com.suresell.orders.domain.model.DiscountCoupon;
 import com.suresell.orders.application.dto.ApplyDiscountCommand;
@@ -6,7 +5,7 @@ import com.suresell.orders.application.dto.ApplyDiscountResult;
 import com.suresell.orders.application.dto.CreateCouponRequest;
 import com.suresell.orders.application.dto.LinkOrderCouponCommand;
 import com.suresell.orders.application.dto.UpdateCouponRequest;
-import com.suresell.orders.domain.port.in.DiscountPort; // Changed
+import com.suresell.orders.domain.port.in.DiscountPort;  
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import java.util.List;
@@ -32,7 +31,6 @@ import org.springframework.web.bind.annotation.RestController;
 public class DiscountController {
     private static final Logger logger = LoggerFactory.getLogger(DiscountController.class);
     private final DiscountPort discountPort;
-
     public DiscountController(DiscountPort discountPort) {
         this.discountPort = discountPort;
     }
@@ -77,19 +75,6 @@ public class DiscountController {
         }
         catch (Exception e) {
             logger.error("Error inesperado registrando uso de cup\u00f3n", (Throwable)e);
-            return ResponseEntity.status((HttpStatusCode)HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("error", "Error interno del servidor"));
-        }
-    }
-    @GetMapping(value={"/active"})
-    @Operation(summary = "Listar cupones activos")
-    public ResponseEntity<?> getActiveCoupons() {
-        logger.info("GET /api/discounts/active - Obteniendo cupones activos");
-        try {
-            List coupons = this.discountPort.getActiveCoupons();
-            return ResponseEntity.ok((Object)coupons);
-        }
-        catch (Exception e) {
-            logger.error("Error obteniendo cupones activos", (Throwable)e);
             return ResponseEntity.status((HttpStatusCode)HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("error", "Error interno del servidor"));
         }
     }
@@ -167,11 +152,15 @@ public class DiscountController {
     }
     @GetMapping
     @Operation(summary = "Listar cupones por estado")
-    public ResponseEntity<?> listAllCoupons(@RequestParam(defaultValue="all") String status) {
+    public ResponseEntity<?> listAllCoupons(
+            @RequestParam(defaultValue="all") String status,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size) {
         logger.info("GET /api/discounts - Listando cupones con filtro: {}", (Object)status);
         try {
-            List coupons = this.discountPort.listAllCoupons(status);
-            return ResponseEntity.ok((Object)coupons);
+            org.springframework.data.domain.Pageable pageable = org.springframework.data.domain.PageRequest.of(page, size);
+            org.springframework.data.domain.Page coupons = this.discountPort.listAllCoupons(status, pageable);
+            return ResponseEntity.ok((Object)com.suresell.orders.application.dto.PageResponse.from(coupons));
         }
         catch (Exception e) {
             logger.error("Error listando cupones", (Throwable)e);

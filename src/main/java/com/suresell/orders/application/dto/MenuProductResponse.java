@@ -1,5 +1,4 @@
 package com.suresell.orders.application.dto;
-
 public record MenuProductResponse(
         String idProduct,
         String nameProduct,

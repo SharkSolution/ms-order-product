@@ -1,14 +1,11 @@
 package com.suresell.orders.domain.model;
-
 import jakarta.persistence.*;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import lombok.AllArgsConstructor;
-
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
-
 @Entity
 @Table(name = "order_edit_history")
 @Data

@@ -1,9 +1,7 @@
 package com.suresell.orders.domain.model.printer;
-
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.math.BigDecimal;
 import java.util.List;
-
 @Schema(description = "Solicitud completa de impresión de ticket POS")
 public record PosTicketRequest(
         @Schema(description = "Nombre comercial del negocio", example = "SURESELL RESTAURANTE")
@@ -33,18 +31,17 @@ public record PosTicketRequest(
         @Schema(description = "Subtotal de la venta", example = "50000")
         BigDecimal subtotal,
         @Schema(description = "Total de impuestos (IVA/INC)", example = "9500")
-        BigDecimal tax, // IVA Total
+        BigDecimal tax,  
         @Schema(description = "Total final a pagar", example = "59500")
         BigDecimal total,
         @Schema(description = "Método de pago utilizado", example = "CASH")
         String paymentMethod,
         @Schema(description = "Monto entregado por el cliente", example = "100000")
-        BigDecimal cashGiven, // Cuánto entregó el cliente (para calcular vueltas)
+        BigDecimal cashGiven,  
         @Schema(description = "Cambio o vueltas entregadas", example = "40500")
-        BigDecimal change,    // Vueltas/Cambio
+        BigDecimal change,     
         @Schema(description = "Contenido para generar el código QR", example = "URL_FACTURA_ELECTRONICA")
         String qrContent,
         @Schema(description = "Mensaje opcional al final del ticket", example = "Gracias por su compra")
         String footerMessage
 ) {}
-

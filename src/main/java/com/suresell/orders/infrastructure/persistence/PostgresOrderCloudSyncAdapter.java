@@ -1,5 +1,4 @@
 package com.suresell.orders.infrastructure.persistence;
-
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.suresell.orders.domain.port.out.OrderCloudSyncPort;
@@ -7,57 +6,75 @@ import java.math.BigDecimal;
 import java.sql.Timestamp;
 import java.time.LocalDateTime;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.support.TransactionTemplate;
-
 @Component
 @RequiredArgsConstructor
+@Slf4j
 @ConditionalOnProperty(prefix = "sync.cloud", name = "enabled", havingValue = "true")
 public class PostgresOrderCloudSyncAdapter implements OrderCloudSyncPort {
-
     private final @Qualifier("cloudJdbcTemplate") JdbcTemplate cloudJdbcTemplate;
     private final @Qualifier("cloudTransactionTemplate") TransactionTemplate cloudTransactionTemplate;
     private final ObjectMapper objectMapper;
-
     @Override
     public void syncOrderCreatedPayload(String payloadJson) {
         cloudTransactionTemplate.executeWithoutResult(status -> {
             try {
                 JsonNode root = objectMapper.readTree(payloadJson);
-                JsonNode orderNode = root.path("order");
-                JsonNode trackingNode = root.path("tracking");
-
-                Long orderId = asLong(orderNode.path("idOrder"));
-                upsertOrder(orderNode, orderId);
-                upsertDeliveryTracking(trackingNode, orderId);
-                upsertOrderItems(orderNode.path("items"), orderId);
+                String eventType = root.path("eventType").asText();
+                switch (eventType) {
+                    case "ORDER_CREATED":
+                        syncOrder(root);
+                        break;
+                    case "CLOSURE_CREATED":
+                        upsertClosure(root.path("closure"));
+                        break;
+                    case "COUPON_SAVED":
+                        upsertCoupon(root.path("coupon"));
+                        break;
+                    case "COUPON_PRODUCT_SAVED":
+                        upsertCouponProduct(root);
+                        break;
+                    case "TRACKING_UPDATED":
+                        upsertDeliveryTracking(root.path("tracking"), asLong(root.path("orderId")));
+                        break;
+                    case "DISCOUNT_USAGE_CREATED":
+                        upsertDiscountUsage(root.path("usage"));
+                        break;
+                    case "EDIT_HISTORY_CREATED":
+                        upsertEditHistory(root.path("history"));
+                        break;
+                    default:
+                        log.warn("Evento de sincronización no reconocido: {}", eventType);
+                }
             } catch (Exception ex) {
-                throw new IllegalStateException("Error sincronizando orden a cloud", ex);
+                throw new IllegalStateException("Error sincronizando a cloud", ex);
             }
         });
     }
-
+    private void syncOrder(JsonNode root) {
+        JsonNode orderNode = root.path("order");
+        JsonNode trackingNode = root.path("tracking");
+        Long orderId = asLong(orderNode.path("idOrder"));
+        upsertOrder(orderNode, orderId);
+        upsertDeliveryTracking(trackingNode, orderId);
+        upsertOrderItems(orderNode.path("items"), orderId);
+    }
     private void upsertOrder(JsonNode orderNode, Long orderId) {
         cloudJdbcTemplate.update(
                 """
                 INSERT INTO orders (
                     id_order, created_at, discount_amount, discount_code, discount_percentage,
-                    pager_color, pager_number, payment_method, status, subtotal, total
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    pager_color, pager_number, payment_method, status, subtotal, total, synced
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT (id_order) DO UPDATE SET
-                    created_at = EXCLUDED.created_at,
-                    discount_amount = EXCLUDED.discount_amount,
-                    discount_code = EXCLUDED.discount_code,
-                    discount_percentage = EXCLUDED.discount_percentage,
-                    pager_color = EXCLUDED.pager_color,
-                    pager_number = EXCLUDED.pager_number,
-                    payment_method = EXCLUDED.payment_method,
                     status = EXCLUDED.status,
-                    subtotal = EXCLUDED.subtotal,
-                    total = EXCLUDED.total
+                    total = EXCLUDED.total,
+                    synced = true
                 """,
                 orderId,
                 asTimestamp(orderNode.path("createdAt")),
@@ -69,9 +86,9 @@ public class PostgresOrderCloudSyncAdapter implements OrderCloudSyncPort {
                 asString(orderNode.path("paymentMethod")),
                 asString(orderNode.path("status")),
                 asBigDecimal(orderNode.path("subtotal")),
-                asBigDecimal(orderNode.path("total")));
+                asBigDecimal(orderNode.path("total")),
+                true);
     }
-
     private void upsertDeliveryTracking(JsonNode trackingNode, Long orderId) {
         cloudJdbcTemplate.update(
                 """
@@ -86,12 +103,9 @@ public class PostgresOrderCloudSyncAdapter implements OrderCloudSyncPort {
                 asBoolean(trackingNode.path("delivered")),
                 asInteger(trackingNode.path("preparationDurationSeconds")));
     }
-
     private void upsertOrderItems(JsonNode itemsNode, Long orderId) {
         cloudJdbcTemplate.update("DELETE FROM order_item WHERE order_id = ?", orderId);
-        if (itemsNode == null || !itemsNode.isArray()) {
-            return;
-        }
+        if (itemsNode == null || !itemsNode.isArray()) return;
         for (JsonNode itemNode : itemsNode) {
             cloudJdbcTemplate.update(
                     """
@@ -109,66 +123,107 @@ public class PostgresOrderCloudSyncAdapter implements OrderCloudSyncPort {
                     orderId);
         }
     }
-
-    private String asString(JsonNode node) {
-        if (node == null || node.isNull()) {
-            return null;
-        }
-        return node.asText();
+    private void upsertClosure(JsonNode n) {
+        cloudJdbcTemplate.update(
+                """
+                INSERT INTO daily_closure (
+                    id, user_name, opening_time, closing_time, total_expected_cash, total_expected_card,
+                    total_expected_nequi, total_expected_qr, total_counted_cash, total_counted_card,
+                    total_counted_nequi, total_counted_qr, difference_amount, status, notes, 
+                    base_balance_for_next_day, cash_count_audit
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT (id) DO UPDATE SET
+                    status = EXCLUDED.status, notes = EXCLUDED.notes
+                """,
+                asString(n.path("id")), asString(n.path("userName")), asTimestamp(n.path("openingTime")),
+                asTimestamp(n.path("closingTime")), asBigDecimal(n.path("totalExpectedCash")),
+                asBigDecimal(n.path("totalExpectedCard")), asBigDecimal(n.path("totalExpectedNequi")),
+                asBigDecimal(n.path("totalExpectedQr")), asBigDecimal(n.path("totalCountedCash")),
+                asBigDecimal(n.path("totalCountedCard")), asBigDecimal(n.path("totalCountedNequi")),
+                asBigDecimal(n.path("totalCountedQr")), asBigDecimal(n.path("differenceAmount")),
+                asString(n.path("status")), asString(n.path("notes")),
+                asBigDecimal(n.path("baseBalanceForNextDay")), asString(n.path("cashCountAudit")));
     }
-
-    private Long asLong(JsonNode node) {
-        if (node == null || node.isNull()) {
-            return null;
-        }
-        return node.asLong();
+    private void upsertCoupon(JsonNode n) {
+        cloudJdbcTemplate.update(
+                """
+                INSERT INTO discount_coupon (
+                    id, code, name, description, discount_percentage, valid_from, valid_to, 
+                    valid_weekdays, is_active, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT (id) DO UPDATE SET
+                    name = EXCLUDED.name, discount_percentage = EXCLUDED.discount_percentage,
+                    valid_from = EXCLUDED.valid_from, valid_to = EXCLUDED.valid_to,
+                    is_active = EXCLUDED.is_active, updated_at = EXCLUDED.updated_at
+                """,
+                asLong(n.path("id")), asString(n.path("code")), asString(n.path("name")),
+                asString(n.path("description")), asBigDecimal(n.path("discountPercentage")),
+                asLocalDate(n.path("validFrom")), asLocalDate(n.path("validTo")),
+                asString(n.path("validWeekdays")), asBoolean(n.path("isActive")),
+                asTimestamp(n.path("createdAt")), asTimestamp(n.path("updatedAt")));
     }
-
-    private Integer asInteger(JsonNode node) {
-        if (node == null || node.isNull()) {
-            return null;
-        }
-        return node.asInt();
+    private void upsertCouponProduct(JsonNode root) {
+        cloudJdbcTemplate.update(
+                """
+                INSERT INTO coupon_product (id, coupon_id, product_id, product_name)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT (id) DO UPDATE SET
+                    product_name = EXCLUDED.product_name
+                """,
+                asLong(root.path("id")), asLong(root.path("couponId")),
+                asString(root.path("productId")), asString(root.path("productName")));
     }
-
-    private Boolean asBoolean(JsonNode node) {
-        if (node == null || node.isNull()) {
-            return null;
-        }
-        return node.asBoolean();
+    private void upsertDiscountUsage(JsonNode n) {
+        cloudJdbcTemplate.update(
+                """
+                INSERT INTO discount_usage (
+                    id, order_id, coupon_id, discount_code, subtotal_before_discount, 
+                    discount_amount, total_after_discount, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT (id) DO NOTHING
+                """,
+                asLong(n.path("id")), asLong(n.path("orderId")), asLong(n.path("couponId")),
+                asString(n.path("discountCode")), asBigDecimal(n.path("subtotalBeforeDiscount")),
+                asBigDecimal(n.path("discountAmount")), asBigDecimal(n.path("totalAfterDiscount")),
+                asTimestamp(n.path("createdAt")));
     }
-
+    private void upsertEditHistory(JsonNode n) {
+        cloudJdbcTemplate.update(
+                """
+                INSERT INTO order_edit_history (
+                    id, order_id, edit_type, product_id, product_name, old_quantity, new_quantity,
+                    old_total, new_total, edited_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT (id) DO NOTHING
+                """,
+                asLong(n.path("id")), asLong(n.path("orderId")), asString(n.path("editType")),
+                asString(n.path("productId")), asString(n.path("productName")), asInteger(n.path("oldQuantity")),
+                asInteger(n.path("newQuantity")), asBigDecimal(n.path("oldTotal")),
+                asBigDecimal(n.path("newTotal")), asTimestamp(n.path("editedAt")));
+    }
+    private String asString(JsonNode node) { return (node == null || node.isNull()) ? null : node.asText(); }
+    private Long asLong(JsonNode node) { return (node == null || node.isNull()) ? null : node.asLong(); }
+    private Integer asInteger(JsonNode node) { return (node == null || node.isNull()) ? null : node.asInt(); }
+    private Boolean asBoolean(JsonNode node) { return (node == null || node.isNull()) ? null : node.asBoolean(); }
     private BigDecimal asBigDecimal(JsonNode node) {
-        if (node == null || node.isNull()) {
-            return null;
-        }
-        if (node.isNumber()) {
-            return node.decimalValue();
-        }
-        return new BigDecimal(node.asText());
+        if (node == null || node.isNull()) return null;
+        return node.isNumber() ? node.decimalValue() : new BigDecimal(node.asText());
     }
-
+    private java.sql.Date asLocalDate(JsonNode node) {
+        if (node == null || node.isNull()) return null;
+        try { return java.sql.Date.valueOf(node.asText()); } catch (Exception e) { return null; }
+    }
     private Timestamp asTimestamp(JsonNode node) {
         LocalDateTime dateTime = asLocalDateTime(node);
         return dateTime == null ? null : Timestamp.valueOf(dateTime);
     }
-
     private LocalDateTime asLocalDateTime(JsonNode node) {
-        if (node == null || node.isNull()) {
-            return null;
-        }
-        if (node.isTextual()) {
-            return LocalDateTime.parse(node.asText());
-        }
+        if (node == null || node.isNull()) return null;
+        if (node.isTextual()) return LocalDateTime.parse(node.asText());
         if (node.isArray() && node.size() >= 6) {
-            int year = node.get(0).asInt();
-            int month = node.get(1).asInt();
-            int day = node.get(2).asInt();
-            int hour = node.get(3).asInt();
-            int minute = node.get(4).asInt();
-            int second = node.get(5).asInt();
-            int nano = node.size() > 6 ? node.get(6).asInt() : 0;
-            return LocalDateTime.of(year, month, day, hour, minute, second, nano);
+            return LocalDateTime.of(node.get(0).asInt(), node.get(1).asInt(), node.get(2).asInt(),
+                                    node.get(3).asInt(), node.get(4).asInt(), node.get(5).asInt(),
+                                    node.size() > 6 ? node.get(6).asInt() : 0);
         }
         return null;
     }

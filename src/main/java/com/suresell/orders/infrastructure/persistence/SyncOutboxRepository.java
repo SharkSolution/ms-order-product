@@ -1,36 +1,32 @@
 package com.suresell.orders.infrastructure.persistence;
-
-import com.suresell.orders.domain.model.OrderSyncOutbox;
+import com.suresell.orders.domain.model.SyncOutbox;
 import java.util.List;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
-
-public interface OrderSyncOutboxRepository extends JpaRepository<OrderSyncOutbox, Long> {
+public interface SyncOutboxRepository extends JpaRepository<SyncOutbox, Long> {
     @Query("""
             SELECT o
-            FROM OrderSyncOutbox o
+            FROM SyncOutbox o
             WHERE o.status IN ('PENDING', 'FAILED')
               AND o.nextRetryAt <= :now
-            ORDER BY o.aggregateId ASC, o.createdAt ASC
+            ORDER BY o.createdAt ASC
             """)
-    List<OrderSyncOutbox> findReadyForSync(@Param("now") Long now, Pageable pageable);
-
+    List<SyncOutbox> findReadyForSync(@Param("now") Long now, Pageable pageable);
     @Modifying
     @Query("""
-            UPDATE OrderSyncOutbox o
+            UPDATE SyncOutbox o
             SET o.status = 'IN_PROGRESS',
                 o.updatedAt = :updatedAt
             WHERE o.id = :id
               AND o.status IN ('PENDING', 'FAILED')
             """)
     int markInProgress(@Param("id") Long id, @Param("updatedAt") Long updatedAt);
-
     @Modifying
     @Query("""
-            UPDATE OrderSyncOutbox o
+            UPDATE SyncOutbox o
             SET o.status = 'SYNCED',
                 o.lastError = null,
                 o.updatedAt = :updatedAt,
@@ -38,10 +34,9 @@ public interface OrderSyncOutboxRepository extends JpaRepository<OrderSyncOutbox
             WHERE o.id = :id
             """)
     int markSynced(@Param("id") Long id, @Param("updatedAt") Long updatedAt, @Param("syncedAt") Long syncedAt);
-
     @Modifying
     @Query("""
-            UPDATE OrderSyncOutbox o
+            UPDATE SyncOutbox o
             SET o.status = 'FAILED',
                 o.lastError = :error,
                 o.attempts = :attempts,

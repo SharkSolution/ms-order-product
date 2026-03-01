@@ -1,5 +1,4 @@
 package com.suresell.orders.shared.enums;
-
 public enum OrderStatus {
     PENDING,
     ACCEPTED,

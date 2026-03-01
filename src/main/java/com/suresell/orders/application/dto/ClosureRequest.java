@@ -1,12 +1,10 @@
 package com.suresell.orders.application.dto;
-
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import java.math.BigDecimal;
-
 @Schema(description = "Solicitud de cierre de caja")
 public record ClosureRequest(
     @NotBlank(message="El nombre del cajero es obligatorio") 

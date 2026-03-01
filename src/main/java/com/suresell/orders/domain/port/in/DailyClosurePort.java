@@ -6,5 +6,4 @@ import java.util.List;
 public interface DailyClosurePort {
     public ClosurePreviewResponse getClosurePreview();
     public ClosureResponse executeClosure(ClosureRequest var1);
-    public List<ClosureResponse> getAllClosures();
 }

@@ -1,14 +1,11 @@
 package com.suresell.orders.domain.model;
-
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
-
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
-
 @Entity
 @Table(name = "discount_usage")
 @Data
@@ -20,11 +17,9 @@ public class DiscountUsage {
     private Long id;
     @Column(name = "order_id", nullable = false)
     private Long orderId;
-
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "coupon_id", nullable = false)
     private DiscountCoupon coupon;
-
     @Column(name = "discount_code")
     private String discountCode;
     @Column(name = "subtotal_before_discount")

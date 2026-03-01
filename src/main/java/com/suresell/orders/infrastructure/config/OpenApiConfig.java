@@ -1,12 +1,10 @@
 package com.suresell.orders.infrastructure.config;
-
 import io.swagger.v3.oas.annotations.OpenAPIDefinition;
 import io.swagger.v3.oas.annotations.info.Contact;
 import io.swagger.v3.oas.annotations.info.Info;
 import io.swagger.v3.oas.annotations.info.License;
 import io.swagger.v3.oas.annotations.servers.Server;
 import org.springframework.context.annotation.Configuration;
-
 @Configuration
 @OpenAPIDefinition(
         info = @Info(
@@ -17,7 +15,7 @@ import org.springframework.context.annotation.Configuration;
                 license = @License(name = "Proprietary")
         ),
         servers = {
-                @Server(url = "http://localhost:8081", description = "Local")
+                @Server(url = "http: 
         }
 )
 public class OpenApiConfig {

@@ -1,8 +1,8 @@
 package com.suresell.orders.infrastructure.web;
-
 import com.suresell.orders.application.dto.OrderRequestRecord;
 import com.suresell.orders.application.dto.OrderResponseRecord;
 import com.suresell.orders.application.dto.PageResponse;
+import com.suresell.orders.application.dto.PagerAvailabilityResponse;
 import com.suresell.orders.domain.model.OrderEditHistory;
 import com.suresell.orders.domain.port.in.OrderPort;
 import com.suresell.orders.infrastructure.web.adapter.OrderRequestWebAdapter;
@@ -24,23 +24,23 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
-
 @RestController
 @RequestMapping("/orders")
 @Slf4j
 @Tag(name = "Orders", description = "Gestión de órdenes")
 public class OrderController {
-
     private static final int MAX_PAGE_SIZE = 50;
-
     private final OrderPort orderPort;
     private final OrderRequestWebAdapter orderRequestWebAdapter;
-
     public OrderController(OrderPort orderPort, OrderRequestWebAdapter orderRequestWebAdapter) {
         this.orderPort = orderPort;
         this.orderRequestWebAdapter = orderRequestWebAdapter;
     }
-
+    @GetMapping("/pager-availability")
+    @Operation(summary = "Obtener disponibilidad de pagers", description = "Lista los pagers disponibles y ocupados (Amarillo y Azul del 1 al 16).")
+    public ResponseEntity<PagerAvailabilityResponse> getPagerAvailability() {
+        return ResponseEntity.ok(orderPort.getPagerAvailability());
+    }
     @PostMapping("/create")
     @Operation(summary = "Crear orden")
     public ResponseEntity<Map<String, String>> createOrder(@RequestBody Map<String, Object> payload) {
@@ -48,7 +48,6 @@ public class OrderController {
         orderPort.createOrUpdateOrder(dto);
         return ResponseEntity.status(HttpStatus.CREATED).body(Map.of("message", "Orden creada con éxito"));
     }
-
     @PutMapping("/{orderId}")
     @Operation(summary = "Editar orden")
     public ResponseEntity<Map<String, String>> updateOrder(
@@ -58,16 +57,16 @@ public class OrderController {
         orderPort.updateOrder(orderId, dto);
         return ResponseEntity.ok(Map.of("message", "Orden actualizada con éxito"));
     }
-
     @GetMapping("/historial")
-    @Operation(summary = "Historial de órdenes paginado")
+    @Operation(summary = "Historial de órdenes paginado con filtros")
     public ResponseEntity<PageResponse<OrderResponseRecord>> getAllOrders(
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size,
+            @RequestParam(required = false) String pagerColor,
+            @RequestParam(required = false) String pagerNumber,
+            @RequestParam(required = false) Long orderId,
             @RequestParam(required = false) Long afterId) {
-
         int safeSize = Math.min(Math.max(size, 1), MAX_PAGE_SIZE);
-
         if (afterId != null) {
             List<OrderResponseRecord> orders = orderPort.getAllOrdersKeyset(afterId, safeSize);
             return ResponseEntity.ok(new PageResponse<>(
@@ -78,29 +77,17 @@ public class OrderController {
                     0,
                     orders.size() < safeSize));
         }
-
-        Page<OrderResponseRecord> ordersPage = orderPort.getAllOrdersPaginated(page, safeSize);
+        String filterColor = (pagerColor == null || pagerColor.isEmpty() || pagerColor.equalsIgnoreCase("Todos")) ? null : pagerColor;
+        String filterNumber = (pagerNumber == null || pagerNumber.isEmpty()) ? null : pagerNumber;
+        Page<OrderResponseRecord> ordersPage = orderPort.getAllOrdersPaginated(filterColor, filterNumber, orderId, page, safeSize);
         return ResponseEntity.ok(PageResponse.from(ordersPage));
     }
-
     @GetMapping("/{orderId}")
     @Operation(summary = "Obtener orden por ID")
     public ResponseEntity<OrderResponseRecord> getOrderById(@PathVariable Long orderId) {
         OrderResponseRecord order = orderPort.getOrderById(orderId);
         return ResponseEntity.ok(order);
     }
-
-    @GetMapping("/edit-history")
-    @Operation(summary = "Historial de ediciones de órdenes")
-    public ResponseEntity<PageResponse<OrderEditHistory>> getOrderEditHistory(
-            @RequestParam(required = false) Long orderId,
-            @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "10") int size) {
-        int safeSize = Math.min(size, MAX_PAGE_SIZE);
-        Page<OrderEditHistory> history = orderPort.getOrderEditHistory(orderId, page, safeSize);
-        return ResponseEntity.ok(PageResponse.from(history));
-    }
-
     @PatchMapping("/{orderId}/apply-discount")
     @Operation(summary = "Aplicar cupón de descuento a orden")
     public ResponseEntity<OrderResponseRecord> applyDiscountToOrder(
@@ -109,5 +96,4 @@ public class OrderController {
         OrderResponseRecord updatedOrder = orderPort.applyDiscountToOrder(orderId, discountCode);
         return ResponseEntity.ok(updatedOrder);
     }
-
 }

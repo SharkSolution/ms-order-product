@@ -1,5 +1,4 @@
 package com.suresell.orders.application.usecase;
-
 import com.suresell.orders.domain.port.in.DiscountPort;
 import com.suresell.orders.domain.model.CouponProduct;
 import com.suresell.orders.domain.model.DiscountCoupon;
@@ -12,6 +11,9 @@ import com.suresell.orders.application.dto.ProductDiscountDto;
 import com.suresell.orders.domain.port.out.CouponProductRepositoryPort;
 import com.suresell.orders.domain.port.out.DiscountCouponRepositoryPort;
 import com.suresell.orders.domain.port.out.DiscountUsageRepositoryPort;
+import com.suresell.orders.domain.port.out.SyncOutboxRepositoryPort;
+import com.suresell.orders.domain.model.SyncOutbox;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.DayOfWeek;
@@ -19,13 +21,17 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 @Service
@@ -37,12 +43,16 @@ public class DiscountHandler implements DiscountPort {
     private DiscountUsageRepositoryPort usageRepositoryPort;
     @Autowired
     private CouponProductRepositoryPort couponProductRepositoryPort;
+    @Autowired
+    private SyncOutboxRepositoryPort syncOutboxRepositoryPort;
+    @Autowired
+    private ObjectMapper objectMapper;
     private static final ZoneId BOGOTA_ZONE = ZoneId.of("America/Bogota");
-    
+    @Override
     public ApplyDiscountResult applyDiscount(ApplyDiscountCommand command) {
         LocalDate orderDate;
         if (command.code() == null || command.code().trim().isEmpty()) {
-            return this.createInvalidResult("El c\u00f3digo del cup\u00f3n es requerido");
+            return this.createInvalidResult("El código del cupón es requerido");
         }
         if (command.subtotal() == null || command.subtotal().compareTo(BigDecimal.ZERO) <= 0) {
             return this.createInvalidResult("El subtotal debe ser mayor a cero");
@@ -50,74 +60,74 @@ public class DiscountHandler implements DiscountPort {
         if (command.items() == null || command.items().isEmpty()) {
             return this.createInvalidResult("La orden debe tener al menos un producto");
         }
-        Optional couponOpt = this.couponRepositoryPort.findByCodeIgnoreCase(command.code());
+        Optional<DiscountCoupon> couponOpt = this.couponRepositoryPort.findByCodeIgnoreCase(command.code());
         if (couponOpt.isEmpty()) {
-            return this.createInvalidResult("El cup\u00f3n no existe");
+            return this.createInvalidResult("El cupón no existe");
         }
-        DiscountCoupon coupon = (DiscountCoupon)couponOpt.get();
+        DiscountCoupon coupon = couponOpt.get();
         if (!Boolean.TRUE.equals(coupon.getIsActive())) {
-            return this.createInvalidResult("El cup\u00f3n no est\u00e1 activo");
+            return this.createInvalidResult("El cupón no está activo");
         }
-        LocalDate localDate = orderDate = command.orderDateTime() != null ? command.orderDateTime().toLocalDate() : LocalDate.now(BOGOTA_ZONE);
+        orderDate = command.orderDateTime() != null ? command.orderDateTime().toLocalDate() : LocalDate.now(BOGOTA_ZONE);
         if (coupon.getValidFrom() != null && orderDate.isBefore(coupon.getValidFrom())) {
-            return this.createInvalidResult("El cup\u00f3n a\u00fan no es v\u00e1lido. V\u00e1lido desde: " + String.valueOf(coupon.getValidFrom()));
+            return this.createInvalidResult("El cupón aún no es válido. Válido desde: " + coupon.getValidFrom());
         }
         if (coupon.getValidTo() != null && orderDate.isAfter(coupon.getValidTo())) {
-            return this.createInvalidResult("El cup\u00f3n ha expirado. V\u00e1lido hasta: " + String.valueOf(coupon.getValidTo()));
+            return this.createInvalidResult("El cupón ha expirado. Válido hasta: " + coupon.getValidTo());
         }
         if (coupon.getValidWeekdays() != null && !coupon.getValidWeekdays().trim().isEmpty()) {
-            String currentDayStr;
             DayOfWeek currentDay = command.orderDateTime() != null ? command.orderDateTime().getDayOfWeek() : LocalDateTime.now(BOGOTA_ZONE).getDayOfWeek();
-            List validDays = Arrays.stream(coupon.getValidWeekdays().split(",")).map(String::trim).map(String::toUpperCase).collect(Collectors.toList());
-            if (!validDays.contains(currentDayStr = currentDay.toString().substring(0, 3))) {
-                return this.createInvalidResult("El cup\u00f3n no es v\u00e1lido para " + currentDay.toString());
+            List<String> validDays = Arrays.stream(coupon.getValidWeekdays().split(",")).map(String::trim).map(String::toUpperCase).collect(Collectors.toList());
+            String currentDayStr = currentDay.toString().substring(0, 3);
+            if (!validDays.contains(currentDayStr)) {
+                return this.createInvalidResult("El cupón no es válido para " + currentDay.toString());
             }
         }
         List<CouponProduct> couponProducts = coupon.getProducts();
         if (couponProducts == null || couponProducts.isEmpty()) {
-            return this.createInvalidResult("El cup\u00f3n no tiene productos asociados");
+            return this.createInvalidResult("El cupón no tiene productos asociados");
         }
-        Set<String> eligibleProductIds = couponProducts.stream().map(cp -> cp.getProductId()).collect(Collectors.toSet());
+        Set<String> eligibleProductIds = couponProducts.stream().map(CouponProduct::getProductId).collect(Collectors.toSet());
         BigDecimal baseAmount = BigDecimal.ZERO;
         List<String> appliedProductIds = command.items().stream()
             .filter(item -> item.productId() != null && eligibleProductIds.contains(item.productId()))
-            .map(item -> item.productId()).collect(Collectors.toList());
-
-        for (OrderItemDto item2 : command.items()) {
-            if (item2.productId() == null || !eligibleProductIds.contains(item2.productId())) continue;
-            BigDecimal itemTotal = item2.unitPrice().multiply(BigDecimal.valueOf(item2.quantity().intValue()));
+            .map(OrderItemDto::productId).collect(Collectors.toList());
+        for (OrderItemDto item : command.items()) {
+            if (item.productId() == null || !eligibleProductIds.contains(item.productId())) continue;
+            BigDecimal itemTotal = item.unitPrice().multiply(BigDecimal.valueOf(item.quantity()));
             baseAmount = baseAmount.add(itemTotal);
         }
         if (baseAmount.compareTo(BigDecimal.ZERO) <= 0) {
-            return this.createInvalidResult("El cup\u00f3n no aplica: no hay productos elegibles en la orden");
+            return this.createInvalidResult("El cupón no aplica: no hay productos elegibles en la orden");
         }
         BigDecimal discountAmount = baseAmount.multiply(coupon.getDiscountPercentage()).divide(BigDecimal.valueOf(100L), 2, RoundingMode.HALF_UP);
         BigDecimal newSubtotal = command.subtotal().subtract(discountAmount);
         if (newSubtotal.compareTo(BigDecimal.ZERO) < 0) {
             newSubtotal = BigDecimal.ZERO;
         }
-        Object message = String.format("Se aplic\u00f3 el cup\u00f3n %s: %s%% de descuento en productos seleccionados. Descuento total: $%s", coupon.getCode().toUpperCase(), coupon.getDiscountPercentage(), discountAmount);
+        String message = String.format("Se aplicó el cupón %s: %s%% de descuento en productos seleccionados. Descuento total: $%s", coupon.getCode().toUpperCase(), coupon.getDiscountPercentage(), discountAmount);
         if (coupon.getName() != null && !coupon.getName().isEmpty()) {
-            message = (String)message + " (" + coupon.getName() + ")";
+            message = message + " (" + coupon.getName() + ")";
         }
-        return new ApplyDiscountResult(Boolean.valueOf(true), coupon.getCode(), coupon.getDiscountPercentage(), discountAmount, newSubtotal, (String)message, appliedProductIds);
+        return new ApplyDiscountResult(true, coupon.getCode(), coupon.getDiscountPercentage(), discountAmount, newSubtotal, message, appliedProductIds);
     }
+    @Override
     @Transactional
     public void linkOrderWithCoupon(LinkOrderCouponCommand command) {
         if (command.orderId() == null) {
             throw new IllegalArgumentException("El ID de la orden es requerido");
         }
         if (command.code() == null || command.code().trim().isEmpty()) {
-            throw new IllegalArgumentException("El c\u00f3digo del cup\u00f3n es requerido");
+            throw new IllegalArgumentException("El código del cupón es requerido");
         }
-        Optional couponOpt = this.couponRepositoryPort.findByCodeIgnoreCase(command.code());
+        Optional<DiscountCoupon> couponOpt = this.couponRepositoryPort.findByCodeIgnoreCase(command.code());
         if (couponOpt.isEmpty()) {
-            throw new IllegalArgumentException("El cup\u00f3n no existe: " + command.code());
+            throw new IllegalArgumentException("El cupón no existe: " + command.code());
         }
-        DiscountCoupon coupon = (DiscountCoupon)couponOpt.get();
-        Optional existingUsage = this.usageRepositoryPort.findByOrderIdAndCouponId(command.orderId(), coupon.getId());
+        DiscountCoupon coupon = couponOpt.get();
+        Optional<DiscountUsage> existingUsage = this.usageRepositoryPort.findByOrderIdAndCouponId(command.orderId(), coupon.getId());
         if (existingUsage.isPresent()) {
-            throw new IllegalStateException("El cup\u00f3n ya fue aplicado a esta orden");
+            throw new IllegalStateException("El cupón ya fue aplicado a esta orden");
         }
         DiscountUsage usage = new DiscountUsage();
         usage.setOrderId(command.orderId());
@@ -126,41 +136,60 @@ public class DiscountHandler implements DiscountPort {
         usage.setSubtotalBeforeDiscount(command.subtotalBeforeDiscount());
         usage.setDiscountAmount(command.discountAmount());
         usage.setTotalAfterDiscount(command.totalAfterDiscount());
-        this.usageRepositoryPort.save(usage);
+        usage.setCreatedAt(LocalDateTime.now(BOGOTA_ZONE));
+        DiscountUsage savedUsage = this.usageRepositoryPort.save(usage);
+        saveDiscountUsageToOutbox(savedUsage);
+    }
+    private void saveDiscountUsageToOutbox(DiscountUsage usage) {
+        try {
+            Map<String, Object> payload = new HashMap<>();
+            payload.put("eventType", "DISCOUNT_USAGE_CREATED");
+            payload.put("usage", usage);
+            SyncOutbox outbox = new SyncOutbox();
+            outbox.setAggregateType("DISCOUNT_USAGE");
+            outbox.setAggregateId(usage.getId());
+            outbox.setEventType("DISCOUNT_USAGE_CREATED");
+            outbox.setPayloadJson(objectMapper.writeValueAsString(payload));
+            outbox.setStatus("PENDING");
+            outbox.setAttempts(0);
+            outbox.setNextRetryAt(System.currentTimeMillis());
+            outbox.setCreatedAt(System.currentTimeMillis());
+            outbox.setUpdatedAt(System.currentTimeMillis());
+            syncOutboxRepositoryPort.save(outbox);
+        } catch (Exception e) {
+            logger.error("Error encolando sincronización de uso de descuento: {}", e.getMessage());
+        }
     }
     private ApplyDiscountResult createInvalidResult(String message) {
-        return new ApplyDiscountResult(Boolean.valueOf(false), null, null, BigDecimal.ZERO, BigDecimal.ZERO, message, List.of());
+        return new ApplyDiscountResult(false, null, null, BigDecimal.ZERO, BigDecimal.ZERO, message, List.of());
     }
-    public List<DiscountCoupon> getActiveCoupons() {
-        LocalDate today = LocalDate.now(BOGOTA_ZONE);
-        return this.couponRepositoryPort.findByIsActive(Boolean.valueOf(true)).stream().filter(coupon -> {
-            if (coupon.getValidTo() != null && today.isAfter(coupon.getValidTo())) {
-                return false;
-            }
-            return coupon.getValidFrom() == null || !today.isBefore(coupon.getValidFrom());
-        }).collect(Collectors.toList());
-    }
+    @Override
     @Transactional
     public DiscountCoupon createCoupon(DiscountCoupon coupon, List<ProductDiscountDto> products) {
         if (this.couponRepositoryPort.existsByCode(coupon.getCode())) {
-            throw new IllegalArgumentException("Ya existe un cup\u00f3n con el c\u00f3digo: " + coupon.getCode());
+            throw new IllegalArgumentException("Ya existe un cupón con el código: " + coupon.getCode());
         }
         this.validateCouponData(coupon, products);
+        coupon.setCreatedAt(LocalDateTime.now(BOGOTA_ZONE));
+        coupon.setUpdatedAt(LocalDateTime.now(BOGOTA_ZONE));
         DiscountCoupon savedCoupon = this.couponRepositoryPort.save(coupon);
+        saveCouponToOutbox(savedCoupon);
         if (products != null && !products.isEmpty()) {
             for (ProductDiscountDto productDto : products) {
                 CouponProduct couponProduct = new CouponProduct();
                 couponProduct.setCoupon(savedCoupon);
                 couponProduct.setProductId(productDto.productId());
                 couponProduct.setProductName(productDto.productName());
-                this.couponProductRepositoryPort.save(couponProduct);
+                CouponProduct savedCP = this.couponProductRepositoryPort.save(couponProduct);
+                saveCouponProductToOutbox(savedCP);
             }
         }
         return savedCoupon;
     }
+    @Override
     @Transactional
     public DiscountCoupon updateCoupon(Long id, DiscountCoupon updatedData, List<ProductDiscountDto> products) {
-        DiscountCoupon existing = this.couponRepositoryPort.findById(id).orElseThrow(() -> new IllegalArgumentException("Cup\u00f3n no encontrado con ID: " + id));
+        DiscountCoupon existing = this.couponRepositoryPort.findById(id).orElseThrow(() -> new IllegalArgumentException("Cupón no encontrado con ID: " + id));
         existing.setCode(updatedData.getCode());
         existing.setName(updatedData.getName());
         existing.setDescription(updatedData.getDescription());
@@ -169,47 +198,77 @@ public class DiscountHandler implements DiscountPort {
         existing.setValidTo(updatedData.getValidTo());
         existing.setValidWeekdays(updatedData.getValidWeekdays());
         existing.setIsActive(updatedData.getIsActive());
+        existing.setUpdatedAt(LocalDateTime.now(BOGOTA_ZONE));
         this.validateCouponData(existing, products);
+        DiscountCoupon savedCoupon = this.couponRepositoryPort.save(existing);
+        saveCouponToOutbox(savedCoupon);
         this.couponProductRepositoryPort.deleteByCouponId(id);
         if (products != null && !products.isEmpty()) {
             for (ProductDiscountDto productDto : products) {
                 CouponProduct couponProduct = new CouponProduct();
-                couponProduct.setCoupon(existing);
+                couponProduct.setCoupon(savedCoupon);
                 couponProduct.setProductId(productDto.productId());
                 couponProduct.setProductName(productDto.productName());
-                this.couponProductRepositoryPort.save(couponProduct);
+                CouponProduct savedCP = this.couponProductRepositoryPort.save(couponProduct);
+                saveCouponProductToOutbox(savedCP);
             }
         }
-        return this.couponRepositoryPort.save(existing);
+        return savedCoupon;
     }
+    @Override
     @Transactional
     public DiscountCoupon deactivateCoupon(Long id) {
-        DiscountCoupon coupon = this.couponRepositoryPort.findById(id).orElseThrow(() -> new IllegalArgumentException("Cup\u00f3n no encontrado con ID: " + id));
-        coupon.setIsActive(Boolean.valueOf(false));
-        return this.couponRepositoryPort.save(coupon);
+        DiscountCoupon coupon = this.couponRepositoryPort.findById(id).orElseThrow(() -> new IllegalArgumentException("Cupón no encontrado con ID: " + id));
+        coupon.setIsActive(false);
+        coupon.setUpdatedAt(LocalDateTime.now(BOGOTA_ZONE));
+        DiscountCoupon savedCoupon = this.couponRepositoryPort.save(coupon);
+        saveCouponToOutbox(savedCoupon);
+        return savedCoupon;
     }
-    public List<DiscountCoupon> listAllCoupons(String status) {
+    private void saveCouponToOutbox(DiscountCoupon coupon) {
+        try {
+            Map<String, Object> payload = new HashMap<>();
+            payload.put("eventType", "COUPON_SAVED");
+            payload.put("coupon", coupon);
+            SyncOutbox outbox = new SyncOutbox();
+            outbox.setAggregateType("COUPON");
+            outbox.setAggregateId(coupon.getId());
+            outbox.setEventType("COUPON_SAVED");
+            outbox.setPayloadJson(objectMapper.writeValueAsString(payload));
+            outbox.setStatus("PENDING");
+            outbox.setAttempts(0);
+            outbox.setNextRetryAt(System.currentTimeMillis());
+            outbox.setCreatedAt(System.currentTimeMillis());
+            outbox.setUpdatedAt(System.currentTimeMillis());
+            syncOutboxRepositoryPort.save(outbox);
+        } catch (Exception e) {
+            logger.error("Error encolando sincronización de cupón: {}", e.getMessage());
+        }
+    }
+    @Override
+    public Page<DiscountCoupon> listAllCoupons(String status, Pageable pageable) {
+        LocalDate today = LocalDate.now(BOGOTA_ZONE);
         if (status == null || status.equalsIgnoreCase("all")) {
-            return this.couponRepositoryPort.findAll();
+            return this.couponRepositoryPort.findAll(pageable);
         }
         if (status.equalsIgnoreCase("active")) {
-            return this.couponRepositoryPort.findByIsActive(Boolean.valueOf(true));
+            return this.couponRepositoryPort.findCurrentlyActive(today, pageable);
         }
         if (status.equalsIgnoreCase("inactive")) {
-            return this.couponRepositoryPort.findByIsActive(Boolean.valueOf(false));
+            return this.couponRepositoryPort.findByIsActive(false, pageable);
         }
         if (status.equalsIgnoreCase("expired")) {
-            LocalDate today = LocalDate.now(BOGOTA_ZONE);
-            return this.couponRepositoryPort.findAll().stream().filter(coupon -> coupon.getValidTo() != null && today.isAfter(coupon.getValidTo())).collect(Collectors.toList());
+            return this.couponRepositoryPort.findExpired(today, pageable);
         }
-        return this.couponRepositoryPort.findAll();
+        return this.couponRepositoryPort.findAll(pageable);
     }
+    @Override
     @Transactional
     public void deleteCoupon(Long id) {
-        DiscountCoupon coupon = this.couponRepositoryPort.findById(id).orElseThrow(() -> new IllegalArgumentException("Cup\u00f3n no encontrado con ID: " + id));
-        List usages = this.usageRepositoryPort.findByCouponId(id);
+        DiscountCoupon coupon = this.couponRepositoryPort.findById(id).orElseThrow(() -> new IllegalArgumentException("Cupón no encontrado con ID: " + id));
+        List<DiscountUsage> usages = this.usageRepositoryPort.findByCouponId(id);
         if (!usages.isEmpty()) {
-            throw new IllegalStateException("No se puede eliminar el cup\u00f3n porque tiene " + usages.size() + " uso(s) registrado(s). Considere desactivarlo en su lugar.");
+            throw new IllegalStateException("No se puede eliminar el cupón porque tiene " + usages.size() + " uso(s) registrado(s). Considere desactivarlo en su lugar.");
         }
         this.couponProductRepositoryPort.deleteByCouponId(id);
         this.couponRepositoryPort.delete(coupon);
@@ -217,6 +276,29 @@ public class DiscountHandler implements DiscountPort {
     private void validateCouponData(DiscountCoupon coupon, List<ProductDiscountDto> products) {
         if (coupon.getValidFrom() != null && coupon.getValidTo() != null && coupon.getValidFrom().isAfter(coupon.getValidTo())) {
             throw new IllegalArgumentException("La fecha de inicio no puede ser posterior a la fecha de fin");
+        }
+    }
+    private void saveCouponProductToOutbox(CouponProduct cp) {
+        try {
+            Map<String, Object> payload = new HashMap<>();
+            payload.put("eventType", "COUPON_PRODUCT_SAVED");
+            payload.put("id", cp.getId());
+            payload.put("couponId", cp.getCoupon().getId());
+            payload.put("productId", cp.getProductId());
+            payload.put("productName", cp.getProductName());
+            SyncOutbox outbox = new SyncOutbox();
+            outbox.setAggregateType("COUPON_PRODUCT");
+            outbox.setAggregateId(cp.getId());
+            outbox.setEventType("COUPON_PRODUCT_SAVED");
+            outbox.setPayloadJson(objectMapper.writeValueAsString(payload));
+            outbox.setStatus("PENDING");
+            outbox.setAttempts(0);
+            outbox.setNextRetryAt(System.currentTimeMillis());
+            outbox.setCreatedAt(System.currentTimeMillis());
+            outbox.setUpdatedAt(System.currentTimeMillis());
+            syncOutboxRepositoryPort.save(outbox);
+        } catch (Exception e) {
+            logger.error("Error encolando sincronización de producto de cupón: {}", e.getMessage());
         }
     }
 }

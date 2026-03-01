@@ -1,5 +1,4 @@
 package com.suresell.orders.application.dto.dto;
-
 public record CashCountDetail(
         int bill100k,
         int bill50k,

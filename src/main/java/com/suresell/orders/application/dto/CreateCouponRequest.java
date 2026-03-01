@@ -1,11 +1,9 @@
 package com.suresell.orders.application.dto;
-
 import com.suresell.orders.application.dto.ProductDiscountDto;
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
-
 @Schema(description = "Solicitud para crear un nuevo cupón de descuento")
 public record CreateCouponRequest(
     @Schema(description = "Código único del cupón", example = "PROMO2024")

@@ -1,11 +1,9 @@
 package com.suresell.orders.application.dto;
-
 import com.suresell.orders.application.dto.OrderItemResponseRecord;
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
-
 @Schema(description = "Respuesta detallada de una orden")
 public record OrderResponseRecord(
     @Schema(description = "ID único de la orden", example = "101")
@@ -32,6 +30,8 @@ public record OrderResponseRecord(
     BigDecimal discountAmount, 
     @Schema(description = "Indica si la orden ya fue entregada", example = "false")
     Boolean delivered, 
+    @Schema(description = "Indica si la orden ya se sincronizó con la nube", example = "true")
+    Boolean synced,
     @Schema(description = "Duración de preparación en segundos", example = "300")
     Integer preparationDurationSeconds, 
     @Schema(description = "Items incluidos en la orden")

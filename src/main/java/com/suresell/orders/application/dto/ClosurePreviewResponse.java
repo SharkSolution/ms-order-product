@@ -1,8 +1,6 @@
 package com.suresell.orders.application.dto;
-
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
-
 public record ClosurePreviewResponse(
         LocalDateTime openingTime,
         LocalDateTime currentTime,
