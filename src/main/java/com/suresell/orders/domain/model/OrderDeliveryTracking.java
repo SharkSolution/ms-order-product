@@ -27,8 +27,12 @@ public class OrderDeliveryTracking {
     @JoinColumn(name = "order_id")
     @ToString.Exclude
     private Order order;
-    @Column(name = "delivered", nullable = false)
-    private Boolean delivered = false;
-    @Column(name = "preparation_duration_seconds")
-    private Integer preparationDurationSeconds;
-}
+        @Column(name = "delivered", nullable = false)
+        private Boolean delivered = false;
+    
+        @Column(name = "pager_returned", nullable = false)
+        private Boolean pagerReturned = false;
+    
+        @Column(name = "preparation_duration_seconds")
+        private Integer preparationDurationSeconds;
+    }

@@ -12,7 +12,7 @@ import org.springframework.stereotype.Component;
 @RequiredArgsConstructor
 @Slf4j
 public class SyncOutboxScheduler {
-    private static final int MAX_ERROR_LENGTH = 1500;
+    private static final int MAX_ERROR_LENGTH = 250;
     private final SyncOutboxRepositoryPort syncOutboxRepositoryPort;
     private final OrderCloudSyncPort orderCloudSyncPort;
     @Value("${sync.cloud.enabled:false}")
@@ -30,10 +30,7 @@ public class SyncOutboxScheduler {
             return;
         }
         for (SyncOutbox outbox : pending) {
-            boolean success = processOutboxRecord(outbox);
-            if (!success) {
-                break;
-            }
+            processOutboxRecord(outbox);
         }
     }
     private boolean processOutboxRecord(SyncOutbox outbox) {

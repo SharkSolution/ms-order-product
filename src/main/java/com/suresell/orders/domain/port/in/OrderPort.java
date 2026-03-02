@@ -16,4 +16,6 @@ public interface OrderPort {
     OrderResponseRecord applyDiscountToOrder(Long orderId, String discountCode);
     Page<OrderEditHistory> getOrderEditHistory(Long orderId, int page, int size);
     PagerAvailabilityResponse getPagerAvailability();
+    void markAsDeliveredLocally(Long orderId);
+    void releasePager(String color, String number);
 }

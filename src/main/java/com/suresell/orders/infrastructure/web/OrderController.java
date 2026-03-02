@@ -96,4 +96,20 @@ public class OrderController {
         OrderResponseRecord updatedOrder = orderPort.applyDiscountToOrder(orderId, discountCode);
         return ResponseEntity.ok(updatedOrder);
     }
+
+    @PutMapping("/{orderId}/deliver")
+    @Operation(summary = "Marcar orden como ENTREGADA manualmente", description = "Libera el pager asociado a la orden en la base de datos local.")
+    public ResponseEntity<Map<String, String>> markAsDelivered(@PathVariable Long orderId) {
+        orderPort.markAsDeliveredLocally(orderId);
+        return ResponseEntity.ok(Map.of("message", "Orden marcada como entregada y pager liberado"));
+    }
+
+    @DeleteMapping("/pagers/release")
+    @Operation(summary = "Liberar un Pager por Color y Número", description = "Busca la orden activa con ese pager y marca el pager como devuelto localmente.")
+    public ResponseEntity<Map<String, String>> releasePager(
+            @RequestParam String color,
+            @RequestParam String number) {
+        orderPort.releasePager(color, number);
+        return ResponseEntity.ok(Map.of("message", "Proceso de liberación de pager ejecutado"));
+    }
 }

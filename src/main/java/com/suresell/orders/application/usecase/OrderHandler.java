@@ -68,6 +68,12 @@ public class OrderHandler implements OrderPort {
     public PagerAvailabilityResponse getPagerAvailability() {
         List<Order> activeOrders = orderRepositoryPort.findActiveOrdersWithItems(OrderStatus.pagado);
         Set<String> occupiedPagers = activeOrders.stream()
+                .filter(o -> {
+                    OrderDeliveryTracking dt = o.getDeliveryTracking();
+                    // Pager OCUPADO solo si: tiene color/numero Y (no se ha entregado comida Y no se ha devuelto pager)
+                    return o.getPagerColor() != null && o.getPagerNumber() != null &&
+                           (dt == null || (!Boolean.TRUE.equals(dt.getDelivered()) && !Boolean.TRUE.equals(dt.getPagerReturned())));
+                })
                 .map(o -> o.getPagerColor().toUpperCase() + "-" + o.getPagerNumber())
                 .collect(Collectors.toSet());
         List<PagerAvailabilityDto> available = new ArrayList<>();
@@ -205,6 +211,7 @@ public class OrderHandler implements OrderPort {
             Map<String, Object> trackingPayload = new HashMap<>();
             trackingPayload.put("orderId", tracking.getOrderId());
             trackingPayload.put("delivered", Boolean.TRUE.equals(tracking.getDelivered()));
+            trackingPayload.put("pagerReturned", Boolean.TRUE.equals(tracking.getPagerReturned()));
             trackingPayload.put("preparationDurationSeconds", tracking.getPreparationDurationSeconds());
             Map<String, Object> payload = new HashMap<>();
             payload.put("eventType", "TRACKING_UPDATED");
@@ -359,31 +366,56 @@ public class OrderHandler implements OrderPort {
         }
         return orderEditHistoryRepository.findAllByOrderByEditedAtDesc(pageable);
     }
+
+    @Override
+    @Transactional
+    public void markAsDeliveredLocally(Long orderId) {
+        Order order = orderRepositoryPort.findById(orderId)
+                .orElseThrow(() -> new RuntimeException("Orden no encontrada con ID: " + orderId));
+        
+        OrderDeliveryTracking tracking = order.getDeliveryTracking();
+        if (tracking == null) {
+            tracking = new OrderDeliveryTracking();
+            tracking.setOrder(order);
+        }
+        
+        // El botón de pánico del cajero solo libera el PAGER físicamente
+        tracking.setPagerReturned(true);
+        
+        orderRepositoryPort.save(order);
+        log.info("Pager de Orden #{} liberado MANUALMENTE (Devolución Física). La orden sigue activa en cocina.", orderId);
+        saveTrackingToOutbox(tracking);
+    }
     private void validatePaymentMethod(String paymentMethod) {
         if (paymentMethod == null || !List.of("CASH", "CARD", "NEQUI", "QR").contains(paymentMethod)) {
             throw new IllegalArgumentException("Método de pago inválido. Debe ser: CASH, CARD, NEQUI o QR");
         }
     }
     private void saveOrderCreatedOutbox(Order order, OrderDeliveryTracking tracking) {
-        long now = System.currentTimeMillis();
-        SyncOutbox outbox = new SyncOutbox();
-        outbox.setAggregateType("ORDER");
-        outbox.setAggregateId(order.getIdOrder());
-        outbox.setEventType("ORDER_CREATED");
-        outbox.setPayloadJson(buildOrderCreatedPayload(order, tracking));
-        outbox.setStatus("PENDING");
-        outbox.setAttempts(0);
-        outbox.setNextRetryAt(now);
-        outbox.setLastError(null);
-        outbox.setCreatedAt(now);
-        outbox.setUpdatedAt(now);
-        outbox.setSyncedAt(null);
-        syncOutboxRepositoryPort.save(outbox);
+        try {
+            long now = System.currentTimeMillis();
+            SyncOutbox outbox = new SyncOutbox();
+            outbox.setAggregateType("ORDER");
+            outbox.setAggregateId(order.getIdOrder());
+            outbox.setEventType("ORDER_CREATED");
+            outbox.setPayloadJson(buildOrderCreatedPayload(order, tracking));
+            outbox.setStatus("PENDING");
+            outbox.setAttempts(0);
+            outbox.setNextRetryAt(now);
+            outbox.setLastError(null);
+            outbox.setCreatedAt(now);
+            outbox.setUpdatedAt(now);
+            outbox.setSyncedAt(null);
+            syncOutboxRepositoryPort.save(outbox);
+        } catch (Exception e) {
+            log.error("Error encolando sincronización de orden {}: {}", order.getIdOrder(), e.getMessage());
+        }
     }
     private String buildOrderCreatedPayload(Order order, OrderDeliveryTracking tracking) {
         Map<String, Object> trackingPayload = new HashMap<>();
         trackingPayload.put("orderId", order.getIdOrder());
         trackingPayload.put("delivered", Boolean.TRUE.equals(tracking.getDelivered()));
+        trackingPayload.put("pagerReturned", Boolean.TRUE.equals(tracking.getPagerReturned()));
         trackingPayload.put("preparationDurationSeconds", tracking.getPreparationDurationSeconds());
         Map<String, Object> payload = new HashMap<>();
         payload.put("eventType", "ORDER_CREATED");
@@ -575,5 +607,26 @@ public class OrderHandler implements OrderPort {
                 .map(OrderItem::getProductId)
                 .collect(Collectors.toCollection(LinkedHashSet::new));
         return productCatalogPort.findProductsByIds(productIds);
+    }
+
+    @Override
+    @Transactional
+    public void releasePager(String color, String number) {
+        List<Order> activeOrders = orderRepositoryPort.findActiveOrdersWithItems(OrderStatus.pagado);
+        
+        Optional<Order> targetOrder = activeOrders.stream()
+                .filter(o -> color.equalsIgnoreCase(o.getPagerColor()) && number.equalsIgnoreCase(o.getPagerNumber()))
+                .filter(o -> {
+                    OrderDeliveryTracking dt = o.getDeliveryTracking();
+                    // Buscamos la que todavía tenga el pager (no entregada y no devuelta)
+                    return dt == null || (!dt.getDelivered() && !dt.getPagerReturned());
+                })
+                .findFirst();
+
+        if (targetOrder.isPresent()) {
+            markAsDeliveredLocally(targetOrder.get().getIdOrder());
+        } else {
+            log.warn("Intento de liberar Pager {} {} fallido: No se encontró orden activa asociada.", color, number);
+        }
     }
 }

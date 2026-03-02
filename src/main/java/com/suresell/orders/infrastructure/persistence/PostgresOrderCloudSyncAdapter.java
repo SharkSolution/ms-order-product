@@ -52,7 +52,8 @@ public class PostgresOrderCloudSyncAdapter implements OrderCloudSyncPort {
                         log.warn("Evento de sincronización no reconocido: {}", eventType);
                 }
             } catch (Exception ex) {
-                throw new IllegalStateException("Error sincronizando a cloud", ex);
+                log.error("Error detallado de sincronización cloud: ", ex);
+                throw new IllegalStateException("Error sincronizando a cloud: " + ex.getMessage(), ex);
             }
         });
     }
@@ -93,14 +94,16 @@ public class PostgresOrderCloudSyncAdapter implements OrderCloudSyncPort {
         cloudJdbcTemplate.update(
                 """
                 INSERT INTO order_delivery_tracking (
-                    order_id, delivered, preparation_duration_seconds
-                ) VALUES (?, ?, ?)
+                    order_id, delivered, pager_returned, preparation_duration_seconds
+                ) VALUES (?, ?, ?, ?)
                 ON CONFLICT (order_id) DO UPDATE SET
                     delivered = EXCLUDED.delivered,
+                    pager_returned = EXCLUDED.pager_returned,
                     preparation_duration_seconds = EXCLUDED.preparation_duration_seconds
                 """,
                 orderId,
                 asBoolean(trackingNode.path("delivered")),
+                asBoolean(trackingNode.path("pagerReturned")),
                 asInteger(trackingNode.path("preparationDurationSeconds")));
     }
     private void upsertOrderItems(JsonNode itemsNode, Long orderId) {

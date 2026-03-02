@@ -12,7 +12,7 @@ import com.suresell.orders.application.dto.OrderResponseRecord;
 import com.suresell.orders.application.dto.ProductResponse;
 import com.suresell.orders.domain.model.Order;
 import com.suresell.orders.domain.model.OrderDeliveryTracking;
-import com.suresell.orders.domain.model.OrderSyncOutbox;
+import com.suresell.orders.domain.model.SyncOutbox;
 import com.suresell.orders.domain.model.OrderItem;
 import com.suresell.orders.domain.model.OrderStatus;
 import com.suresell.orders.domain.port.in.DiscountPort;
@@ -20,7 +20,7 @@ import com.suresell.orders.domain.port.out.OrderDeliveryTrackingRepositoryPort;
 import com.suresell.orders.domain.port.out.OrderEditHistoryRepositoryPort;
 import com.suresell.orders.domain.port.out.OrderItemRepositoryPort;
 import com.suresell.orders.domain.port.out.OrderRepositoryPort;
-import com.suresell.orders.domain.port.out.OrderSyncOutboxRepositoryPort;
+import com.suresell.orders.domain.port.out.SyncOutboxRepositoryPort;
 import com.suresell.orders.domain.port.out.ProductCatalogPort;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -40,7 +40,7 @@ class OrderHandlerTest {
     @Mock
     private OrderDeliveryTrackingRepositoryPort orderDeliveryTrackingRepositoryPort;
     @Mock
-    private OrderSyncOutboxRepositoryPort orderSyncOutboxRepositoryPort;
+    private SyncOutboxRepositoryPort syncOutboxRepositoryPort;
     @Mock
     private OrderItemRepositoryPort orderItemRepositoryPort;
     @Mock
@@ -57,7 +57,7 @@ class OrderHandlerTest {
         orderHandler = new OrderHandler(
                 orderRepositoryPort,
                 orderDeliveryTrackingRepositoryPort,
-                orderSyncOutboxRepositoryPort,
+                syncOutboxRepositoryPort,
                 orderItemRepositoryPort,
                 productCatalogPort,
                 discountPort,
@@ -115,16 +115,13 @@ class OrderHandlerTest {
             toSave.setIdOrder(501L);
             return toSave;
         });
-        when(orderDeliveryTrackingRepositoryPort.save(any(OrderDeliveryTracking.class)))
-                .thenAnswer(invocation -> invocation.getArgument(0));
-        when(orderSyncOutboxRepositoryPort.save(any(OrderSyncOutbox.class)))
+        when(syncOutboxRepositoryPort.save(any(SyncOutbox.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
         Order created = orderHandler.createOrUpdateOrder(request);
         assertEquals(BigDecimal.valueOf(9000), created.getSubtotal());
         assertEquals(BigDecimal.valueOf(9000), created.getTotal());
         assertEquals(2, created.getItems().size());
         verify(orderRepositoryPort, times(1)).save(any(Order.class));
-        verify(orderDeliveryTrackingRepositoryPort, times(1)).save(any(OrderDeliveryTracking.class));
-        verify(orderSyncOutboxRepositoryPort, times(1)).save(any(OrderSyncOutbox.class));
+        verify(syncOutboxRepositoryPort, times(1)).save(any(SyncOutbox.class));
     }
 }

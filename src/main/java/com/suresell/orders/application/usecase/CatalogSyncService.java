@@ -34,6 +34,59 @@ public class CatalogSyncService {
             log.error("Error crítico durante la sincronización de catálogo: {}", e.getMessage());
         }
     }
+
+    @Transactional
+    public void syncActiveOrdersTrackingFromCloud() {
+        if (cloudJdbcTemplate.isEmpty()) return;
+        try {
+            // 1. Obtener órdenes locales que están pagadas pero NO entregadas
+            List<com.suresell.orders.domain.model.Order> activeOrders = orderRepository.findActiveOrdersWithItems(
+                    com.suresell.orders.domain.model.OrderStatus.pagado, false);
+            
+            if (activeOrders.isEmpty()) return;
+
+            List<Long> orderIds = activeOrders.stream()
+                    .map(com.suresell.orders.domain.model.Order::getIdOrder)
+                    .toList();
+
+            // 2. Consultar Postgres solo por esas IDs
+            JdbcTemplate cloud = cloudJdbcTemplate.get();
+            String inSql = String.join(",", orderIds.stream().map(Object::toString).toList());
+            String sql = "SELECT order_id, delivered, pager_returned, preparation_duration_seconds FROM order_delivery_tracking WHERE order_id IN (" + inSql + ") AND (delivered = true OR pager_returned = true)";
+            
+            cloud.query(sql, (rs) -> {
+                Long orderId = rs.getLong("order_id");
+                boolean delivered = rs.getBoolean("delivered");
+                boolean pagerReturned = rs.getBoolean("pager_returned");
+                int duration = rs.getInt("preparation_duration_seconds");
+
+                orderDeliveryTrackingRepository.findById(orderId).ifPresent(localDt -> {
+                    boolean changed = false;
+                    if (localDt.getDelivered() != delivered) {
+                        localDt.setDelivered(delivered);
+                        localDt.setPreparationDurationSeconds(duration);
+                        changed = true;
+                    }
+                    // Solo actualizamos local si en la nube ya se marcó como devuelto
+                    if (!localDt.getPagerReturned() && pagerReturned) {
+                        localDt.setPagerReturned(true);
+                        changed = true;
+                    }
+
+                    if (changed) {
+                        orderDeliveryTrackingRepository.save(localDt);
+                        log.info("Orden #{} actualizada desde nube (Delivered: {}, PagerReturned: {}).", 
+                                orderId, delivered, localDt.getPagerReturned());
+                    }
+                });
+            });
+        } catch (Exception e) {
+            log.error("Error en sincronización selectiva de tracking: {}", e.getMessage());
+        }
+    }
+
+    private final com.suresell.orders.infrastructure.persistence.OrderRepository orderRepository;
+    private final com.suresell.orders.infrastructure.persistence.OrderDeliveryTrackingRepository orderDeliveryTrackingRepository;
     private void syncCategories() {
         JdbcTemplate cloud = cloudJdbcTemplate.get();
         String sql = "SELECT id_category, name_category FROM menu_categories";
