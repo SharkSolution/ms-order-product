@@ -17,5 +17,6 @@ public interface OrderPort {
     Page<OrderEditHistory> getOrderEditHistory(Long orderId, int page, int size);
     PagerAvailabilityResponse getPagerAvailability();
     void markAsDeliveredLocally(Long orderId);
+    void markAsPrinted(Long orderId);
     void releasePager(String color, String number);
 }

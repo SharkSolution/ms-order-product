@@ -15,15 +15,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PatchMapping;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.PutMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
+
 @RestController
 @RequestMapping("/orders")
 @Slf4j
@@ -95,6 +88,13 @@ public class OrderController {
             @RequestParam String discountCode) {
         OrderResponseRecord updatedOrder = orderPort.applyDiscountToOrder(orderId, discountCode);
         return ResponseEntity.ok(updatedOrder);
+    }
+
+    @PatchMapping("/{orderId}/mark-as-printed")
+    @Operation(summary = "Marcar orden como IMPRESA", description = "Cambia el estado de la orden a 'impreso' localmente y sincroniza con AWS para que la cocina no la duplique.")
+    public ResponseEntity<Map<String, String>> markAsPrinted(@PathVariable Long orderId) {
+        orderPort.markAsPrinted(orderId);
+        return ResponseEntity.ok(Map.of("message", "Orden marcada como impresa y sincronización encolada"));
     }
 
     @PutMapping("/{orderId}/deliver")

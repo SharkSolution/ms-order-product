@@ -2,6 +2,7 @@ package com.suresell.orders.domain.model;
 import java.util.Arrays;
 public enum OrderStatus {
     pagado("pagado");
+
     private final String displayName;
     private OrderStatus(String displayName) {
         this.displayName = displayName;

@@ -30,6 +30,9 @@ public class PostgresOrderCloudSyncAdapter implements OrderCloudSyncPort {
                     case "ORDER_CREATED":
                         syncOrder(root);
                         break;
+                    case "ORDER_PRINTED_UPDATED":
+                        updateOrderPrintedInCloud(root);
+                        break;
                     case "CLOSURE_CREATED":
                         upsertClosure(root.path("closure"));
                         break;
@@ -57,24 +60,36 @@ public class PostgresOrderCloudSyncAdapter implements OrderCloudSyncPort {
             }
         });
     }
-    private void syncOrder(JsonNode root) {
-        JsonNode orderNode = root.path("order");
-        JsonNode trackingNode = root.path("tracking");
-        Long orderId = asLong(orderNode.path("idOrder"));
-        upsertOrder(orderNode, orderId);
-        upsertDeliveryTracking(trackingNode, orderId);
-        upsertOrderItems(orderNode.path("items"), orderId);
-    }
-    private void upsertOrder(JsonNode orderNode, Long orderId) {
+        private void syncOrder(JsonNode root) {
+            JsonNode orderNode = root.path("order");
+            JsonNode trackingNode = root.path("tracking");
+            Long orderId = asLong(orderNode.path("idOrder"));
+            upsertOrder(orderNode, orderId);
+            upsertDeliveryTracking(trackingNode, orderId);
+            upsertOrderItems(orderNode.path("items"), orderId);
+        }
+    
+            private void updateOrderPrintedInCloud(JsonNode root) {
+                Long orderId = asLong(root.path("idOrder"));
+                Boolean isPrinted = asBoolean(root.path("isPrinted"));
+                
+                cloudJdbcTemplate.update(
+                        "UPDATE orders SET is_printed = ?, synced = true WHERE id_order = ?",
+                        isPrinted, orderId);
+                
+                log.info("Bandera is_printed de orden #{} actualizada a {} en cloud.", orderId, isPrinted);
+            }    
+        private void upsertOrder(JsonNode orderNode, Long orderId) {
         cloudJdbcTemplate.update(
                 """
                 INSERT INTO orders (
                     id_order, created_at, discount_amount, discount_code, discount_percentage,
-                    pager_color, pager_number, payment_method, status, subtotal, total, synced
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    pager_color, pager_number, payment_method, status, subtotal, total, synced, is_printed
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT (id_order) DO UPDATE SET
                     status = EXCLUDED.status,
                     total = EXCLUDED.total,
+                    is_printed = EXCLUDED.is_printed,
                     synced = true
                 """,
                 orderId,
@@ -88,7 +103,8 @@ public class PostgresOrderCloudSyncAdapter implements OrderCloudSyncPort {
                 asString(orderNode.path("status")),
                 asBigDecimal(orderNode.path("subtotal")),
                 asBigDecimal(orderNode.path("total")),
-                true);
+                true,
+                asBoolean(orderNode.path("isPrinted")));
     }
     private void upsertDeliveryTracking(JsonNode trackingNode, Long orderId) {
         cloudJdbcTemplate.update(

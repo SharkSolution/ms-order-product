@@ -36,9 +36,13 @@ public class Order {
     private BigDecimal discountPercentage;
     @Column(name = "discount_amount")
     private BigDecimal discountAmount;
-    @Column(name = "synced", nullable = false)
-    private Boolean synced = false;
-    @OneToMany(mappedBy = "order", cascade = CascadeType.ALL, orphanRemoval = true)  
+        @Column(name = "synced", nullable = false)
+        private Boolean synced = false;
+    
+        @Column(name = "is_printed", nullable = false)
+        private Boolean isPrinted = false;
+    
+        @OneToMany(mappedBy = "order", cascade = CascadeType.ALL, orphanRemoval = true)    
     private List<OrderItem> items;
     @OneToOne(mappedBy = "order", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.EAGER)
     private OrderDeliveryTracking deliveryTracking;

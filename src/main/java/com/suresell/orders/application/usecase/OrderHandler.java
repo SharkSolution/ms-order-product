@@ -386,6 +386,47 @@ public class OrderHandler implements OrderPort {
         log.info("Pager de Orden #{} liberado MANUALMENTE (Devolución Física). La orden sigue activa en cocina.", orderId);
         saveTrackingToOutbox(tracking);
     }
+
+    @Override
+    @Transactional
+    public void markAsPrinted(Long orderId) {
+        Order order = orderRepositoryPort.findById(orderId)
+                .orElseThrow(() -> new RuntimeException("Orden no encontrada con ID: " + orderId));
+        
+        order.setIsPrinted(true);
+        orderRepositoryPort.save(order);
+        
+        log.info("Orden #{} marcada como IMPRESA físicamente (Contingencia).", orderId);
+        saveOrderPrintedStatusToOutbox(order);
+    }
+
+    private void saveOrderPrintedStatusToOutbox(Order order) {
+        try {
+            Map<String, Object> payload = new HashMap<>();
+            payload.put("eventType", "ORDER_PRINTED_UPDATED");
+            payload.put("aggregateType", "ORDER");
+            payload.put("aggregateId", order.getIdOrder());
+            payload.put("idOrder", order.getIdOrder());
+            payload.put("isPrinted", order.getIsPrinted());
+            payload.put("updatedAt", LocalDateTime.now(BOGOTA_ZONE).toString());
+
+            SyncOutbox outbox = new SyncOutbox();
+            outbox.setAggregateType("ORDER");
+            outbox.setAggregateId(order.getIdOrder());
+            outbox.setEventType("ORDER_PRINTED_UPDATED");
+            outbox.setPayloadJson(objectMapper.writeValueAsString(payload));
+            outbox.setStatus("PENDING");
+            outbox.setAttempts(0);
+            outbox.setNextRetryAt(System.currentTimeMillis());
+            outbox.setCreatedAt(System.currentTimeMillis());
+            outbox.setUpdatedAt(System.currentTimeMillis());
+            
+            syncOutboxRepositoryPort.save(outbox);
+        } catch (Exception e) {
+            log.error("Error encolando actualización de estado de impresión para orden {}: {}", order.getIdOrder(), e.getMessage());
+        }
+    }
+
     private void validatePaymentMethod(String paymentMethod) {
         if (paymentMethod == null || !List.of("CASH", "CARD", "NEQUI", "QR").contains(paymentMethod)) {
             throw new IllegalArgumentException("Método de pago inválido. Debe ser: CASH, CARD, NEQUI o QR");
@@ -458,6 +499,7 @@ public class OrderHandler implements OrderPort {
         orderPayload.put("discountCode", order.getDiscountCode());
         orderPayload.put("discountPercentage", order.getDiscountPercentage());
         orderPayload.put("discountAmount", order.getDiscountAmount());
+        orderPayload.put("isPrinted", Boolean.TRUE.equals(order.getIsPrinted()));
         orderPayload.put("items", items);
         return orderPayload;
     }
@@ -556,6 +598,7 @@ public class OrderHandler implements OrderPort {
                 order.getDiscountAmount(),
                 delivered,
                 Boolean.TRUE.equals(order.getSynced()),
+                Boolean.TRUE.equals(order.getIsPrinted()),
                 preparationDurationSeconds,
                 items);
     }

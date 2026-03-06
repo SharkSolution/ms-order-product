@@ -32,6 +32,8 @@ public record OrderResponseRecord(
     Boolean delivered, 
     @Schema(description = "Indica si la orden ya se sincronizó con la nube", example = "true")
     Boolean synced,
+    @Schema(description = "Indica si la orden fue impresa físicamente", example = "false")
+    Boolean isPrinted,
     @Schema(description = "Duración de preparación en segundos", example = "300")
     Integer preparationDurationSeconds, 
     @Schema(description = "Items incluidos en la orden")
