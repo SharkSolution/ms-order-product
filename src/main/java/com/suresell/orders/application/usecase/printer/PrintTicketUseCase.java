@@ -3,8 +3,11 @@ import com.suresell.orders.domain.model.printer.PosTicketItem;
 import com.suresell.orders.domain.model.printer.PosTicketRequest;
 import com.suresell.orders.domain.port.out.PrinterPort;
 import com.suresell.orders.infrastructure.printer.EscPosBuilder;
+import lombok.extern.log4j.Log4j2;
 import org.springframework.stereotype.Service;
 import java.text.DecimalFormat;
+
+@Log4j2
 @Service
 public class PrintTicketUseCase {
     private final PrinterPort printerPort;
@@ -15,6 +18,7 @@ public class PrintTicketUseCase {
         this.pos = pos;
     }
     public void execute(PosTicketRequest ticket) {
+        log.info("Inicia Impresion Ticket");
         byte[] receiptBytes = pos.buildReceipt(bos -> {
             pos.alignCenter(bos);
             pos.boldOn(bos);
@@ -74,7 +78,10 @@ public class PrintTicketUseCase {
             pos.textLn(bos, "\u00AD-- www.suresell.com.co --\u00AD");
             pos.feed(bos, 2);  
         });
+        log.info("Ticket Procesado");
         printerPort.printBytes(receiptBytes);
+        log.info("Ticket Impreso");
         printerPort.openDrawer();
+        log.info("Caja Abierta");
     }
 }
