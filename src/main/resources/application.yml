@@ -39,6 +39,11 @@ sync:
     enabled: true
     datasource:
       driver-class-name: org.postgresql.Driver
-      url: jdbc:postgresql://localhost:5432/pos_db
-      username: andrewramirez
-      password: "sul4m1995*"
+      url: jdbc:postgresql://sursell-sharkburger-db.cm762cwmuy8a.us-east-1.rds.amazonaws.com:5432/sharkburger_db
+      username: sursell_admin
+      password: wX:]WS6iu16g3sR<a2v1-fFsjyI>
+      hikari:
+        maximum-pool-size: 4
+        minimum-idle: 1
+        idle-timeout: 30000
+        max-lifetime: 1800000

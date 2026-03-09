@@ -18,9 +18,12 @@ public class CloudSyncDataSourceConfig {
         return new DataSourceProperties();
     }
     @Bean(name = "cloudDataSource")
+    @ConfigurationProperties(prefix = "sync.cloud.datasource.hikari")
     @ConditionalOnProperty(prefix = "sync.cloud", name = "enabled", havingValue = "true")
     public DataSource cloudDataSource(@Qualifier("cloudDataSourceProperties") DataSourceProperties cloudDataSourceProperties) {
-        return cloudDataSourceProperties.initializeDataSourceBuilder().build();
+        return cloudDataSourceProperties.initializeDataSourceBuilder()
+                .type(com.zaxxer.hikari.HikariDataSource.class)
+                .build();
     }
     @Bean(name = "cloudJdbcTemplate")
     @ConditionalOnProperty(prefix = "sync.cloud", name = "enabled", havingValue = "true")
