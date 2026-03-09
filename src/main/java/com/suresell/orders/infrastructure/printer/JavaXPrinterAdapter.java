@@ -1,11 +1,19 @@
 package com.suresell.orders.infrastructure.printer;
 import com.suresell.orders.domain.port.out.PrinterPort;
+import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.logging.Log;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import javax.print.*;
 import javax.print.attribute.HashPrintRequestAttributeSet;
 import javax.print.attribute.PrintRequestAttributeSet;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import lombok.extern.slf4j.Slf4j;
+
 import java.util.Arrays;
+
+@Slf4j
 @Service
 public class JavaXPrinterAdapter implements PrinterPort {
     @Value("${printer.name:SAT}")  
@@ -29,14 +37,21 @@ public class JavaXPrinterAdapter implements PrinterPort {
     }
     @Override
     public void openDrawer() {
+        log.info("Abriendo Caja");
         printBytes(escPosBuilder.getOpenDrawerCommand());
+        log.info("Caja Abierta");
+
     }
     @Override
     public boolean isPrinterReady() {
-        return findPrintService(printerName) != null;
+        log.info("Consultando estado de impresion: ", printerName);
+        boolean printer =  findPrintService(printerName) != null;
+        log.info("Estado de impresion: " + printer);
+        return printer;
     }
     private PrintService findPrintService(String nameFragment) {
         PrintService[] services = PrintServiceLookup.lookupPrintServices(null, null);
+        log.info("Status Impresora: " + Arrays.toString(services));
         return Arrays.stream(services)
                 .filter(s -> s.getName().equalsIgnoreCase(nameFragment))
                 .findFirst()
