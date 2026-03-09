@@ -60,25 +60,6 @@ public class PostgresOrderCloudSyncAdapter implements OrderCloudSyncPort {
             }
         });
     }
-        private void syncOrder(JsonNode root) {
-            JsonNode orderNode = root.path("order");
-            JsonNode trackingNode = root.path("tracking");
-            Long orderId = asLong(orderNode.path("idOrder"));
-            upsertOrder(orderNode, orderId);
-            upsertDeliveryTracking(trackingNode, orderId);
-            upsertOrderItems(orderNode.path("items"), orderId);
-        }
-    
-            private void updateOrderPrintedInCloud(JsonNode root) {
-                Long orderId = asLong(root.path("idOrder"));
-                Boolean isPrinted = asBoolean(root.path("isPrinted"));
-                
-                cloudJdbcTemplate.update(
-                        "UPDATE orders SET is_printed = ?, synced = true WHERE id_order = ?",
-                        isPrinted, orderId);
-                
-                log.info("Bandera is_printed de orden #{} actualizada a {} en cloud.", orderId, isPrinted);
-            }    
         private void upsertOrder(JsonNode orderNode, Long orderId) {
         cloudJdbcTemplate.update(
                 """
@@ -88,7 +69,14 @@ public class PostgresOrderCloudSyncAdapter implements OrderCloudSyncPort {
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT (id_order) DO UPDATE SET
                     status = EXCLUDED.status,
+                    subtotal = EXCLUDED.subtotal,
                     total = EXCLUDED.total,
+                    pager_color = EXCLUDED.pager_color,
+                    pager_number = EXCLUDED.pager_number,
+                    discount_amount = EXCLUDED.discount_amount,
+                    discount_code = EXCLUDED.discount_code,
+                    discount_percentage = EXCLUDED.discount_percentage,
+                    payment_method = EXCLUDED.payment_method,
                     is_printed = EXCLUDED.is_printed,
                     synced = true
                 """,
@@ -124,7 +112,7 @@ public class PostgresOrderCloudSyncAdapter implements OrderCloudSyncPort {
     }
     private void upsertOrderItems(JsonNode itemsNode, Long orderId) {
         cloudJdbcTemplate.update("DELETE FROM order_item WHERE order_id = ?", orderId);
-        if (itemsNode == null || !itemsNode.isArray()) return;
+        if (itemsNode == null || itemsNode.isMissingNode() || !itemsNode.isArray()) return;
         for (JsonNode itemNode : itemsNode) {
             cloudJdbcTemplate.update(
                     """
@@ -152,7 +140,14 @@ public class PostgresOrderCloudSyncAdapter implements OrderCloudSyncPort {
                     base_balance_for_next_day, cash_count_audit
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT (id) DO UPDATE SET
-                    status = EXCLUDED.status, notes = EXCLUDED.notes
+                    status = EXCLUDED.status,
+                    notes = EXCLUDED.notes,
+                    total_counted_cash = EXCLUDED.total_counted_cash,
+                    total_counted_card = EXCLUDED.total_counted_card,
+                    total_counted_nequi = EXCLUDED.total_counted_nequi,
+                    total_counted_qr = EXCLUDED.total_counted_qr,
+                    difference_amount = EXCLUDED.difference_amount,
+                    closing_time = EXCLUDED.closing_time
                 """,
                 asString(n.path("id")), asString(n.path("userName")), asTimestamp(n.path("openingTime")),
                 asTimestamp(n.path("closingTime")), asBigDecimal(n.path("totalExpectedCash")),
@@ -171,9 +166,15 @@ public class PostgresOrderCloudSyncAdapter implements OrderCloudSyncPort {
                     valid_weekdays, is_active, created_at, updated_at
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT (id) DO UPDATE SET
-                    name = EXCLUDED.name, discount_percentage = EXCLUDED.discount_percentage,
-                    valid_from = EXCLUDED.valid_from, valid_to = EXCLUDED.valid_to,
-                    is_active = EXCLUDED.is_active, updated_at = EXCLUDED.updated_at
+                    code = EXCLUDED.code,
+                    name = EXCLUDED.name,
+                    description = EXCLUDED.description,
+                    discount_percentage = EXCLUDED.discount_percentage,
+                    valid_from = EXCLUDED.valid_from,
+                    valid_to = EXCLUDED.valid_to,
+                    valid_weekdays = EXCLUDED.valid_weekdays,
+                    is_active = EXCLUDED.is_active,
+                    updated_at = EXCLUDED.updated_at
                 """,
                 asLong(n.path("id")), asString(n.path("code")), asString(n.path("name")),
                 asString(n.path("description")), asBigDecimal(n.path("discountPercentage")),
@@ -187,6 +188,7 @@ public class PostgresOrderCloudSyncAdapter implements OrderCloudSyncPort {
                 INSERT INTO coupon_product (id, coupon_id, product_id, product_name)
                 VALUES (?, ?, ?, ?)
                 ON CONFLICT (id) DO UPDATE SET
+                    product_id = EXCLUDED.product_id,
                     product_name = EXCLUDED.product_name
                 """,
                 asLong(root.path("id")), asLong(root.path("couponId")),
@@ -220,16 +222,22 @@ public class PostgresOrderCloudSyncAdapter implements OrderCloudSyncPort {
                 asInteger(n.path("newQuantity")), asBigDecimal(n.path("oldTotal")),
                 asBigDecimal(n.path("newTotal")), asTimestamp(n.path("editedAt")));
     }
-    private String asString(JsonNode node) { return (node == null || node.isNull()) ? null : node.asText(); }
-    private Long asLong(JsonNode node) { return (node == null || node.isNull()) ? null : node.asLong(); }
-    private Integer asInteger(JsonNode node) { return (node == null || node.isNull()) ? null : node.asInt(); }
-    private Boolean asBoolean(JsonNode node) { return (node == null || node.isNull()) ? null : node.asBoolean(); }
+    private String asString(JsonNode node) { return (node == null || node.isNull() || node.isMissingNode()) ? null : node.asText(); }
+    private Long asLong(JsonNode node) { return (node == null || node.isNull() || node.isMissingNode()) ? null : node.asLong(); }
+    private Integer asInteger(JsonNode node) { return (node == null || node.isNull() || node.isMissingNode()) ? null : node.asInt(); }
+    private Boolean asBoolean(JsonNode node) { return (node == null || node.isNull() || node.isMissingNode()) ? null : node.asBoolean(); }
     private BigDecimal asBigDecimal(JsonNode node) {
-        if (node == null || node.isNull()) return null;
-        return node.isNumber() ? node.decimalValue() : new BigDecimal(node.asText());
+        if (node == null || node.isNull() || node.isMissingNode()) return null;
+        String text = node.asText();
+        if (text == null || text.trim().isEmpty()) return null;
+        try {
+            return node.isNumber() ? node.decimalValue() : new BigDecimal(text);
+        } catch (Exception e) {
+            return null;
+        }
     }
     private java.sql.Date asLocalDate(JsonNode node) {
-        if (node == null || node.isNull()) return null;
+        if (node == null || node.isNull() || node.isMissingNode()) return null;
         try { return java.sql.Date.valueOf(node.asText()); } catch (Exception e) { return null; }
     }
     private Timestamp asTimestamp(JsonNode node) {
@@ -237,8 +245,10 @@ public class PostgresOrderCloudSyncAdapter implements OrderCloudSyncPort {
         return dateTime == null ? null : Timestamp.valueOf(dateTime);
     }
     private LocalDateTime asLocalDateTime(JsonNode node) {
-        if (node == null || node.isNull()) return null;
-        if (node.isTextual()) return LocalDateTime.parse(node.asText());
+        if (node == null || node.isNull() || node.isMissingNode()) return null;
+        if (node.isTextual()) {
+            try { return LocalDateTime.parse(node.asText()); } catch (Exception e) { return null; }
+        }
         if (node.isArray() && node.size() >= 6) {
             return LocalDateTime.of(node.get(0).asInt(), node.get(1).asInt(), node.get(2).asInt(),
                                     node.get(3).asInt(), node.get(4).asInt(), node.get(5).asInt(),
