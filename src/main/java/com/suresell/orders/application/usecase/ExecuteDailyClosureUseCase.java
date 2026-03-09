@@ -48,7 +48,7 @@ public class ExecuteDailyClosureUseCase {
                 request.sellerId()
         );
         Map<String, BigDecimal> expected = parseTotals(totals);
-        BigDecimal diffCash = request.countedCash().subtract(expected.getOrDefault("CASH", BigDecimal.ZERO));
+        BigDecimal diffCash = calculatedTotalCash.subtract(expected.getOrDefault("CASH", BigDecimal.ZERO));
         BigDecimal diffCard = request.countedCard().subtract(expected.getOrDefault("CARD", BigDecimal.ZERO));
         BigDecimal diffNequi = request.countedNequi().subtract(expected.getOrDefault("NEQUI", BigDecimal.ZERO));
         BigDecimal diffQr = request.countedQr().subtract(expected.getOrDefault("QR", BigDecimal.ZERO));
