@@ -16,4 +16,6 @@ extends JpaRepository<DailyClosure, UUID> {
     List<DailyClosure> findAllClosuresOrderByDateDesc();
     @Query("SELECT MAX(c.closingTime) FROM DailyClosure c WHERE (:userName IS NULL OR c.userName = :userName)")
     Optional<LocalDateTime> findLastClosingTimeByUser(@Param("userName") String userName);
+
+    Optional<DailyClosure> findFirstByOrderByClosingTimeDesc();
 }

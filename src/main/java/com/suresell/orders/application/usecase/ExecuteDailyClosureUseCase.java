@@ -27,46 +27,66 @@ public class ExecuteDailyClosureUseCase {
     private final DailyClosureRepository closureRepository;
     private final CashflowCalculator cashflowCalculator;
     private final ObjectMapper objectMapper;
+    private final DailyClosureRepository dailyClosureRepository;
 
-    public ExecuteDailyClosureUseCase(OrderRepository orderRepository, DailyClosureRepository closureRepository, CashflowCalculator cashflowCalculator, ObjectMapper objectMapper) {
+    public ExecuteDailyClosureUseCase(OrderRepository orderRepository, DailyClosureRepository closureRepository, CashflowCalculator cashflowCalculator, ObjectMapper objectMapper, DailyClosureRepository dailyClosureRepository) {
         this.orderRepository = orderRepository;
         this.closureRepository = closureRepository;
         this.cashflowCalculator = cashflowCalculator;
         this.objectMapper = objectMapper;
+        this.dailyClosureRepository = dailyClosureRepository;
     }
 
     @Transactional
     public CashierClosureResponse execute(ExecuteClosureRequest request, String userName) {
         BigDecimal calculatedTotalCash = cashflowCalculator.calculateTotalCash(request.cashDetail());
         BigDecimal calculatedBase = cashflowCalculator.calculateBaseForNextDay(request.cashDetail());
-        BigDecimal amountToDeposit = calculatedTotalCash.subtract(calculatedBase);
-        if (amountToDeposit.compareTo(BigDecimal.ZERO) < 0) {
-            amountToDeposit = BigDecimal.ZERO;
-        }
+
         LocalDateTime closingTime = LocalDateTime.now(BOGOTA_ZONE);
         LocalDateTime openingTime = getOpeningTime(request.sellerId());
         long startEpochMillis = openingTime.atZone(BOGOTA_ZONE).toInstant().toEpochMilli();
         long endEpochMillis = closingTime.atZone(BOGOTA_ZONE).toInstant().toEpochMilli();
+
         List<Object[]> totals = orderRepository.sumTotalsByPaymentMethodAndSeller(
                 startEpochMillis,
                 endEpochMillis
         );
         Map<String, BigDecimal> expected = parseTotals(totals);
-        BigDecimal diffCash = calculatedTotalCash.subtract(expected.getOrDefault("CASH", BigDecimal.ZERO));
+
+        BigDecimal previousBase = dailyClosureRepository.findFirstByOrderByClosingTimeDesc()
+                .map(DailyClosure::getBaseBalanceForNextDay)
+                .orElse(BigDecimal.ZERO);
+
+        BigDecimal salesCash = expected.getOrDefault("CASH", BigDecimal.ZERO);
+        BigDecimal trueExpectedCash = salesCash.add(previousBase); // Ventas + Base Inicial
+
+        expected.put("CASH", trueExpectedCash);
+
+        BigDecimal diffCash = calculatedTotalCash.subtract(trueExpectedCash);
         BigDecimal diffCard = request.countedCard().subtract(expected.getOrDefault("CARD", BigDecimal.ZERO));
         BigDecimal diffNequi = request.countedNequi().subtract(expected.getOrDefault("NEQUI", BigDecimal.ZERO));
         BigDecimal diffQr = request.countedQr().subtract(expected.getOrDefault("QR", BigDecimal.ZERO));
+
         BigDecimal totalDifference = diffCash.add(diffCard).add(diffNequi).add(diffQr);
+
+        BigDecimal amountToDeposit = calculatedTotalCash.subtract(calculatedBase);
+        if (amountToDeposit.compareTo(BigDecimal.ZERO) < 0) {
+            amountToDeposit = BigDecimal.ZERO;
+        }
+
         saveClosureAudit(request, expected, totalDifference, openingTime, closingTime,
-                userName, calculatedTotalCash, calculatedBase, diffCash, diffCard, diffNequi, diffQr);
+                userName, calculatedTotalCash, calculatedBase, diffCash, diffCard, diffNequi, diffQr, previousBase);
+
         Map<String, BigDecimal> shortages = new HashMap<>();
         if (diffCash.compareTo(BigDecimal.ZERO) < 0) shortages.put("Efectivo", diffCash);
         if (diffCard.compareTo(BigDecimal.ZERO) < 0) shortages.put("Tarjeta", diffCard);
         if (diffNequi.compareTo(BigDecimal.ZERO) < 0) shortages.put("Nequi", diffNequi);
         if (diffQr.compareTo(BigDecimal.ZERO) < 0) shortages.put("QR", diffQr);
+
         String message = (shortages.isEmpty())
                 ? "Cierre exitoso. Por favor ajuste la base."
-                : "Cierre con novedades. Se detectaron faltantes. ¡Notificacion enviada a Administrador!";
+                : "Cierre con novedades. Se detectaron faltantes. ¡Notificación enviada a Administrador!";
+
         return new CashierClosureResponse(
                 (shortages.isEmpty() ? "SUCCESS" : "SHORTAGE"),
                 message,
@@ -102,14 +122,18 @@ public class ExecuteDailyClosureUseCase {
                                   BigDecimal diffCash,
                                   BigDecimal diffCard,
                                   BigDecimal diffNequi,
-                                  BigDecimal diffQr) {
+                                  BigDecimal diffQr,
+                                  BigDecimal previousBase) {
+
         DailyClosure entity = new DailyClosure();
+
         entity.setOpeningTime(openingTime);
         entity.setClosingTime(closingTime);
+        entity.setClosureDate(closingTime.toLocalDate());
         entity.setUserName(userName);
         entity.setNotes(request.notes());
         entity.setBaseBalanceForNextDay(calculatedBase != null ? calculatedBase : BigDecimal.ZERO);
-        entity.setTotalCountedCash(calculatedTotalCash != null ? calculatedTotalCash : BigDecimal.ZERO);
+
         try {
             if (request.cashDetail() != null) {
                 String jsonAudit = objectMapper.writeValueAsString(request.cashDetail());
@@ -119,23 +143,40 @@ public class ExecuteDailyClosureUseCase {
             log.error("Error serializando auditoría de billetes", e);
             entity.setCashCountAudit("ERROR_SERIALIZING_AUDIT");
         }
-        entity.setDifferenceCard(diffCard);
-        entity.setDifferenceCash(diffCash);
-        entity.setDifferenceQr(diffQr);
-        entity.setDifferenceNequi(diffNequi);
 
+        entity.setTotalCountedCash(calculatedTotalCash != null ? calculatedTotalCash : BigDecimal.ZERO);
         entity.setTotalCountedCard(request.countedCard() != null ? request.countedCard() : BigDecimal.ZERO);
         entity.setTotalCountedNequi(request.countedNequi() != null ? request.countedNequi() : BigDecimal.ZERO);
         entity.setTotalCountedQr(request.countedQr() != null ? request.countedQr() : BigDecimal.ZERO);
-        entity.setTotalCounted(entity.getTotalCountedCard().add(entity.getTotalCountedNequi()).add(entity.getTotalCountedQr()).add(entity.getTotalCountedCash()));
+
+        BigDecimal totalCounted = entity.getTotalCountedCash()
+                .add(entity.getTotalCountedCard())
+                .add(entity.getTotalCountedNequi())
+                .add(entity.getTotalCountedQr());
+        entity.setTotalCounted(totalCounted);
+
         entity.setTotalExpectedCash(expected.getOrDefault("CASH", BigDecimal.ZERO));
         entity.setTotalExpectedCard(expected.getOrDefault("CARD", BigDecimal.ZERO));
         entity.setTotalExpectedNequi(expected.getOrDefault("NEQUI", BigDecimal.ZERO));
         entity.setTotalExpectedQr(expected.getOrDefault("QR", BigDecimal.ZERO));
-        entity.setTotalExpected(entity.getTotalExpectedCard().add(entity.getTotalExpectedQr()).add(entity.getTotalExpectedNequi()).add(entity.getTotalExpectedCash()));
+
+        BigDecimal totalExpected = entity.getTotalExpectedCash()
+                .add(entity.getTotalExpectedCard())
+                .add(entity.getTotalExpectedNequi())
+                .add(entity.getTotalExpectedQr());
+        entity.setTotalExpected(totalExpected);
+
+        entity.setDifferenceCash(diffCash);
+        entity.setDifferenceCard(diffCard);
+        entity.setDifferenceNequi(diffNequi);
+        entity.setDifferenceQr(diffQr);
+
         entity.setDifferenceAmount(totalDifference);
-        entity.setTotalDifference(totalDifference);
+        entity.setTotalDifference(totalDifference); // revisar si mejor quitar
+
         entity.setStatus(totalDifference.compareTo(BigDecimal.ZERO) < 0 ? "SHORTAGE" : "OK");
+        entity.setStatusMessage(entity.getStatus().equals("OK") ? "Cierre Cuadrado" : "Faltante Detectado");
+
         closureRepository.save(entity);
     }
 }
