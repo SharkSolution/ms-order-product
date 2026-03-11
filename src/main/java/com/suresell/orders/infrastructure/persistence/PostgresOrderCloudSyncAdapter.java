@@ -161,12 +161,12 @@ public class PostgresOrderCloudSyncAdapter implements OrderCloudSyncPort {
     private void upsertClosure(JsonNode n) {
         cloudJdbcTemplate.update(
                 """
-                INSERT INTO daily_closure (
+                INSERT INTO daily_closures (
                     id, user_name, opening_time, closing_time, total_expected_cash, total_expected_card,
                     total_expected_nequi, total_expected_qr, total_counted_cash, total_counted_card,
                     total_counted_nequi, total_counted_qr, difference_amount, status, notes, 
-                    base_balance_for_next_day, cash_count_audit
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    base_balance_for_next_day, cash_count_audit, closure_date
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT (id) DO UPDATE SET
                     status = EXCLUDED.status,
                     notes = EXCLUDED.notes,
@@ -175,16 +175,18 @@ public class PostgresOrderCloudSyncAdapter implements OrderCloudSyncPort {
                     total_counted_nequi = EXCLUDED.total_counted_nequi,
                     total_counted_qr = EXCLUDED.total_counted_qr,
                     difference_amount = EXCLUDED.difference_amount,
-                    closing_time = EXCLUDED.closing_time
+                    closing_time = EXCLUDED.closing_time,
+                    base_balance_for_next_day = EXCLUDED.base_balance_for_next_day
                 """,
-                asString(n.path("id")), asString(n.path("userName")), asTimestamp(n.path("openingTime")),
+                asUuid(n.path("id")), asString(n.path("userName")), asTimestamp(n.path("openingTime")),
                 asTimestamp(n.path("closingTime")), asBigDecimal(n.path("totalExpectedCash")),
                 asBigDecimal(n.path("totalExpectedCard")), asBigDecimal(n.path("totalExpectedNequi")),
                 asBigDecimal(n.path("totalExpectedQr")), asBigDecimal(n.path("totalCountedCash")),
                 asBigDecimal(n.path("totalCountedCard")), asBigDecimal(n.path("totalCountedNequi")),
                 asBigDecimal(n.path("totalCountedQr")), asBigDecimal(n.path("differenceAmount")),
                 asString(n.path("status")), asString(n.path("notes")),
-                asBigDecimal(n.path("baseBalanceForNextDay")), asString(n.path("cashCountAudit")));
+                asBigDecimal(n.path("baseBalanceForNextDay")), asString(n.path("cashCountAudit")),
+                asLocalDate(n.path("closureDate")));
     }
 
     private void upsertCoupon(JsonNode n) {
@@ -234,7 +236,7 @@ public class PostgresOrderCloudSyncAdapter implements OrderCloudSyncPort {
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT (id) DO NOTHING
                 """,
-                asLong(n.path("id")), asLong(n.path("orderId")), asLong(n.path("couponId")),
+                asLong(n.path("id")), asLong(n.path("orderId")), asLong(n.path("coupon").path("id")),
                 asString(n.path("discountCode")), asBigDecimal(n.path("subtotalBeforeDiscount")),
                 asBigDecimal(n.path("discountAmount")), asBigDecimal(n.path("totalAfterDiscount")),
                 asTimestamp(n.path("createdAt")));
@@ -260,6 +262,16 @@ public class PostgresOrderCloudSyncAdapter implements OrderCloudSyncPort {
     private Integer asInteger(JsonNode node) { return (node == null || node.isNull() || node.isMissingNode()) ? null : node.asInt(); }
     private Boolean asBoolean(JsonNode node) { return (node == null || node.isNull() || node.isMissingNode()) ? null : node.asBoolean(); }
 
+    private java.util.UUID asUuid(JsonNode node) {
+        if (node == null || node.isNull() || node.isMissingNode()) return null;
+        try {
+            return java.util.UUID.fromString(node.asText());
+        } catch (Exception e) {
+            log.warn("Error convirtiendo a UUID: {}", node.asText());
+            return null;
+        }
+    }
+
     private BigDecimal asBigDecimal(JsonNode node) {
         if (node == null || node.isNull() || node.isMissingNode()) return null;
         String text = node.asText();
@@ -273,16 +285,30 @@ public class PostgresOrderCloudSyncAdapter implements OrderCloudSyncPort {
 
     private java.sql.Date asLocalDate(JsonNode node) {
         if (node == null || node.isNull() || node.isMissingNode()) return null;
-        try { return java.sql.Date.valueOf(node.asText()); } catch (Exception e) { return null; }
+        try {
+            if (node.isNumber()) {
+                return new java.sql.Date(node.asLong());
+            }
+            return java.sql.Date.valueOf(node.asText());
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     private Timestamp asTimestamp(JsonNode node) {
+        if (node == null || node.isNull() || node.isMissingNode()) return null;
+        if (node.isNumber()) {
+            return new Timestamp(node.asLong());
+        }
         LocalDateTime dateTime = asLocalDateTime(node);
         return dateTime == null ? null : Timestamp.valueOf(dateTime);
     }
 
     private LocalDateTime asLocalDateTime(JsonNode node) {
         if (node == null || node.isNull() || node.isMissingNode()) return null;
+        if (node.isNumber()) {
+            return LocalDateTime.ofInstant(java.time.Instant.ofEpochMilli(node.asLong()), java.time.ZoneId.systemDefault());
+        }
         if (node.isTextual()) {
             try { return LocalDateTime.parse(node.asText()); } catch (Exception e) { return null; }
         }
