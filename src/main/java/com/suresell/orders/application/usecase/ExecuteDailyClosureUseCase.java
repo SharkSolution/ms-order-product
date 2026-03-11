@@ -1,4 +1,5 @@
 package com.suresell.orders.application.usecase;
+
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.suresell.orders.application.dto.request.ExecuteClosureRequest;
@@ -12,12 +13,14 @@ import com.suresell.orders.infrastructure.persistence.OrderRepository;
 import lombok.extern.log4j.Log4j2;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+
 import java.util.UUID;
 
 @Log4j2
@@ -30,7 +33,7 @@ public class ExecuteDailyClosureUseCase {
     private final ObjectMapper objectMapper;
     private final SyncOutboxRepositoryPort syncOutboxRepositoryPort;
 
-    public ExecuteDailyClosureUseCase(OrderRepository orderRepository, DailyClosureRepository closureRepository, 
+    public ExecuteDailyClosureUseCase(OrderRepository orderRepository, DailyClosureRepository closureRepository,
                                     CashflowCalculator cashflowCalculator, ObjectMapper objectMapper,
                                     SyncOutboxRepositoryPort syncOutboxRepositoryPort) {
         this.orderRepository = orderRepository;
@@ -54,21 +57,16 @@ public class ExecuteDailyClosureUseCase {
         long endEpochMillis = closingTime.atZone(BOGOTA_ZONE).toInstant().toEpochMilli();
         List<Object[]> totals = orderRepository.sumTotalsByPaymentMethodAndSeller(
                 startEpochMillis,
-                endEpochMillis,
-                request.sellerId()
+                endEpochMillis
         );
         Map<String, BigDecimal> expected = parseTotals(totals);
-        BigDecimal diffCash = request.countedCash().subtract(expected.getOrDefault("CASH", BigDecimal.ZERO));
+        BigDecimal diffCash = calculatedTotalCash.subtract(expected.getOrDefault("CASH", BigDecimal.ZERO));
         BigDecimal diffCard = request.countedCard().subtract(expected.getOrDefault("CARD", BigDecimal.ZERO));
         BigDecimal diffNequi = request.countedNequi().subtract(expected.getOrDefault("NEQUI", BigDecimal.ZERO));
         BigDecimal diffQr = request.countedQr().subtract(expected.getOrDefault("QR", BigDecimal.ZERO));
         BigDecimal totalDifference = diffCash.add(diffCard).add(diffNequi).add(diffQr);
-        
-        DailyClosure savedClosure = saveClosureAudit(request, expected, totalDifference, openingTime, closingTime,
-                userName, calculatedTotalCash, calculatedBase);
-        
-        saveClosureToOutbox(savedClosure);
-
+        saveClosureAudit(request, expected, totalDifference, openingTime, closingTime,
+                userName, calculatedTotalCash, calculatedBase, diffCash, diffCard, diffNequi, diffQr);
         Map<String, BigDecimal> shortages = new HashMap<>();
         if (diffCash.compareTo(BigDecimal.ZERO) < 0) shortages.put("Efectivo", diffCash);
         if (diffCard.compareTo(BigDecimal.ZERO) < 0) shortages.put("Tarjeta", diffCard);
@@ -101,14 +99,18 @@ public class ExecuteDailyClosureUseCase {
                 .orElse(LocalDateTime.now().toLocalDate().atStartOfDay());
     }
 
-    private DailyClosure saveClosureAudit(ExecuteClosureRequest request,
+    private void saveClosureAudit(ExecuteClosureRequest request,
                                   Map<String, BigDecimal> expected,
                                   BigDecimal totalDifference,
                                   LocalDateTime openingTime,
                                   LocalDateTime closingTime,
                                   String userName,
                                   BigDecimal calculatedTotalCash,
-                                  BigDecimal calculatedBase) {
+                                  BigDecimal calculatedBase,
+                                  BigDecimal diffCash,
+                                  BigDecimal diffCard,
+                                  BigDecimal diffNequi,
+                                  BigDecimal diffQr) {
         DailyClosure entity = new DailyClosure();
         entity.setId(UUID.randomUUID());
         entity.setOpeningTime(openingTime);
@@ -126,16 +128,24 @@ public class ExecuteDailyClosureUseCase {
             log.error("Error serializando auditoría de billetes", e);
             entity.setCashCountAudit("ERROR_SERIALIZING_AUDIT");
         }
+        entity.setDifferenceCard(diffCard);
+        entity.setDifferenceCash(diffCash);
+        entity.setDifferenceQr(diffQr);
+        entity.setDifferenceNequi(diffNequi);
+
         entity.setTotalCountedCard(request.countedCard() != null ? request.countedCard() : BigDecimal.ZERO);
         entity.setTotalCountedNequi(request.countedNequi() != null ? request.countedNequi() : BigDecimal.ZERO);
         entity.setTotalCountedQr(request.countedQr() != null ? request.countedQr() : BigDecimal.ZERO);
+        entity.setTotalCounted(entity.getTotalCountedCard().add(entity.getTotalCountedNequi()).add(entity.getTotalCountedQr()).add(entity.getTotalCountedCash()));
         entity.setTotalExpectedCash(expected.getOrDefault("CASH", BigDecimal.ZERO));
         entity.setTotalExpectedCard(expected.getOrDefault("CARD", BigDecimal.ZERO));
         entity.setTotalExpectedNequi(expected.getOrDefault("NEQUI", BigDecimal.ZERO));
         entity.setTotalExpectedQr(expected.getOrDefault("QR", BigDecimal.ZERO));
+        entity.setTotalExpected(entity.getTotalExpectedCard().add(entity.getTotalExpectedQr()).add(entity.getTotalExpectedNequi()).add(entity.getTotalExpectedCash()));
         entity.setDifferenceAmount(totalDifference);
+        entity.setTotalDifference(totalDifference);
         entity.setStatus(totalDifference.compareTo(BigDecimal.ZERO) < 0 ? "SHORTAGE" : "OK");
-        return closureRepository.save(entity);
+        closureRepository.save(entity);
     }
 
     private void saveClosureToOutbox(DailyClosure closure) {

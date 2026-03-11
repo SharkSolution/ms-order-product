@@ -83,12 +83,10 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
   @Query(value = "SELECT payment_method, SUM(total) " +
           "FROM orders " +
           "WHERE created_at BETWEEN :startTime AND :endTime " +
-          "AND (:sellerId IS NULL OR pager_color = :sellerId) " +
           "GROUP BY payment_method",
           nativeQuery = true)
   List<Object[]> sumTotalsByPaymentMethodAndSeller(
           @Param("startTime") Long startTime,
-          @Param("endTime") Long endTime,
-          @Param("sellerId") String sellerId
+          @Param("endTime") Long endTimex
   );
 }
