@@ -62,13 +62,17 @@ public class CatalogSyncService {
 
                 orderDeliveryTrackingRepository.findById(orderId).ifPresent(localDt -> {
                     boolean changed = false;
-                    if (localDt.getDelivered() != delivered) {
-                        localDt.setDelivered(delivered);
+                    
+                    // Solo actualizamos local si en el local es 'false' y en la nube es 'true'.
+                    // NUNCA regresamos de 'true' a 'false' para evitar pises de sincronización.
+                    if (Boolean.FALSE.equals(localDt.getDelivered()) && delivered) {
+                        localDt.setDelivered(true);
                         localDt.setPreparationDurationSeconds(duration);
                         changed = true;
                     }
-                    // Solo actualizamos local si en la nube ya se marcó como devuelto
-                    if (!localDt.getPagerReturned() && pagerReturned) {
+                    
+                    // Solo actualizamos local si en la nube ya se marcó como devuelto y en local no
+                    if (Boolean.FALSE.equals(localDt.getPagerReturned()) && pagerReturned) {
                         localDt.setPagerReturned(true);
                         changed = true;
                     }
@@ -76,7 +80,7 @@ public class CatalogSyncService {
                     if (changed) {
                         orderDeliveryTrackingRepository.save(localDt);
                         log.info("Orden #{} actualizada desde nube (Delivered: {}, PagerReturned: {}).", 
-                                orderId, delivered, localDt.getPagerReturned());
+                                orderId, localDt.getDelivered(), localDt.getPagerReturned());
                     }
                 });
             });

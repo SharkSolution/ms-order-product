@@ -5,6 +5,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.suresell.orders.application.dto.request.ExecuteClosureRequest;
 import com.suresell.orders.application.dto.responses.CashierClosureResponse;
 import com.suresell.orders.domain.model.DailyClosure;
+import com.suresell.orders.domain.model.SyncOutbox;
+import com.suresell.orders.domain.port.out.SyncOutboxRepositoryPort;
 import com.suresell.orders.domain.service.CashflowCalculator;
 import com.suresell.orders.infrastructure.persistence.DailyClosureRepository;
 import com.suresell.orders.infrastructure.persistence.OrderRepository;
@@ -19,6 +21,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import java.util.UUID;
+
 @Log4j2
 @Service
 public class ExecuteDailyClosureUseCase {
@@ -27,14 +31,16 @@ public class ExecuteDailyClosureUseCase {
     private final DailyClosureRepository closureRepository;
     private final CashflowCalculator cashflowCalculator;
     private final ObjectMapper objectMapper;
-    private final DailyClosureRepository dailyClosureRepository;
+    private final SyncOutboxRepositoryPort syncOutboxRepositoryPort;
 
-    public ExecuteDailyClosureUseCase(OrderRepository orderRepository, DailyClosureRepository closureRepository, CashflowCalculator cashflowCalculator, ObjectMapper objectMapper, DailyClosureRepository dailyClosureRepository) {
+    public ExecuteDailyClosureUseCase(OrderRepository orderRepository, DailyClosureRepository closureRepository,
+                                    CashflowCalculator cashflowCalculator, ObjectMapper objectMapper,
+                                    SyncOutboxRepositoryPort syncOutboxRepositoryPort) {
         this.orderRepository = orderRepository;
         this.closureRepository = closureRepository;
         this.cashflowCalculator = cashflowCalculator;
         this.objectMapper = objectMapper;
-        this.dailyClosureRepository = dailyClosureRepository;
+        this.syncOutboxRepositoryPort = syncOutboxRepositoryPort;
     }
 
     @Transactional
@@ -53,7 +59,7 @@ public class ExecuteDailyClosureUseCase {
         );
         Map<String, BigDecimal> expected = parseTotals(totals);
 
-        BigDecimal previousBase = dailyClosureRepository.findFirstByOrderByClosingTimeDesc()
+        BigDecimal previousBase = closureRepository.findFirstByOrderByClosingTimeDesc()
                 .map(DailyClosure::getBaseBalanceForNextDay)
                 .orElse(BigDecimal.ZERO);
 
@@ -74,8 +80,10 @@ public class ExecuteDailyClosureUseCase {
             amountToDeposit = BigDecimal.ZERO;
         }
 
-        saveClosureAudit(request, expected, totalDifference, openingTime, closingTime,
+        DailyClosure savedClosure = saveClosureAudit(request, expected, totalDifference, openingTime, closingTime,
                 userName, calculatedTotalCash, calculatedBase, diffCash, diffCard, diffNequi, diffQr, previousBase);
+
+        saveClosureToOutbox(savedClosure);
 
         Map<String, BigDecimal> shortages = new HashMap<>();
         if (diffCash.compareTo(BigDecimal.ZERO) < 0) shortages.put("Efectivo", diffCash);
@@ -111,7 +119,7 @@ public class ExecuteDailyClosureUseCase {
                 .orElse(LocalDateTime.now().toLocalDate().atStartOfDay());
     }
 
-    private void saveClosureAudit(ExecuteClosureRequest request,
+    private DailyClosure saveClosureAudit(ExecuteClosureRequest request,
                                   Map<String, BigDecimal> expected,
                                   BigDecimal totalDifference,
                                   LocalDateTime openingTime,
@@ -126,7 +134,7 @@ public class ExecuteDailyClosureUseCase {
                                   BigDecimal previousBase) {
 
         DailyClosure entity = new DailyClosure();
-
+        entity.setId(UUID.randomUUID());
         entity.setOpeningTime(openingTime);
         entity.setClosingTime(closingTime);
         entity.setClosureDate(closingTime.toLocalDate());
@@ -178,5 +186,29 @@ public class ExecuteDailyClosureUseCase {
         entity.setStatusMessage(entity.getStatus().equals("OK") ? "Cierre Cuadrado" : "Faltante Detectado");
 
         closureRepository.save(entity);
+
+        return entity;
+    }
+
+    private void saveClosureToOutbox(DailyClosure closure) {
+        try {
+            Map<String, Object> payload = new HashMap<>();
+            payload.put("eventType", "CLOSURE_CREATED");
+            payload.put("closure", closure);
+            SyncOutbox outbox = new SyncOutbox();
+            outbox.setAggregateType("DAILY_CLOSURE");
+            outbox.setAggregateUuid(closure.getId());
+            outbox.setAggregateId(0L);
+            outbox.setEventType("CLOSURE_CREATED");
+            outbox.setPayloadJson(objectMapper.writeValueAsString(payload));
+            outbox.setStatus("PENDING");
+            outbox.setAttempts(0);
+            outbox.setNextRetryAt(System.currentTimeMillis());
+            outbox.setCreatedAt(System.currentTimeMillis());
+            outbox.setUpdatedAt(System.currentTimeMillis());
+            syncOutboxRepositoryPort.save(outbox);
+        } catch (Exception e) {
+            log.error("Error encolando sincronización de cierre: {}", e.getMessage());
+        }
     }
 }

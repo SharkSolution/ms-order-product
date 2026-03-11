@@ -379,11 +379,12 @@ public class OrderHandler implements OrderPort {
             tracking.setOrder(order);
         }
         
-        // El botón de pánico del cajero solo libera el PAGER físicamente
+        // Marcamos como entregado Y pager devuelto para que desaparezca de las listas activas
+        tracking.setDelivered(true);
         tracking.setPagerReturned(true);
         
         orderRepositoryPort.save(order);
-        log.info("Pager de Orden #{} liberado MANUALMENTE (Devolución Física). La orden sigue activa en cocina.", orderId);
+        log.info("Orden #{} marcada como ENTREGADA y Pager liberado MANUALMENTE (Acción de Cajero).", orderId);
         saveTrackingToOutbox(tracking);
     }
 
