@@ -5,6 +5,7 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import org.springframework.data.domain.Persistable;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -16,13 +17,12 @@ import java.util.UUID;
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
-public class DailyClosure {
+public class DailyClosure implements Persistable<UUID> {
 
     @Transient
     private static final ZoneId BOGOTA_ZONE = ZoneId.of("America/Bogota");
 
     @Id
-    @GeneratedValue(strategy = GenerationType.UUID)
     @Column(name = "id", updatable = false, nullable = false)
     private UUID id;
 
@@ -100,4 +100,23 @@ public class DailyClosure {
 
     @Column(name = "cash_count_audit", columnDefinition = "TEXT")
     private String cashCountAudit;
+
+    @Column(name = "sales_of_day", precision = 15, scale = 2)
+    private BigDecimal salesDay;
+
+    //Campos para manter guardado offline
+
+    @Transient
+    private boolean isNewRecord = true;
+
+    @Override
+    public boolean isNew() {
+        return isNewRecord;
+    }
+
+    @PostPersist
+    @PostLoad
+    protected void markNotNew() {
+        this.isNewRecord = false;
+    }
 }

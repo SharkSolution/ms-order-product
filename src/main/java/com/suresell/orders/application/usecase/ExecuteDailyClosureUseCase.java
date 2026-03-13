@@ -57,6 +57,8 @@ public class ExecuteDailyClosureUseCase {
                 startEpochMillis,
                 endEpochMillis
         );
+        log.info("totales: {}", totals);
+
         Map<String, BigDecimal> expected = parseTotals(totals);
 
         BigDecimal previousBase = closureRepository.findFirstByOrderByClosingTimeDesc()
@@ -182,9 +184,14 @@ public class ExecuteDailyClosureUseCase {
         entity.setDifferenceAmount(totalDifference);
         entity.setTotalDifference(totalDifference); // revisar si mejor quitar
 
-        entity.setStatus(totalDifference.compareTo(BigDecimal.ZERO) < 0 ? "SHORTAGE" : "OK");
+        entity.setStatus(totalDifference.compareTo(BigDecimal.ZERO) > 0 ? "FALTANTE" : "OK");
         entity.setStatusMessage(entity.getStatus().equals("OK") ? "Cierre Cuadrado" : "Faltante Detectado");
-
+        try {
+            log.info("Datos del cierre a persistir: \n{}",
+                    objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(entity));
+        } catch (Exception e) {
+            log.warn("No se pudo imprimir la entidad en el log", e);
+        }
         closureRepository.save(entity);
 
         return entity;
