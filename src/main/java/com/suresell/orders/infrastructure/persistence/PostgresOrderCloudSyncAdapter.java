@@ -47,22 +47,49 @@ public class PostgresOrderCloudSyncAdapter implements OrderCloudSyncPort {
                         upsertCouponProduct(root);
                         break;
                     case "TRACKING_UPDATED":
-                        upsertDeliveryTracking(root.path("tracking"), asLong(root.path("orderId")));
+                        Long orderIdTracking = asLong(root.path("orderId"));
+                        ensureOrderExistsInCloud(orderIdTracking);
+                        upsertDeliveryTracking(root.path("tracking"), orderIdTracking);
                         break;
                     case "DISCOUNT_USAGE_CREATED":
+                        Long orderIdDiscount = asLong(root.path("usage").path("orderId"));
+                        ensureOrderExistsInCloud(orderIdDiscount);
                         upsertDiscountUsage(root.path("usage"));
                         break;
                     case "EDIT_HISTORY_CREATED":
+                        Long orderIdHistory = asLong(root.path("history").path("orderId"));
+                        ensureOrderExistsInCloud(orderIdHistory);
                         upsertEditHistory(root.path("history"));
                         break;
                     default:
                         log.warn("Evento de sincronización no reconocido: {}", eventType);
                 }
             } catch (Exception ex) {
-                log.error("Error detallado de sincronización cloud: ", ex);
+                if (ex instanceof OrderNotFoundInCloudException) {
+                    log.warn("Pospuesta sincronización: {}", ex.getMessage());
+                } else {
+                    log.error("Error detallado de sincronización cloud: ", ex);
+                }
                 throw new IllegalStateException("Error sincronizando a cloud: " + ex.getMessage(), ex);
             }
         });
+    }
+
+    private void ensureOrderExistsInCloud(Long orderId) {
+        if (orderId == null) return;
+        Integer count = cloudJdbcTemplate.queryForObject(
+                "SELECT count(*) FROM orders WHERE id_order = ?",
+                Integer.class,
+                orderId);
+        if (count == null || count == 0) {
+            throw new OrderNotFoundInCloudException("Orden #" + orderId + " aún no existe en cloud.");
+        }
+    }
+
+    private static class OrderNotFoundInCloudException extends RuntimeException {
+        public OrderNotFoundInCloudException(String message) {
+            super(message);
+        }
     }
 
     private void syncOrder(JsonNode root) {
