@@ -37,9 +37,9 @@ sync:
     enabled: true
     datasource:
       driver-class-name: org.postgresql.Driver
-      url: jdbc:postgresql://sursell-sharkburger-db.cm762cwmuy8a.us-east-1.rds.amazonaws.com:5432/sharkburger_db
-      username: sursell_admin
-      password: wX:]WS6iu16g3sR<a2v1-fFsjyI>
+      url: jdbc:postgresql://aws-1-us-east-1.pooler.supabase.com:5432/postgres
+      username: postgres.iwlbtkqszbkugfxdpzyk
+      password: w9Rz3wcIeT3i184t
       hikari:
         maximum-pool-size: 4
         minimum-idle: 1
