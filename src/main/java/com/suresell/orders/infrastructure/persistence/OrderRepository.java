@@ -10,7 +10,12 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
-public interface OrderRepository extends JpaRepository<Order, Long> {
+public interface OrderRepository extends JpaRepository<Order, java.util.UUID> {
+    Optional<Order> findByIdOrder(Long idOrder);
+
+    @Query("SELECT o.idOrder FROM Order o WHERE o.uuidId = :uuidId")
+    Optional<Long> findNumericIdByUuid(@Param("uuidId") java.util.UUID uuidId);
+
     @Query("""
             SELECT o
             FROM Order o

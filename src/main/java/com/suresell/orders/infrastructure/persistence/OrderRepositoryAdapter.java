@@ -19,7 +19,11 @@ public class OrderRepositoryAdapter implements OrderRepositoryPort {
     }
     @Override
     public Optional<Order> findById(Long id) {
-        return orderRepository.findById(id);
+        return orderRepository.findByIdOrder(id);
+    }
+    @Override
+    public Optional<Long> findNumericIdByUuid(java.util.UUID uuidId) {
+        return orderRepository.findNumericIdByUuid(uuidId);
     }
     @Override
     public List<Order> findAll() {

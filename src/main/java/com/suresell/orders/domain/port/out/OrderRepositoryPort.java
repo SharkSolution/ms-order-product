@@ -11,6 +11,7 @@ import java.util.Optional;
 public interface OrderRepositoryPort {
     Order save(Order order);
     Optional<Order> findById(Long id);
+    Optional<Long> findNumericIdByUuid(java.util.UUID uuidId);
     List<Order> findAll();
     Page<Order> findAll(Pageable pageable);
     Optional<Order> findOccupiedPagerOrder(

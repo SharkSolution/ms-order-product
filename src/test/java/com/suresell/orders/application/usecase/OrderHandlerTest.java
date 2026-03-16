@@ -115,6 +115,8 @@ class OrderHandlerTest {
             toSave.setIdOrder(501L);
             return toSave;
         });
+        when(orderRepositoryPort.findNumericIdByUuid(any(java.util.UUID.class)))
+                .thenReturn(Optional.of(501L));
         when(syncOutboxRepositoryPort.save(any(SyncOutbox.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
         Order created = orderHandler.createOrUpdateOrder(request);

@@ -43,17 +43,19 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.context.annotation.Primary;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
+
 @Service
 @Primary
 @RequiredArgsConstructor
-@Slf4j
 public class OrderHandler implements OrderPort {
+    private static final Logger log = LoggerFactory.getLogger(OrderHandler.class);
     private final OrderRepositoryPort orderRepositoryPort;
     private final OrderDeliveryTrackingRepositoryPort orderDeliveryTrackingRepositoryPort;
     private final SyncOutboxRepositoryPort syncOutboxRepositoryPort;
@@ -64,13 +66,13 @@ public class OrderHandler implements OrderPort {
     private final ObjectMapper objectMapper;
     private static final ZoneId BOGOTA_ZONE = ZoneId.of("America/Bogota");
     private static final int MAX_EDIT_MINUTES = 7;
+
     @Override
     public PagerAvailabilityResponse getPagerAvailability() {
         List<Order> activeOrders = orderRepositoryPort.findActiveOrdersWithItems(OrderStatus.pagado);
         Set<String> occupiedPagers = activeOrders.stream()
                 .filter(o -> {
                     OrderDeliveryTracking dt = o.getDeliveryTracking();
-                    // Pager OCUPADO solo si: tiene color/numero Y (no se ha entregado comida Y no se ha devuelto pager)
                     return o.getPagerColor() != null && o.getPagerNumber() != null &&
                            (dt == null || (!Boolean.TRUE.equals(dt.getDelivered()) && !Boolean.TRUE.equals(dt.getPagerReturned())));
                 })
@@ -92,6 +94,7 @@ public class OrderHandler implements OrderPort {
         }
         return new PagerAvailabilityResponse(available, occupied);
     }
+
     @Override
     @Transactional
     public Order createOrUpdateOrder(OrderRequestRecord dto) {
@@ -103,30 +106,53 @@ public class OrderHandler implements OrderPort {
         order.setStatus(OrderStatus.pagado);
         order.setPaymentMethod(dto.paymentMethod());
         order.setCreatedAt(LocalDateTime.now(BOGOTA_ZONE));
-        List<OrderItem> items = createOrderItems(order, dto.items());
-        order.setItems(items);
-        BigDecimal subtotal = order.getItems().stream()
-                .map(OrderItem::getTotalPrice)
+        
+        BigDecimal subtotal = dto.items().stream()
+                .map(item -> item.unitPrice().multiply(BigDecimal.valueOf(item.quantity())))
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
         order.setSubtotal(subtotal);
         BigDecimal total = applyDiscountIfPresent(order, dto.discountCode(), subtotal);
         order.setTotal(total);
+        
+        // 1. Guardar la Orden (genera idOrder numérico)
+        Order savedOrder = orderRepositoryPort.save(order);
+        
+        // 2. Recuperar ID generado
+        Long numericId = orderRepositoryPort.findNumericIdByUuid(savedOrder.getUuidId())
+                .orElseThrow(() -> new RuntimeException("Error al recuperar ID numérico de la orden recién creada"));
+        
+        savedOrder.setIdOrder(numericId);
+
+        // 3. Crear y Guardar Items individualmente con el ID numérico poblado
+        List<OrderItem> items = createOrderItems(savedOrder, dto.items());
+        for (OrderItem item : items) {
+            orderItemRepositoryPort.save(item);
+        }
+        savedOrder.setItems(items);
+
+        // 4. Crear e Insertar el tracking con el ID ya conocido
         OrderDeliveryTracking tracking = new OrderDeliveryTracking();
-        tracking.setOrder(order);
+        tracking.setOrder(savedOrder);
+        tracking.setOrderId(numericId);
+        tracking.setOrderIdUuid(savedOrder.getUuidId());
         tracking.setDelivered(false);
         tracking.setPreparationDurationSeconds(null);
-        order.setDeliveryTracking(tracking);
-        Order savedOrder = orderRepositoryPort.save(order);
-        saveOrderCreatedOutbox(savedOrder, savedOrder.getDeliveryTracking());
+        
+        orderDeliveryTrackingRepositoryPort.save(tracking);
+        savedOrder.setDeliveryTracking(tracking);
+
+        saveOrderCreatedOutbox(savedOrder, tracking);
         linkCouponIfPresent(savedOrder);
         return savedOrder;
     }
+
     @Override
     public List<OrderResponseRecord> getAllOrders() {
         List<Order> orders = orderRepositoryPort.findAllWithItems();
         Map<String, String> productNames = buildProductNameCacheFromOrders(orders);
         return orders.stream().map(order -> toOrderResponseRecord(order, productNames)).toList();
     }
+
     @Override
     public Page<OrderResponseRecord> getAllOrdersPaginated(String pagerColor, String pagerNumber, Long idOrder, int page, int size) {
         Pageable pageable = PageRequest.of(page, size);
@@ -145,6 +171,7 @@ public class OrderHandler implements OrderPort {
         Map<String, String> productNames = buildProductNameCacheFromOrders(ordersPage.getContent());
         return ordersPage.map(order -> toOrderResponseRecord(order, productNames));
     }
+
     @Override
     public List<OrderResponseRecord> getAllOrdersKeyset(Long afterId, int size) {
         Pageable pageable = PageRequest.of(0, size);
@@ -163,6 +190,7 @@ public class OrderHandler implements OrderPort {
         Map<String, String> productNames = buildProductNameCacheFromOrders(orders);
         return orders.stream().map(order -> toOrderResponseRecord(order, productNames)).toList();
     }
+
     @Override
     public OrderResponseRecord getOrderById(Long orderId) {
         Order order = orderRepositoryPort.findById(orderId)
@@ -170,6 +198,7 @@ public class OrderHandler implements OrderPort {
         Map<String, String> productNames = buildProductNameCache(order.getItems());
         return toOrderResponseRecord(order, productNames);
     }
+
     @Override
     @Transactional
     public void updateOrder(Long orderId, OrderRequestRecord dto) {
@@ -206,16 +235,19 @@ public class OrderHandler implements OrderPort {
         saveOrderCreatedOutbox(savedOrder, savedOrder.getDeliveryTracking());
         saveEditHistory(orderId, previousItems, order.getItems(), previousTotal, order.getTotal());
     }
+
     private void saveTrackingToOutbox(OrderDeliveryTracking tracking) {
         try {
             Map<String, Object> trackingPayload = new HashMap<>();
             trackingPayload.put("orderId", tracking.getOrderId());
+            trackingPayload.put("orderUuidId", tracking.getOrderIdUuid());
             trackingPayload.put("delivered", Boolean.TRUE.equals(tracking.getDelivered()));
             trackingPayload.put("pagerReturned", Boolean.TRUE.equals(tracking.getPagerReturned()));
             trackingPayload.put("preparationDurationSeconds", tracking.getPreparationDurationSeconds());
             Map<String, Object> payload = new HashMap<>();
             payload.put("eventType", "TRACKING_UPDATED");
             payload.put("orderId", tracking.getOrderId());
+            payload.put("orderUuidId", tracking.getOrderIdUuid());
             payload.put("tracking", trackingPayload);
             SyncOutbox outbox = new SyncOutbox();
             outbox.setAggregateType("TRACKING");
@@ -232,6 +264,7 @@ public class OrderHandler implements OrderPort {
             log.error("Error encolando sincronización de tracking: {}", e.getMessage());
         }
     }
+
     private void saveEditHistory(Long orderId, List<OrderItem> oldItems, List<OrderItem> newItems, BigDecimal oldTotal, BigDecimal newTotal) {
         LocalDateTime now = LocalDateTime.now(BOGOTA_ZONE);
         Set<String> productIds = new LinkedHashSet<>();
@@ -289,6 +322,7 @@ public class OrderHandler implements OrderPort {
             }
         }
     }
+
     private void saveEditHistoryToOutbox(OrderEditHistory history) {
         try {
             Map<String, Object> payload = new HashMap<>();
@@ -309,6 +343,7 @@ public class OrderHandler implements OrderPort {
             log.error("Error encolando sincronización de historial de edición: {}", e.getMessage());
         }
     }
+
     @Override
     @Transactional
     public OrderResponseRecord applyDiscountToOrder(Long orderId, String discountCode) {
@@ -358,6 +393,7 @@ public class OrderHandler implements OrderPort {
         discountService.linkOrderWithCoupon(linkCommand);
         return toOrderResponseRecord(savedOrder, buildProductNameCache(savedOrder.getItems()));
     }
+
     @Override
     public Page<OrderEditHistory> getOrderEditHistory(Long orderId, int page, int size) {
         Pageable pageable = PageRequest.of(page, size);
@@ -379,7 +415,6 @@ public class OrderHandler implements OrderPort {
             tracking.setOrder(order);
         }
         
-        // Marcamos como entregado Y pager devuelto para que desaparezca de las listas activas
         tracking.setDelivered(true);
         tracking.setPagerReturned(true);
         
@@ -401,9 +436,7 @@ public class OrderHandler implements OrderPort {
 
         order.setIsPrinted(true);
         orderRepositoryPort.save(order);
-
         log.info("Orden #{} marcada como IMPRESA físicamente (Contingencia).", orderId);
-
         saveOrderPrintedStatusToOutbox(order);
     }
 
@@ -414,6 +447,7 @@ public class OrderHandler implements OrderPort {
             payload.put("aggregateType", "ORDER");
             payload.put("aggregateId", order.getIdOrder());
             payload.put("idOrder", order.getIdOrder());
+            payload.put("uuidId", order.getUuidId());
             payload.put("isPrinted", order.getIsPrinted());
             payload.put("updatedAt", LocalDateTime.now(BOGOTA_ZONE).toString());
 
@@ -427,9 +461,7 @@ public class OrderHandler implements OrderPort {
             outbox.setNextRetryAt(System.currentTimeMillis());
             outbox.setCreatedAt(System.currentTimeMillis());
             outbox.setUpdatedAt(System.currentTimeMillis());
-
             syncOutboxRepositoryPort.save(outbox);
-
         } catch (JsonProcessingException e) {
             log.error("Error critico serializando evento outbox para orden {}", order.getIdOrder());
             throw new RuntimeException("Fallo al generar payload de sincronizacion", e);
@@ -441,6 +473,7 @@ public class OrderHandler implements OrderPort {
             throw new IllegalArgumentException("Método de pago inválido. Debe ser: CASH, CARD, NEQUI o QR");
         }
     }
+
     private void saveOrderCreatedOutbox(Order order, OrderDeliveryTracking tracking) {
         try {
             long now = System.currentTimeMillis();
@@ -461,9 +494,11 @@ public class OrderHandler implements OrderPort {
             log.error("Error encolando sincronización de orden {}: {}", order.getIdOrder(), e.getMessage());
         }
     }
+
     private String buildOrderCreatedPayload(Order order, OrderDeliveryTracking tracking) {
         Map<String, Object> trackingPayload = new HashMap<>();
         trackingPayload.put("orderId", order.getIdOrder());
+        trackingPayload.put("orderUuidId", order.getUuidId());
         trackingPayload.put("delivered", Boolean.TRUE.equals(tracking.getDelivered()));
         trackingPayload.put("pagerReturned", Boolean.TRUE.equals(tracking.getPagerReturned()));
         trackingPayload.put("preparationDurationSeconds", tracking.getPreparationDurationSeconds());
@@ -480,6 +515,7 @@ public class OrderHandler implements OrderPort {
             throw new IllegalStateException("No se pudo serializar el payload del outbox para la orden " + order.getIdOrder(), ex);
         }
     }
+
     private Map<String, Object> buildOrderPayload(Order order) {
         List<Map<String, Object>> items = order.getItems() == null
                 ? List.of()
@@ -487,6 +523,7 @@ public class OrderHandler implements OrderPort {
                         .map(item -> {
                             Map<String, Object> itemPayload = new HashMap<>();
                             itemPayload.put("idOrderItem", item.getIdOrderItem());
+                            itemPayload.put("uuidId", item.getUuidId());
                             itemPayload.put("productId", item.getProductId());
                             itemPayload.put("quantity", item.getQuantity());
                             itemPayload.put("unitPrice", item.getUnitPrice());
@@ -498,6 +535,7 @@ public class OrderHandler implements OrderPort {
                         .toList();
         Map<String, Object> orderPayload = new HashMap<>();
         orderPayload.put("idOrder", order.getIdOrder());
+        orderPayload.put("uuidId", order.getUuidId());
         orderPayload.put("pagerColor", order.getPagerColor());
         orderPayload.put("pagerNumber", order.getPagerNumber());
         orderPayload.put("createdAt", order.getCreatedAt());
@@ -512,6 +550,7 @@ public class OrderHandler implements OrderPort {
         orderPayload.put("items", items);
         return orderPayload;
     }
+
     private void validatePagerAvailability(String pagerColor, String pagerNumber, Long excludeOrderId) {
         Optional<Order> existingPagerOrder = orderRepositoryPort.findOccupiedPagerOrder(
                 pagerColor, pagerNumber, OrderStatus.pagado);
@@ -526,10 +565,12 @@ public class OrderHandler implements OrderPort {
                     "PAGER_OCUPADO");
         }
     }
+
     private List<OrderItem> createOrderItems(Order order, List<OrderItemRequestRecord> itemDtos) {
         return itemDtos.stream().map(itemDto -> {
             OrderItem item = new OrderItem();
             item.setOrder(order);
+            item.setOrderId(order.getIdOrder()); // ASIGNACIÓN CRÍTICA PARA SQLITE
             item.setProductId(itemDto.productId());
             item.setQuantity(itemDto.quantity());
             item.setUnitPrice(itemDto.unitPrice());
@@ -539,6 +580,7 @@ public class OrderHandler implements OrderPort {
             return item;
         }).toList();
     }
+
     private BigDecimal applyDiscountIfPresent(Order order, String discountCode, BigDecimal subtotal) {
         if (discountCode == null || discountCode.trim().isEmpty()) {
             return subtotal;
@@ -573,6 +615,7 @@ public class OrderHandler implements OrderPort {
         }
         return subtotal;
     }
+
     private void linkCouponIfPresent(Order order) {
         if (order.getDiscountCode() != null) {
             LinkOrderCouponCommand linkCommand = new LinkOrderCouponCommand(
@@ -584,6 +627,7 @@ public class OrderHandler implements OrderPort {
             discountService.linkOrderWithCoupon(linkCommand);
         }
     }
+
     private OrderResponseRecord toOrderResponseRecord(Order order, Map<String, String> productNames) {
         List<OrderItemResponseRecord> items = order.getItems() == null
                 ? List.of()
@@ -611,6 +655,7 @@ public class OrderHandler implements OrderPort {
                 preparationDurationSeconds,
                 items);
     }
+
     private OrderItemResponseRecord toOrderItemResponseRecord(OrderItem item, Map<String, String> productNames) {
         return new OrderItemResponseRecord(
                 item.getProductId(),
@@ -621,6 +666,7 @@ public class OrderHandler implements OrderPort {
                 item.getInstructions(),
                 item.getComboGroup());
     }
+
     private Map<String, String> buildProductNameCacheFromOrders(List<Order> orders) {
         Set<String> productIds = new LinkedHashSet<>();
         for (Order order : orders) {
@@ -630,6 +676,7 @@ public class OrderHandler implements OrderPort {
         }
         return buildProductNameCacheByIds(productIds);
     }
+
     private Map<String, String> buildProductNameCache(List<OrderItem> items) {
         if (items == null || items.isEmpty()) {
             return Map.of();
@@ -639,6 +686,7 @@ public class OrderHandler implements OrderPort {
                 .collect(Collectors.toCollection(LinkedHashSet::new));
         return buildProductNameCacheByIds(productIds);
     }
+
     private Map<String, String> buildProductNameCacheByIds(Set<String> productIds) {
         if (productIds.isEmpty()) {
             return Map.of();
@@ -651,6 +699,7 @@ public class OrderHandler implements OrderPort {
         }
         return names;
     }
+
     private Map<String, ProductResponse> buildProductCache(List<OrderItem> items) {
         if (items == null || items.isEmpty()) {
             return Map.of();
@@ -670,7 +719,6 @@ public class OrderHandler implements OrderPort {
                 .filter(o -> color.equalsIgnoreCase(o.getPagerColor()) && number.equalsIgnoreCase(o.getPagerNumber()))
                 .filter(o -> {
                     OrderDeliveryTracking dt = o.getDeliveryTracking();
-                    // Buscamos la que todavía tenga el pager (no entregada y no devuelta)
                     return dt == null || (!dt.getDelivered() && !dt.getPagerReturned());
                 })
                 .findFirst();

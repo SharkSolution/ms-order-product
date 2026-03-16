@@ -47,18 +47,18 @@ public class PostgresOrderCloudSyncAdapter implements OrderCloudSyncPort {
                         upsertCouponProduct(root);
                         break;
                     case "TRACKING_UPDATED":
-                        Long orderIdTracking = asLong(root.path("orderId"));
-                        ensureOrderExistsInCloud(orderIdTracking);
-                        upsertDeliveryTracking(root.path("tracking"), orderIdTracking);
+                        java.util.UUID orderUuidTracking = asUuid(root.path("orderUuidId"));
+                        ensureOrderExistsInCloud(orderUuidTracking);
+                        upsertDeliveryTracking(root.path("tracking"), orderUuidTracking);
                         break;
                     case "DISCOUNT_USAGE_CREATED":
                         Long orderIdDiscount = asLong(root.path("usage").path("orderId"));
-                        ensureOrderExistsInCloud(orderIdDiscount);
+                        // Para discount_usage seguimos usando order_id (bigint) según esquema
                         upsertDiscountUsage(root.path("usage"));
                         break;
                     case "EDIT_HISTORY_CREATED":
                         Long orderIdHistory = asLong(root.path("history").path("orderId"));
-                        ensureOrderExistsInCloud(orderIdHistory);
+                        // Para edit_history seguimos usando order_id (bigint) según esquema
                         upsertEditHistory(root.path("history"));
                         break;
                     default:
@@ -73,6 +73,17 @@ public class PostgresOrderCloudSyncAdapter implements OrderCloudSyncPort {
                 throw new IllegalStateException("Error sincronizando a cloud: " + ex.getMessage(), ex);
             }
         });
+    }
+
+    private void ensureOrderExistsInCloud(java.util.UUID orderUuid) {
+        if (orderUuid == null) return;
+        Integer count = cloudJdbcTemplate.queryForObject(
+                "SELECT count(*) FROM orders WHERE uuid_id = ?",
+                Integer.class,
+                orderUuid);
+        if (count == null || count == 0) {
+            throw new OrderNotFoundInCloudException("Orden con UUID " + orderUuid + " aún no existe en cloud.");
+        }
     }
 
     private void ensureOrderExistsInCloud(Long orderId) {
@@ -95,31 +106,41 @@ public class PostgresOrderCloudSyncAdapter implements OrderCloudSyncPort {
     private void syncOrder(JsonNode root) {
         JsonNode orderNode = root.path("order");
         JsonNode trackingNode = root.path("tracking");
-        Long orderId = asLong(orderNode.path("idOrder"));
-        upsertOrder(orderNode, orderId);
-        upsertDeliveryTracking(trackingNode, orderId);
-        upsertOrderItems(orderNode.path("items"), orderId);
+        java.util.UUID orderUuid = asUuid(orderNode.path("uuidId"));
+        upsertOrder(orderNode, orderUuid);
+        upsertDeliveryTracking(trackingNode, orderUuid);
+        upsertOrderItems(orderNode.path("items"), orderUuid);
     }
 
     private void updateOrderPrintedInCloud(JsonNode root) {
-        Long orderId = asLong(root.path("idOrder"));
+        java.util.UUID orderUuid = asUuid(root.path("uuidId"));
+        if (orderUuid == null) {
+            // Fallback to idOrder if uuidId not in payload (legacy events)
+            Long orderId = asLong(root.path("idOrder"));
+            Boolean isPrinted = asBoolean(root.path("isPrinted"));
+            cloudJdbcTemplate.update(
+                    "UPDATE orders SET is_printed = ?, synced = true WHERE id_order = ?",
+                    isPrinted, orderId);
+            log.info("Bandera is_printed de orden #{} actualizada a {} en cloud.", orderId, isPrinted);
+            return;
+        }
         Boolean isPrinted = asBoolean(root.path("isPrinted"));
 
         cloudJdbcTemplate.update(
-                "UPDATE orders SET is_printed = ?, synced = true WHERE id_order = ?",
-                isPrinted, orderId);
+                "UPDATE orders SET is_printed = ?, synced = true WHERE uuid_id = ?",
+                isPrinted, orderUuid);
 
-        log.info("Bandera is_printed de orden #{} actualizada a {} en cloud.", orderId, isPrinted);
+        log.info("Bandera is_printed de orden con UUID {} actualizada a {} en cloud.", orderUuid, isPrinted);
     }
 
-    private void upsertOrder(JsonNode orderNode, Long orderId) {
+    private void upsertOrder(JsonNode orderNode, java.util.UUID orderUuid) {
         cloudJdbcTemplate.update(
                 """
                 INSERT INTO orders (
-                    id_order, created_at, discount_amount, discount_code, discount_percentage,
+                    uuid_id, created_at, discount_amount, discount_code, discount_percentage,
                     pager_color, pager_number, payment_method, status, subtotal, total, synced, is_printed
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT (id_order) DO UPDATE SET
+                ON CONFLICT (uuid_id) DO UPDATE SET
                     status = EXCLUDED.status,
                     subtotal = EXCLUDED.subtotal,
                     total = EXCLUDED.total,
@@ -132,7 +153,7 @@ public class PostgresOrderCloudSyncAdapter implements OrderCloudSyncPort {
                     is_printed = EXCLUDED.is_printed,
                     synced = true
                 """,
-                orderId,
+                orderUuid,
                 asTimestamp(orderNode.path("createdAt")),
                 asBigDecimal(orderNode.path("discountAmount")),
                 asString(orderNode.path("discountCode")),
@@ -147,41 +168,42 @@ public class PostgresOrderCloudSyncAdapter implements OrderCloudSyncPort {
                 asBoolean(orderNode.path("isPrinted")));
     }
 
-    private void upsertDeliveryTracking(JsonNode trackingNode, Long orderId) {
+    private void upsertDeliveryTracking(JsonNode trackingNode, java.util.UUID orderUuid) {
         cloudJdbcTemplate.update(
                 """
                 INSERT INTO order_delivery_tracking (
-                    order_id, delivered, pager_returned, preparation_duration_seconds
+                    order_id_uuid, delivered, pager_returned, preparation_duration_seconds
                 ) VALUES (?, ?, ?, ?)
-                ON CONFLICT (order_id) DO UPDATE SET
+                ON CONFLICT (order_id_uuid) DO UPDATE SET
                     delivered = EXCLUDED.delivered,
                     pager_returned = EXCLUDED.pager_returned,
                     preparation_duration_seconds = EXCLUDED.preparation_duration_seconds
                 """,
-                orderId,
+                orderUuid,
                 asBoolean(trackingNode.path("delivered")),
                 asBoolean(trackingNode.path("pagerReturned")),
                 asInteger(trackingNode.path("preparationDurationSeconds")));
     }
 
-    private void upsertOrderItems(JsonNode itemsNode, Long orderId) {
-        cloudJdbcTemplate.update("DELETE FROM order_item WHERE order_id = ?", orderId);
+    private void upsertOrderItems(JsonNode itemsNode, java.util.UUID orderUuid) {
+        cloudJdbcTemplate.update("DELETE FROM order_item WHERE order_uuid_id = ?", orderUuid);
         if (itemsNode == null || itemsNode.isMissingNode() || !itemsNode.isArray()) return;
         for (JsonNode itemNode : itemsNode) {
             cloudJdbcTemplate.update(
                     """
                     INSERT INTO order_item (
-                        combo_group, instructions, product_id, quantity,
-                        total_price, unit_price, order_id
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                        uuid_id, combo_group, instructions, product_id, quantity,
+                        total_price, unit_price, order_uuid_id
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                     """,
+                    asUuid(itemNode.path("uuidId")),
                     asInteger(itemNode.path("comboGroup")),
                     asString(itemNode.path("instructions")),
                     asString(itemNode.path("productId")),
                     asInteger(itemNode.path("quantity")),
                     asBigDecimal(itemNode.path("totalPrice")),
                     asBigDecimal(itemNode.path("unitPrice")),
-                    orderId);
+                    orderUuid);
         }
     }
 
