@@ -2,12 +2,14 @@ package com.suresell.orders.application.usecase;
 import com.suresell.orders.domain.model.MenuCategory;
 import com.suresell.orders.domain.model.MenuProduct;
 import com.suresell.orders.domain.model.Order;
+import com.suresell.orders.domain.model.OrderItem;
 import com.suresell.orders.domain.model.OrderDeliveryTracking;
 import com.suresell.orders.domain.model.OrderStatus;
 import com.suresell.orders.infrastructure.persistence.MenuCategoryRepository;
 import com.suresell.orders.infrastructure.persistence.MenuProductRepository;
 import com.suresell.orders.infrastructure.persistence.OrderRepository;
 import com.suresell.orders.infrastructure.persistence.OrderDeliveryTrackingRepository;
+import com.suresell.orders.infrastructure.persistence.OrderItemRepository;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -28,6 +30,7 @@ public class CatalogSyncService {
     private final MenuProductRepository productRepository;
     private final OrderRepository orderRepository;
     private final OrderDeliveryTrackingRepository orderDeliveryTrackingRepository;
+    private final OrderItemRepository orderItemRepository;
 
     @Qualifier("cloudJdbcTemplate")
     private final Optional<JdbcTemplate> cloudJdbcTemplate;
@@ -49,48 +52,120 @@ public class CatalogSyncService {
     }
 
     @Transactional
+    public void syncOrdersFromCloud() {
+        if (cloudJdbcTemplate.isEmpty()) return;
+        try {
+            JdbcTemplate cloud = cloudJdbcTemplate.get();
+
+            // 1. Traer órdenes de la nube de las últimas 24 horas
+            String sqlOrders = "SELECT * FROM orders WHERE created_at > NOW() - INTERVAL '24 hours' ORDER BY created_at DESC";
+
+            cloud.query(sqlOrders, (rs) -> {
+                UUID uuid = UUID.fromString(rs.getString("uuid_id"));
+                
+                if (!orderRepository.existsById(uuid)) {
+                    log.info("Detectada orden externa nueva: {}. Importando...", uuid);
+                    
+                    Order newOrder = new Order();
+                    newOrder.setUuidId(uuid);
+                    newOrder.setIdOrder(rs.getLong("id_order"));
+                    newOrder.setPagerColor(rs.getString("pager_color"));
+                    newOrder.setPagerNumber(rs.getString("pager_number"));
+                    newOrder.setCreatedAt(rs.getTimestamp("created_at").toLocalDateTime());
+                    newOrder.setStatus(OrderStatus.valueOf(rs.getString("status")));
+                    newOrder.setPaymentMethod(rs.getString("payment_method"));
+                    newOrder.setSubtotal(rs.getBigDecimal("subtotal"));
+                    newOrder.setTotal(rs.getBigDecimal("total"));
+                    newOrder.setDiscountCode(rs.getString("discount_code"));
+                    newOrder.setDiscountPercentage(rs.getBigDecimal("discount_percentage"));
+                    newOrder.setDiscountAmount(rs.getBigDecimal("discount_amount"));
+                    newOrder.setIsPrinted(rs.getBoolean("is_printed"));
+                    newOrder.setSynced(true);
+                    newOrder.setNew(true);
+
+                    // Guardado inicial para que exista en el contexto de persistencia
+                    Order savedOrder = orderRepository.save(newOrder);
+
+                    // 2. Traer sus Items y Tracking usando el UUID como objeto
+                    importOrderItems(savedOrder, cloud);
+                    importOrderTracking(savedOrder, cloud);
+                    
+                    log.info("Orden externa {} y sus componentes importados.", uuid);
+                }
+            });
+        } catch (Exception e) {
+            log.error("Error sincronizando órdenes desde la nube: {}", e.getMessage());
+        }
+    }
+
+    private void importOrderItems(Order order, JdbcTemplate cloud) {
+        String sqlItems = "SELECT * FROM order_item WHERE order_uuid_id = ?";
+        cloud.query(sqlItems, (rs) -> {
+            OrderItem item = new OrderItem();
+            item.setUuidId(UUID.fromString(rs.getString("uuid_id")));
+            item.setOrderId(rs.getLong("order_id"));
+            item.setProductId(rs.getString("product_id"));
+            item.setQuantity(rs.getInt("quantity"));
+            item.setUnitPrice(rs.getBigDecimal("unit_price"));
+            item.setTotalPrice(rs.getBigDecimal("total_price"));
+            item.setInstructions(rs.getString("instructions"));
+            item.setComboGroup(rs.getInt("combo_group"));
+            
+            item.setOrder(order);
+            item.setNew(true);
+
+            orderItemRepository.save(item);
+            log.info("Item {} importado para orden {}", item.getUuidId(), order.getUuidId());
+        }, order.getUuidId());
+    }
+
+    private void importOrderTracking(Order order, JdbcTemplate cloud) {
+        String sqlTracking = "SELECT * FROM order_delivery_tracking WHERE order_id_uuid = ?";
+        cloud.query(sqlTracking, (rs) -> {
+            OrderDeliveryTracking dt = new OrderDeliveryTracking();
+            dt.setOrderIdUuid(order.getUuidId());
+            dt.setOrderId(rs.getLong("order_id"));
+            dt.setDelivered(rs.getBoolean("delivered"));
+            dt.setPagerReturned(rs.getBoolean("pager_returned"));
+            dt.setPreparationDurationSeconds(rs.getInt("preparation_duration_seconds"));
+            
+            dt.setOrder(order);
+            dt.setNew(true);
+
+            orderDeliveryTrackingRepository.save(dt);
+            log.info("Tracking importado para orden {}", order.getUuidId());
+        }, order.getUuidId());
+    }
+
+    @Transactional
     public void syncActiveOrdersTrackingFromCloud() {
         if (cloudJdbcTemplate.isEmpty()) return;
         try {
-            // 1. Obtener órdenes locales que están pagadas pero NO entregadas
             List<Order> activeOrders = orderRepository.findActiveOrdersWithItems(OrderStatus.pagado, false);
-            
             if (activeOrders.isEmpty()) return;
 
-            List<UUID> orderUuids = activeOrders.stream()
-                    .map(Order::getUuidId)
-                    .toList();
-
-            // 2. Consultar Postgres por UUIDs
+            List<UUID> orderUuids = activeOrders.stream().map(Order::getUuidId).toList();
             JdbcTemplate cloud = cloudJdbcTemplate.get();
-            String inSql = orderUuids.stream()
-                    .map(uuid -> "'" + uuid.toString() + "'")
-                    .collect(Collectors.joining(","));
-            
+            String inSql = orderUuids.stream().map(uuid -> "'" + uuid + "'").collect(Collectors.joining(","));
             String sql = "SELECT order_id_uuid, delivered, pager_returned, preparation_duration_seconds FROM order_delivery_tracking WHERE order_id_uuid IN (" + inSql + ") AND (delivered = true OR pager_returned = true)";
             
             cloud.query(sql, (rs) -> {
-                String uuidStr = rs.getString("order_id_uuid");
-                UUID orderUuid = UUID.fromString(uuidStr);
+                UUID orderUuid = UUID.fromString(rs.getString("order_id_uuid"));
                 boolean delivered = rs.getBoolean("delivered");
                 boolean pagerReturned = rs.getBoolean("pager_returned");
                 int duration = rs.getInt("preparation_duration_seconds");
 
-                // Buscamos por el UUID que es ahora la PK local también
                 orderDeliveryTrackingRepository.findById(orderUuid).ifPresent(localDt -> {
                     boolean changed = false;
-                    
                     if (Boolean.FALSE.equals(localDt.getDelivered()) && delivered) {
                         localDt.setDelivered(true);
                         localDt.setPreparationDurationSeconds(duration);
                         changed = true;
                     }
-                    
                     if (Boolean.FALSE.equals(localDt.getPagerReturned()) && pagerReturned) {
                         localDt.setPagerReturned(true);
                         changed = true;
                     }
-
                     if (changed) {
                         orderDeliveryTrackingRepository.save(localDt);
                         log.info("Orden con UUID {} actualizada desde nube (Delivered: {}, PagerReturned: {}).", 

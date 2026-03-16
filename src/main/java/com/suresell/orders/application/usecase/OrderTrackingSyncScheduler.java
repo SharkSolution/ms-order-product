@@ -18,6 +18,10 @@ public class OrderTrackingSyncScheduler {
      */
     @Scheduled(fixedDelayString = "${sync.tracking.fixed-delay-ms:7000}")
     public void syncOrderTracking() {
+        // 1. Jalamos órdenes nuevas (App Móvil)
+        catalogSyncService.syncOrdersFromCloud();
+        
+        // 2. Actualizamos tracking de las activas (Liberación de Pagers)
         catalogSyncService.syncActiveOrdersTrackingFromCloud();
     }
 }
