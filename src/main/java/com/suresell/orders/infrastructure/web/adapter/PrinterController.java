@@ -1,4 +1,7 @@
 package com.suresell.orders.infrastructure.web.adapter;
+
+import com.suresell.orders.application.dto.OrderResponseRecord;
+import com.suresell.orders.application.usecase.printer.PrintOrderTicketUseCase;
 import com.suresell.orders.application.usecase.printer.PrintTicketUseCase;
 import com.suresell.orders.domain.model.printer.PosTicketRequest;
 import com.suresell.orders.domain.port.out.PrinterPort;
@@ -6,14 +9,19 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+
 @RestController
 @RequestMapping("/api/printer")
 @Tag(name = "Printer", description = "Operaciones de impresión y hardware POS")
 public class PrinterController {
+
     private final PrintTicketUseCase printTicketUseCase;
+    private final PrintOrderTicketUseCase printOrderTicketUseCase;
     private final PrinterPort printerPort;
-    public PrinterController(PrintTicketUseCase printTicketUseCase, PrinterPort printerPort) {
+
+    public PrinterController(PrintTicketUseCase printTicketUseCase, PrintOrderTicketUseCase printOrderTicketUseCase, PrinterPort printerPort) {
         this.printTicketUseCase = printTicketUseCase;
+        this.printOrderTicketUseCase = printOrderTicketUseCase;
         this.printerPort = printerPort;
     }
     @PostMapping("/ticket")
@@ -53,5 +61,16 @@ public class PrinterController {
     public ResponseEntity<String> getStatus() {
         boolean ready = printerPort.isPrinterReady();
         return ready ? ResponseEntity.ok("ONLINE") : ResponseEntity.status(503).body("OFFLINE");
+    }
+
+    @PostMapping("/order-ticket")
+    @Operation(summary = "Imprimir ticket de orden/emergencia", description = "Imprime un ticket operativo de preparación usando el objeto OrderResponseRecord estándar.")
+    public ResponseEntity<String> printOrderTicket(@RequestBody OrderResponseRecord request) {
+        try {
+            printOrderTicketUseCase.execute(request);
+            return ResponseEntity.ok("Comanda enviada correctamente");
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().body("Error imprimiendo comanda: " + e.getMessage());
+        }
     }
 }

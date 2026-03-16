@@ -1,7 +1,9 @@
 package com.suresell.orders.infrastructure.printer;
+
 import org.springframework.stereotype.Component;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+
 @Component
 public class EscPosBuilder {
     private static final byte[] INIT = {27, 64};
@@ -38,5 +40,13 @@ public class EscPosBuilder {
     }
     public byte[] getOpenDrawerCommand() {
         return OPEN_DRAWER;
+    }
+
+    public void inverseOn(ByteArrayOutputStream bos) { write(bos, new byte[]{29, 66, 1}); }
+    public void inverseOff(ByteArrayOutputStream bos) { write(bos, new byte[]{29, 66, 0}); }
+
+    public void textSize(ByteArrayOutputStream bos, int widthMultiplier, int heightMultiplier) {
+        byte n = (byte) ((widthMultiplier << 4) | heightMultiplier);
+        write(bos, new byte[]{29, 33, n});
     }
 }

@@ -393,11 +393,17 @@ public class OrderHandler implements OrderPort {
     public void markAsPrinted(Long orderId) {
         Order order = orderRepositoryPort.findById(orderId)
                 .orElseThrow(() -> new RuntimeException("Orden no encontrada con ID: " + orderId));
-        
+
+        if (Boolean.TRUE.equals(order.getIsPrinted())) {
+            log.info("La orden #{} ya estaba marcada como IMPRESA. Se omite actualización.", orderId);
+            return;
+        }
+
         order.setIsPrinted(true);
         orderRepositoryPort.save(order);
-        
+
         log.info("Orden #{} marcada como IMPRESA físicamente (Contingencia).", orderId);
+
         saveOrderPrintedStatusToOutbox(order);
     }
 
@@ -421,10 +427,12 @@ public class OrderHandler implements OrderPort {
             outbox.setNextRetryAt(System.currentTimeMillis());
             outbox.setCreatedAt(System.currentTimeMillis());
             outbox.setUpdatedAt(System.currentTimeMillis());
-            
+
             syncOutboxRepositoryPort.save(outbox);
-        } catch (Exception e) {
-            log.error("Error encolando actualización de estado de impresión para orden {}: {}", order.getIdOrder(), e.getMessage());
+
+        } catch (JsonProcessingException e) {
+            log.error("Error critico serializando evento outbox para orden {}", order.getIdOrder());
+            throw new RuntimeException("Fallo al generar payload de sincronizacion", e);
         }
     }
 
