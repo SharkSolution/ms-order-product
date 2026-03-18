@@ -184,8 +184,17 @@ public class ExecuteDailyClosureUseCase {
         entity.setDifferenceAmount(totalDifference);
         entity.setTotalDifference(totalDifference); // revisar si mejor quitar
 
-        entity.setStatus(totalDifference.compareTo(BigDecimal.ZERO) > 0 ? "FALTANTE" : "OK");
-        entity.setStatusMessage(entity.getStatus().equals("OK") ? "Cierre Cuadrado" : "Faltante Detectado");
+        int comparison = totalDifference.compareTo(BigDecimal.ZERO);
+        if (comparison == 0) {
+            entity.setStatus("BALANCED");
+            entity.setStatusMessage("Cierre Cuadrado");
+        } else if (comparison > 0) {
+            entity.setStatus("POSITIVE_DIFF");
+            entity.setStatusMessage("Sobrante Detectado");
+        } else {
+            entity.setStatus("NEGATIVE_DIFF");
+            entity.setStatusMessage("Faltante Detectado");
+        }
         try {
             log.info("Datos del cierre a persistir: \n{}",
                     objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(entity));

@@ -62,6 +62,8 @@ public interface OrderRepository extends JpaRepository<Order, java.util.UUID> {
             LocalDateTime startOfDay,
             LocalDateTime endOfDay);
     Optional<Order> findFirstByOrderByCreatedAtAsc();
+    @Query("SELECT MAX(o.idOrder) FROM Order o")
+    Optional<Long> findMaxIdOrder();
     @Query("SELECT MIN(o.createdAt) FROM Order o")
     Optional<LocalDateTime> findMinCreatedAt();
     @Query("SELECT DISTINCT o FROM Order o LEFT JOIN FETCH o.items LEFT JOIN FETCH o.deliveryTracking")

@@ -66,6 +66,11 @@ public class OrderRepositoryAdapter implements OrderRepositoryPort {
         return orderRepository.findFirstByOrderByCreatedAtAsc();
     }
     @Override
+    public Optional<Long> findMaxIdOrder() {
+        return orderRepository.findMaxIdOrder();
+    }
+
+    @Override
     public Optional<LocalDateTime> findMinCreatedAt() {
         return orderRepository.findMinCreatedAt();
     }

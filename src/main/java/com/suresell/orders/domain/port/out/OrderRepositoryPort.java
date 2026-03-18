@@ -26,6 +26,7 @@ public interface OrderRepositoryPort {
             OrderStatus status, LocalDateTime startOfDay, LocalDateTime endOfDay);
     Optional<Order> findFirstByOrderByCreatedAtAsc();
     Optional<LocalDateTime> findMinCreatedAt();
+    Optional<Long> findMaxIdOrder();
     List<Order> findAllWithItems();
     Page<Order> findAllOrdersOnly(String pagerColor, String pagerNumber, Long idOrder, Pageable pageable);
     List<Order> findOrdersAfter(Long afterId, Pageable pageable);

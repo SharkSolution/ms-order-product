@@ -21,6 +21,8 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Collectors;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 @Service
 @RequiredArgsConstructor
@@ -31,11 +33,12 @@ public class CatalogSyncService {
     private final OrderRepository orderRepository;
     private final OrderDeliveryTrackingRepository orderDeliveryTrackingRepository;
     private final OrderItemRepository orderItemRepository;
+    private final TransactionTemplate transactionTemplate;
 
     @Qualifier("cloudJdbcTemplate")
     private final Optional<JdbcTemplate> cloudJdbcTemplate;
 
-    @Transactional
+    
     public void syncCatalogFromCloud() {
         if (cloudJdbcTemplate.isEmpty()) {
             log.warn("Sincronización de catálogo saltada: Cloud DataSource no está habilitado.");
@@ -51,7 +54,7 @@ public class CatalogSyncService {
         }
     }
 
-    @Transactional
+    
     public void syncOrdersFromCloud() {
         if (cloudJdbcTemplate.isEmpty()) return;
         try {
@@ -62,35 +65,53 @@ public class CatalogSyncService {
 
             cloud.query(sqlOrders, (rs) -> {
                 UUID uuid = UUID.fromString(rs.getString("uuid_id"));
+                Long cloudIdOrder = rs.getLong("id_order");
                 
                 if (!orderRepository.existsById(uuid)) {
-                    log.info("Detectada orden externa nueva: {}. Importando...", uuid);
-                    
-                    Order newOrder = new Order();
-                    newOrder.setUuidId(uuid);
-                    newOrder.setIdOrder(rs.getLong("id_order"));
-                    newOrder.setPagerColor(rs.getString("pager_color"));
-                    newOrder.setPagerNumber(rs.getString("pager_number"));
-                    newOrder.setCreatedAt(rs.getTimestamp("created_at").toLocalDateTime());
-                    newOrder.setStatus(OrderStatus.valueOf(rs.getString("status")));
-                    newOrder.setPaymentMethod(rs.getString("payment_method"));
-                    newOrder.setSubtotal(rs.getBigDecimal("subtotal"));
-                    newOrder.setTotal(rs.getBigDecimal("total"));
-                    newOrder.setDiscountCode(rs.getString("discount_code"));
-                    newOrder.setDiscountPercentage(rs.getBigDecimal("discount_percentage"));
-                    newOrder.setDiscountAmount(rs.getBigDecimal("discount_amount"));
-                    newOrder.setIsPrinted(rs.getBoolean("is_printed"));
-                    newOrder.setSynced(true);
-                    newOrder.setNew(true);
+                    transactionTemplate.executeWithoutResult(status -> {
+                        try {
+                            log.info("Detectada orden externa nueva: {}. Importando...", uuid);
+                            
+                            Order newOrder = new Order();
+                            newOrder.setUuidId(uuid);
+                            
+                            // Verificar colisión de id_order
+                            if (cloudIdOrder != null && orderRepository.findByIdOrder(cloudIdOrder).isPresent()) {
+                                Long maxId = orderRepository.findMaxIdOrder().orElse(0L);
+                                Long nextId = maxId + 1;
+                                log.warn("Colisión de ID detectada para id_order cloud: {}. Asignando nuevo ID local: {}.", cloudIdOrder, nextId);
+                                newOrder.setIdOrder(nextId);
+                            } else {
+                                newOrder.setIdOrder(cloudIdOrder);
+                            }
 
-                    // Guardado inicial para que exista en el contexto de persistencia
-                    Order savedOrder = orderRepository.save(newOrder);
+                            newOrder.setPagerColor(rs.getString("pager_color"));
+                            newOrder.setPagerNumber(rs.getString("pager_number"));
+                            newOrder.setCreatedAt(rs.getTimestamp("created_at").toLocalDateTime());
+                            newOrder.setStatus(OrderStatus.valueOf(rs.getString("status")));
+                            newOrder.setPaymentMethod(rs.getString("payment_method"));
+                            newOrder.setSubtotal(rs.getBigDecimal("subtotal"));
+                            newOrder.setTotal(rs.getBigDecimal("total"));
+                            newOrder.setDiscountCode(rs.getString("discount_code"));
+                            newOrder.setDiscountPercentage(rs.getBigDecimal("discount_percentage"));
+                            newOrder.setDiscountAmount(rs.getBigDecimal("discount_amount"));
+                            newOrder.setIsPrinted(rs.getBoolean("is_printed"));
+                            newOrder.setSynced(true);
+                            newOrder.setNew(true);
 
-                    // 2. Traer sus Items y Tracking usando el UUID como objeto
-                    importOrderItems(savedOrder, cloud);
-                    importOrderTracking(savedOrder, cloud);
-                    
-                    log.info("Orden externa {} y sus componentes importados.", uuid);
+                            Order savedOrder = orderRepository.save(newOrder);
+
+
+
+                            importOrderItems(savedOrder, cloud);
+                            importOrderTracking(savedOrder, cloud);
+                            
+                            log.info("Orden externa {} y sus componentes importados con id_order local {}.", uuid, savedOrder.getIdOrder());
+                        } catch (Exception ex) {
+                            status.setRollbackOnly();
+                            log.error("Error importando orden individual {}: {}", uuid, ex.getMessage(), ex);
+                        }
+                    });
                 }
             });
         } catch (Exception e) {
@@ -103,7 +124,7 @@ public class CatalogSyncService {
         cloud.query(sqlItems, (rs) -> {
             OrderItem item = new OrderItem();
             item.setUuidId(UUID.fromString(rs.getString("uuid_id")));
-            item.setOrderId(rs.getLong("order_id"));
+            item.setOrderId(order.getIdOrder());
             item.setProductId(rs.getString("product_id"));
             item.setQuantity(rs.getInt("quantity"));
             item.setUnitPrice(rs.getBigDecimal("unit_price"));
@@ -124,7 +145,7 @@ public class CatalogSyncService {
         cloud.query(sqlTracking, (rs) -> {
             OrderDeliveryTracking dt = new OrderDeliveryTracking();
             dt.setOrderIdUuid(order.getUuidId());
-            dt.setOrderId(rs.getLong("order_id"));
+            dt.setOrderId(order.getIdOrder());
             dt.setDelivered(rs.getBoolean("delivered"));
             dt.setPagerReturned(rs.getBoolean("pager_returned"));
             dt.setPreparationDurationSeconds(rs.getInt("preparation_duration_seconds"));
@@ -137,7 +158,7 @@ public class CatalogSyncService {
         }, order.getUuidId());
     }
 
-    @Transactional
+    
     public void syncActiveOrdersTrackingFromCloud() {
         if (cloudJdbcTemplate.isEmpty()) return;
         try {
@@ -155,23 +176,29 @@ public class CatalogSyncService {
                 boolean pagerReturned = rs.getBoolean("pager_returned");
                 int duration = rs.getInt("preparation_duration_seconds");
 
-                orderDeliveryTrackingRepository.findById(orderUuid).ifPresent(localDt -> {
-                    boolean changed = false;
-                    if (Boolean.FALSE.equals(localDt.getDelivered()) && delivered) {
-                        localDt.setDelivered(true);
-                        localDt.setPreparationDurationSeconds(duration);
-                        changed = true;
-                    }
-                    if (Boolean.FALSE.equals(localDt.getPagerReturned()) && pagerReturned) {
-                        localDt.setPagerReturned(true);
-                        changed = true;
-                    }
-                    if (changed) {
-                        orderDeliveryTrackingRepository.save(localDt);
-                        log.info("Orden con UUID {} actualizada desde nube (Delivered: {}, PagerReturned: {}).", 
-                                orderUuid, localDt.getDelivered(), localDt.getPagerReturned());
-                    }
-                });
+                try {
+                    transactionTemplate.executeWithoutResult(status -> {
+                        orderDeliveryTrackingRepository.findById(orderUuid).ifPresent(localDt -> {
+                            boolean changed = false;
+                            if (Boolean.FALSE.equals(localDt.getDelivered()) && delivered) {
+                                localDt.setDelivered(true);
+                                localDt.setPreparationDurationSeconds(duration);
+                                changed = true;
+                            }
+                            if (Boolean.FALSE.equals(localDt.getPagerReturned()) && pagerReturned) {
+                                localDt.setPagerReturned(true);
+                                changed = true;
+                            }
+                            if (changed) {
+                                orderDeliveryTrackingRepository.save(localDt);
+                                log.info("Orden con UUID {} actualizada desde nube (Delivered: {}, PagerReturned: {}).", 
+                                        orderUuid, localDt.getDelivered(), localDt.getPagerReturned());
+                            }
+                        });
+                    });
+                } catch (Exception e) {
+                    log.error("Error sincronizando tracking para orden UUID {}: {}", orderUuid, e.getMessage());
+                }
             });
         } catch (Exception e) {
             log.error("Error en sincronización selectiva de tracking: {}", e.getMessage());
@@ -188,11 +215,17 @@ public class CatalogSyncService {
             return cat;
         });
         for (MenuCategory cloudCat : cloudCategories) {
-            MenuCategory localCat = categoryRepository.findById(cloudCat.getIdCategory())
-                    .orElse(new MenuCategory());
-            localCat.setIdCategory(cloudCat.getIdCategory());
-            localCat.setNameCategory(cloudCat.getNameCategory());
-            categoryRepository.save(localCat);
+            try {
+                transactionTemplate.executeWithoutResult(status -> {
+                    MenuCategory localCat = categoryRepository.findById(cloudCat.getIdCategory())
+                            .orElse(new MenuCategory());
+                    localCat.setIdCategory(cloudCat.getIdCategory());
+                    localCat.setNameCategory(cloudCat.getNameCategory());
+                    categoryRepository.save(localCat);
+                });
+            } catch (Exception e) {
+                log.error("Error sincronizando categoría {}: {}", cloudCat.getIdCategory(), e.getMessage());
+            }
         }
         log.info("Sincronizadas {} categorías.", cloudCategories.size());
     }
@@ -215,17 +248,23 @@ public class CatalogSyncService {
             return prod;
         });
         for (MenuProduct cloudProd : cloudProducts) {
-            MenuProduct localProd = productRepository.findById(cloudProd.getIdProduct())
-                    .orElse(new MenuProduct());
-            localProd.setIdProduct(cloudProd.getIdProduct());
-            localProd.setNameProduct(cloudProd.getNameProduct());
-            localProd.setPrice(cloudProd.getPrice());
-            localProd.setActive(cloudProd.getActive());
-            if (cloudProd.getCategory() != null) {
-                categoryRepository.findById(cloudProd.getCategory().getIdCategory())
-                        .ifPresent(localProd::setCategory);
+            try {
+                transactionTemplate.executeWithoutResult(status -> {
+                    MenuProduct localProd = productRepository.findById(cloudProd.getIdProduct())
+                            .orElse(new MenuProduct());
+                    localProd.setIdProduct(cloudProd.getIdProduct());
+                    localProd.setNameProduct(cloudProd.getNameProduct());
+                    localProd.setPrice(cloudProd.getPrice());
+                    localProd.setActive(cloudProd.getActive());
+                    if (cloudProd.getCategory() != null) {
+                        categoryRepository.findById(cloudProd.getCategory().getIdCategory())
+                                .ifPresent(localProd::setCategory);
+                    }
+                    productRepository.save(localProd);
+                });
+            } catch (Exception e) {
+                log.error("Error sincronizando producto {}: {}", cloudProd.getIdProduct(), e.getMessage());
             }
-            productRepository.save(localProd);
         }
         log.info("Sincronizados {} productos.", cloudProducts.size());
     }
