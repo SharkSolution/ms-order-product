@@ -2,17 +2,46 @@ server:
   port: 8081
 spring:
   datasource:
-    url: jdbc:postgresql://database-surresell.c740uem2quei.us-east-2.rds.amazonaws.com:5432/pos_db
-    username: postgres
-    password: Sharkcol2025*
+    driver-class-name: org.sqlite.JDBC
+    url: jdbc:sqlite:./data/ms_order_product.db
+    hikari:
+      maximum-pool-size: 1
+      minimum-idle: 1
   jpa:
     properties:
-      hibernate.format_sql: true
+      hibernate:
+        dialect: org.hibernate.community.dialect.SQLiteDialect
+        format_sql: true
+        use_sql_comments: true
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+logging:
+  level:
+    com.suresell.order.serivices: INFO
   application:
     name: ms-order-product
-products:
-  service:
-    url: http://ms-products-and-categories-env.eba-df2vkatt.us-east-2.elasticbeanstalk.com
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
 coupon:
   admin:
     password: Admin2025*
+sync:
+  scheduler:
+    fixed-delay-ms: 5000
+    batch-size: 20
+  cloud:
+    enabled: true
+    datasource:
+      driver-class-name: org.postgresql.Driver
+      url: jdbc:postgresql://aws-1-us-east-1.pooler.supabase.com:5432/postgres
+      username: postgres.iwlbtkqszbkugfxdpzyk
+      password: w9Rz3wcIeT3i184t
+      hikari:
+        maximum-pool-size: 4
+        minimum-idle: 1
+        idle-timeout: 30000
+        max-lifetime: 1800000
