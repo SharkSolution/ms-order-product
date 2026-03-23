@@ -102,7 +102,7 @@ public class DailyClosure implements Persistable<UUID> {
     private String cashCountAudit;
 
     @Column(name = "sales_of_day", precision = 15, scale = 2)
-    private BigDecimal salesDay;
+    private BigDecimal totalSales;
 
     //Campos para manter guardado offline
 

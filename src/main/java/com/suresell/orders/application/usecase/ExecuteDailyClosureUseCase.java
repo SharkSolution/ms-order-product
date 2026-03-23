@@ -61,6 +61,11 @@ public class ExecuteDailyClosureUseCase {
 
         Map<String, BigDecimal> expected = parseTotals(totals);
 
+        BigDecimal pureSales = expected.getOrDefault("CASH", BigDecimal.ZERO)
+                .add(expected.getOrDefault("CARD", BigDecimal.ZERO))
+                .add(expected.getOrDefault("NEQUI", BigDecimal.ZERO))
+                .add(expected.getOrDefault("QR", BigDecimal.ZERO));
+
         BigDecimal previousBase = closureRepository.findFirstByOrderByClosingTimeDesc()
                 .map(DailyClosure::getBaseBalanceForNextDay)
                 .orElse(BigDecimal.ZERO);
@@ -83,7 +88,7 @@ public class ExecuteDailyClosureUseCase {
         }
 
         DailyClosure savedClosure = saveClosureAudit(request, expected, totalDifference, openingTime, closingTime,
-                userName, calculatedTotalCash, calculatedBase, diffCash, diffCard, diffNequi, diffQr, previousBase);
+                userName, calculatedTotalCash, calculatedBase, diffCash, diffCard, diffNequi, diffQr, previousBase, pureSales);
 
         saveClosureToOutbox(savedClosure);
 
@@ -133,7 +138,9 @@ public class ExecuteDailyClosureUseCase {
                                   BigDecimal diffCard,
                                   BigDecimal diffNequi,
                                   BigDecimal diffQr,
-                                  BigDecimal previousBase) {
+                                  BigDecimal previousBase,
+                                  BigDecimal pureSales
+                                          ) {
 
         DailyClosure entity = new DailyClosure();
         entity.setId(UUID.randomUUID());
@@ -143,6 +150,7 @@ public class ExecuteDailyClosureUseCase {
         entity.setUserName(userName);
         entity.setNotes(request.notes());
         entity.setBaseBalanceForNextDay(calculatedBase != null ? calculatedBase : BigDecimal.ZERO);
+        entity.setTotalSales(pureSales);
 
         try {
             if (request.cashDetail() != null) {
