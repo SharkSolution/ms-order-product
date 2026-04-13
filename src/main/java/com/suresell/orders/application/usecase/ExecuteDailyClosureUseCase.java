@@ -32,15 +32,18 @@ public class ExecuteDailyClosureUseCase {
     private final CashflowCalculator cashflowCalculator;
     private final ObjectMapper objectMapper;
     private final SyncOutboxRepositoryPort syncOutboxRepositoryPort;
+    private final DailyPaymentRecordService dailyPaymentRecordService;
 
     public ExecuteDailyClosureUseCase(OrderRepository orderRepository, DailyClosureRepository closureRepository,
                                     CashflowCalculator cashflowCalculator, ObjectMapper objectMapper,
-                                    SyncOutboxRepositoryPort syncOutboxRepositoryPort) {
+                                    SyncOutboxRepositoryPort syncOutboxRepositoryPort,
+                                    DailyPaymentRecordService dailyPaymentRecordService) {
         this.orderRepository = orderRepository;
         this.closureRepository = closureRepository;
         this.cashflowCalculator = cashflowCalculator;
         this.objectMapper = objectMapper;
         this.syncOutboxRepositoryPort = syncOutboxRepositoryPort;
+        this.dailyPaymentRecordService = dailyPaymentRecordService;
     }
 
     @Transactional
@@ -73,10 +76,18 @@ public class ExecuteDailyClosureUseCase {
 
         expected.put("CASH", trueExpectedCash);
 
+        // Obtener el valor QR registrado por admin, si no existe usar el del request (fallback manual)
+        BigDecimal countedQr = dailyPaymentRecordService.getQrAmountForDate(closingTime.toLocalDate())
+                .orElseGet(() -> {
+                    log.info("No se encontró registro de QR del admin, usando valor manual del cajero: {}", request.countedQr());
+                    return request.countedQr() != null ? request.countedQr() : BigDecimal.ZERO;
+                });
+        log.info("Valor QR a usar en cierre: {}", countedQr);
+
         BigDecimal diffCash = calculatedTotalCash.subtract(trueExpectedCash);
         BigDecimal diffCard = request.countedCard().subtract(expected.getOrDefault("CARD", BigDecimal.ZERO));
         BigDecimal diffNequi = request.countedNequi().subtract(expected.getOrDefault("NEQUI", BigDecimal.ZERO));
-        BigDecimal diffQr = request.countedQr().subtract(expected.getOrDefault("QR", BigDecimal.ZERO));
+        BigDecimal diffQr = countedQr.subtract(expected.getOrDefault("QR", BigDecimal.ZERO));
 
         BigDecimal totalDifference = diffCash.add(diffCard).add(diffNequi).add(diffQr);
 
@@ -86,7 +97,7 @@ public class ExecuteDailyClosureUseCase {
         }
 
         DailyClosure savedClosure = saveClosureAudit(request, expected, totalDifference, openingTime, closingTime,
-                userName, calculatedTotalCash, calculatedBase, diffCash, diffCard, diffNequi, diffQr, previousBase, pureSales);
+                userName, calculatedTotalCash, calculatedBase, diffCash, diffCard, diffNequi, diffQr, previousBase, pureSales, countedQr);
 
         saveClosureToOutbox(savedClosure);
 
@@ -137,7 +148,8 @@ public class ExecuteDailyClosureUseCase {
                                   BigDecimal diffNequi,
                                   BigDecimal diffQr,
                                   BigDecimal previousBase,
-                                  BigDecimal pureSales
+                                  BigDecimal pureSales,
+                                  BigDecimal countedQr
                                           ) {
 
         DailyClosure entity = new DailyClosure();
@@ -163,7 +175,7 @@ public class ExecuteDailyClosureUseCase {
         entity.setTotalCountedCash(calculatedTotalCash != null ? calculatedTotalCash : BigDecimal.ZERO);
         entity.setTotalCountedCard(request.countedCard() != null ? request.countedCard() : BigDecimal.ZERO);
         entity.setTotalCountedNequi(request.countedNequi() != null ? request.countedNequi() : BigDecimal.ZERO);
-        entity.setTotalCountedQr(request.countedQr() != null ? request.countedQr() : BigDecimal.ZERO);
+        entity.setTotalCountedQr(countedQr != null ? countedQr : BigDecimal.ZERO);
 
         BigDecimal totalCounted = entity.getTotalCountedCash()
                 .add(entity.getTotalCountedCard())

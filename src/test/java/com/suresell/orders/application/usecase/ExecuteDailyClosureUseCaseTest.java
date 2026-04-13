@@ -3,6 +3,7 @@ package com.suresell.orders.application.usecase;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
+import static org.mockito.Mockito.lenient;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.json.JsonMapper;
@@ -14,6 +15,7 @@ import com.suresell.orders.domain.model.SyncOutbox;
 import com.suresell.orders.domain.port.out.SyncOutboxRepositoryPort;
 import com.suresell.orders.domain.service.CashflowCalculator;
 import com.suresell.orders.infrastructure.persistence.DailyClosureRepository;
+import com.suresell.orders.infrastructure.persistence.DailyPaymentRecordRepository;
 import com.suresell.orders.infrastructure.persistence.OrderRepository;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -27,6 +29,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -44,8 +47,12 @@ class ExecuteDailyClosureUseCaseTest {
     @Mock
     private SyncOutboxRepositoryPort syncOutboxRepositoryPort;
 
+    @Mock
+    private DailyPaymentRecordRepository dailyPaymentRecordRepository;
+
     private CashflowCalculator cashflowCalculator;
     private ObjectMapper objectMapper;
+    private DailyPaymentRecordService dailyPaymentRecordService;
     private ExecuteDailyClosureUseCase useCase;
 
     @Captor
@@ -61,13 +68,19 @@ class ExecuteDailyClosureUseCaseTest {
     void setUp() {
         cashflowCalculator = new CashflowCalculator();
         objectMapper = JsonMapper.builder().findAndAddModules().build();
+        dailyPaymentRecordService = new DailyPaymentRecordService(dailyPaymentRecordRepository);
         useCase = new ExecuteDailyClosureUseCase(
                 orderRepository,
                 closureRepository,
                 cashflowCalculator,
                 objectMapper,
-                syncOutboxRepositoryPort
+                syncOutboxRepositoryPort,
+                dailyPaymentRecordService
         );
+        // Default: no admin QR record (fallback to manual input)
+        // Using lenient() to allow overriding in specific tests
+        lenient().when(dailyPaymentRecordRepository.findQrByDate(any(LocalDate.class)))
+                .thenReturn(Optional.empty());
     }
 
     private CashCountDetail createCashDetail(int bill50k, int bill20k, int bill10k, int bill5k,
@@ -106,6 +119,22 @@ class ExecuteDailyClosureUseCaseTest {
             totals.add(new Object[]{"QR", qr});
         }
         return totals;
+    }
+
+    private void mockNoAdminQrRecord() {
+        when(dailyPaymentRecordRepository.findQrByDate(any(LocalDate.class)))
+                .thenReturn(Optional.empty());
+    }
+
+    private com.suresell.orders.domain.model.DailyPaymentRecord createAdminQrRecord(BigDecimal amount) {
+        com.suresell.orders.domain.model.DailyPaymentRecord record = new com.suresell.orders.domain.model.DailyPaymentRecord();
+        record.setId(java.util.UUID.randomUUID());
+        record.setRecordDate(LocalDate.now());
+        record.setPaymentMethod("QR");
+        record.setAmount(amount);
+        record.setRegisteredBy("Admin");
+        record.setCreatedAt(LocalDateTime.now());
+        return record;
     }
 
     @Nested
@@ -619,6 +648,158 @@ class ExecuteDailyClosureUseCaseTest {
             assertEquals("DAILY_CLOSURE", savedOutbox.getAggregateType());
             assertEquals("CLOSURE_CREATED", savedOutbox.getEventType());
             assertEquals("PENDING", savedOutbox.getStatus());
+        }
+    }
+
+    @Nested
+    @DisplayName("Admin QR Record Integration Tests")
+    class AdminQrRecordIntegrationTests {
+
+        @Test
+        @DisplayName("Should use admin QR value when available instead of request value")
+        void shouldUseAdminQrValueWhenAvailable() {
+            // Arrange: Admin registró 100,000 en QR, cajero envía 50,000 (se ignora)
+            CashCountDetail cashDetail = createCashDetail(0, 0, 0, 0, 0, 0, 0);
+            ExecuteClosureRequest request = createRequest(
+                    cashDetail,
+                    BigDecimal.ZERO,
+                    BigDecimal.ZERO,
+                    BigDecimal.valueOf(50000) // Este valor debe ser ignorado
+            );
+
+            // Mock: Admin registró 100,000 en QR
+            when(dailyPaymentRecordRepository.findQrByDate(any(LocalDate.class)))
+                    .thenReturn(Optional.of(createAdminQrRecord(BigDecimal.valueOf(100000))));
+
+            when(closureRepository.findLastClosingTimeByUser("seller-001"))
+                    .thenReturn(Optional.of(LocalDateTime.now().minusHours(8)));
+            when(orderRepository.sumTotalsByPaymentMethodAndSeller(any(LocalDateTime.class), any(LocalDateTime.class)))
+                    .thenReturn(createSalesTotals(null, null, null, BigDecimal.valueOf(100000)));
+            when(closureRepository.findFirstByOrderByClosingTimeDesc())
+                    .thenReturn(Optional.empty());
+            when(closureRepository.save(any(DailyClosure.class)))
+                    .thenAnswer(inv -> inv.getArgument(0));
+            when(syncOutboxRepositoryPort.save(any(SyncOutbox.class)))
+                    .thenAnswer(inv -> inv.getArgument(0));
+
+            // Act
+            CashierClosureResponse response = useCase.execute(request, "TestUser");
+
+            // Assert
+            assertEquals("SUCCESS", response.status());
+            assertTrue(response.shortages().isEmpty());
+
+            verify(closureRepository).save(closureCaptor.capture());
+            DailyClosure savedClosure = closureCaptor.getValue();
+            // Debe usar el valor del admin (100,000), no el del request (50,000)
+            assertEquals(BigDecimal.valueOf(100000), savedClosure.getTotalCountedQr());
+        }
+
+        @Test
+        @DisplayName("Should fallback to request value when no admin QR record exists")
+        void shouldFallbackToRequestValueWhenNoAdminRecord() {
+            // Arrange: No hay registro de admin, cajero envía 80,000
+            CashCountDetail cashDetail = createCashDetail(0, 0, 0, 0, 0, 0, 0);
+            ExecuteClosureRequest request = createRequest(
+                    cashDetail,
+                    BigDecimal.ZERO,
+                    BigDecimal.ZERO,
+                    BigDecimal.valueOf(80000) // Este valor se debe usar
+            );
+
+            // Mock: No hay registro de admin (ya configurado por defecto en setUp)
+
+            when(closureRepository.findLastClosingTimeByUser("seller-001"))
+                    .thenReturn(Optional.of(LocalDateTime.now().minusHours(8)));
+            when(orderRepository.sumTotalsByPaymentMethodAndSeller(any(LocalDateTime.class), any(LocalDateTime.class)))
+                    .thenReturn(createSalesTotals(null, null, null, BigDecimal.valueOf(80000)));
+            when(closureRepository.findFirstByOrderByClosingTimeDesc())
+                    .thenReturn(Optional.empty());
+            when(closureRepository.save(any(DailyClosure.class)))
+                    .thenAnswer(inv -> inv.getArgument(0));
+            when(syncOutboxRepositoryPort.save(any(SyncOutbox.class)))
+                    .thenAnswer(inv -> inv.getArgument(0));
+
+            // Act
+            CashierClosureResponse response = useCase.execute(request, "TestUser");
+
+            // Assert
+            assertEquals("SUCCESS", response.status());
+
+            verify(closureRepository).save(closureCaptor.capture());
+            DailyClosure savedClosure = closureCaptor.getValue();
+            // Debe usar el valor del request (80,000)
+            assertEquals(BigDecimal.valueOf(80000), savedClosure.getTotalCountedQr());
+        }
+
+        @Test
+        @DisplayName("Should detect QR shortage using admin value")
+        void shouldDetectQrShortageUsingAdminValue() {
+            // Arrange: Admin registró 70,000 pero se esperaban 100,000 en ventas QR
+            CashCountDetail cashDetail = createCashDetail(0, 0, 0, 0, 0, 0, 0);
+            ExecuteClosureRequest request = createRequest(
+                    cashDetail,
+                    BigDecimal.ZERO,
+                    BigDecimal.ZERO,
+                    BigDecimal.valueOf(100000) // Ignorado
+            );
+
+            // Mock: Admin registró solo 70,000
+            when(dailyPaymentRecordRepository.findQrByDate(any(LocalDate.class)))
+                    .thenReturn(Optional.of(createAdminQrRecord(BigDecimal.valueOf(70000))));
+
+            when(closureRepository.findLastClosingTimeByUser("seller-001"))
+                    .thenReturn(Optional.of(LocalDateTime.now().minusHours(8)));
+            when(orderRepository.sumTotalsByPaymentMethodAndSeller(any(LocalDateTime.class), any(LocalDateTime.class)))
+                    .thenReturn(createSalesTotals(null, null, null, BigDecimal.valueOf(100000)));
+            when(closureRepository.findFirstByOrderByClosingTimeDesc())
+                    .thenReturn(Optional.empty());
+            when(closureRepository.save(any(DailyClosure.class)))
+                    .thenAnswer(inv -> inv.getArgument(0));
+            when(syncOutboxRepositoryPort.save(any(SyncOutbox.class)))
+                    .thenAnswer(inv -> inv.getArgument(0));
+
+            // Act
+            CashierClosureResponse response = useCase.execute(request, "TestUser");
+
+            // Assert
+            assertEquals("SHORTAGE", response.status());
+            assertTrue(response.shortages().containsKey("QR"));
+            assertEquals(BigDecimal.valueOf(-30000), response.shortages().get("QR"));
+        }
+
+        @Test
+        @DisplayName("Should handle null QR value in request when using fallback")
+        void shouldHandleNullQrValueInRequestWhenFallback() {
+            // Arrange: No admin record, request tiene QR null
+            CashCountDetail cashDetail = createCashDetail(1, 0, 0, 0, 0, 0, 0); // 50,000 cash
+            ExecuteClosureRequest request = createRequest(
+                    cashDetail,
+                    BigDecimal.ZERO,
+                    BigDecimal.ZERO,
+                    null // QR es null
+            );
+
+            when(closureRepository.findLastClosingTimeByUser("seller-001"))
+                    .thenReturn(Optional.of(LocalDateTime.now().minusHours(8)));
+            when(orderRepository.sumTotalsByPaymentMethodAndSeller(any(LocalDateTime.class), any(LocalDateTime.class)))
+                    .thenReturn(createSalesTotals(BigDecimal.valueOf(50000), null, null, null));
+            when(closureRepository.findFirstByOrderByClosingTimeDesc())
+                    .thenReturn(Optional.empty());
+            when(closureRepository.save(any(DailyClosure.class)))
+                    .thenAnswer(inv -> inv.getArgument(0));
+            when(syncOutboxRepositoryPort.save(any(SyncOutbox.class)))
+                    .thenAnswer(inv -> inv.getArgument(0));
+
+            // Act
+            CashierClosureResponse response = useCase.execute(request, "TestUser");
+
+            // Assert: Debe usar BigDecimal.ZERO como fallback
+            assertEquals("SUCCESS", response.status());
+
+            verify(closureRepository).save(closureCaptor.capture());
+            DailyClosure savedClosure = closureCaptor.getValue();
+            assertEquals(BigDecimal.ZERO, savedClosure.getTotalCountedQr());
         }
     }
 }
