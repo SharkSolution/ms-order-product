@@ -50,12 +50,10 @@ public class ExecuteDailyClosureUseCase {
 
         LocalDateTime closingTime = LocalDateTime.now(BOGOTA_ZONE);
         LocalDateTime openingTime = getOpeningTime(request.sellerId());
-        long startEpochMillis = openingTime.atZone(BOGOTA_ZONE).toInstant().toEpochMilli();
-        long endEpochMillis = closingTime.atZone(BOGOTA_ZONE).toInstant().toEpochMilli();
 
         List<Object[]> totals = orderRepository.sumTotalsByPaymentMethodAndSeller(
-                startEpochMillis,
-                endEpochMillis
+                openingTime,
+                closingTime
         );
         log.info("totales: {}", totals);
 

@@ -461,6 +461,7 @@ public class OrderHandler implements OrderPort {
             outbox.setNextRetryAt(System.currentTimeMillis());
             outbox.setCreatedAt(System.currentTimeMillis());
             outbox.setUpdatedAt(System.currentTimeMillis());
+
             syncOutboxRepositoryPort.save(outbox);
         } catch (JsonProcessingException e) {
             log.error("Error critico serializando evento outbox para orden {}", order.getIdOrder());

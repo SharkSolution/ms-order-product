@@ -87,13 +87,11 @@ public interface OrderRepository extends JpaRepository<Order, java.util.UUID> {
     @Modifying
     @Query("UPDATE Order o SET o.synced = true WHERE o.idOrder = :orderId")
     void markOrderAsSynced(@Param("orderId") Long orderId);
-  @Query(value = "SELECT payment_method, SUM(total) " +
-          "FROM orders " +
-          "WHERE created_at BETWEEN :startTime AND :endTime " +
-          "GROUP BY payment_method",
-          nativeQuery = true)
+  @Query("SELECT o.paymentMethod, SUM(o.total) FROM Order o " +
+          "WHERE o.createdAt BETWEEN :startTime AND :endTime " +
+          "GROUP BY o.paymentMethod")
   List<Object[]> sumTotalsByPaymentMethodAndSeller(
-          @Param("startTime") Long startTime,
-          @Param("endTime") Long endTimex
+          @Param("startTime") LocalDateTime startTime,
+          @Param("endTime") LocalDateTime endTime
   );
 }
