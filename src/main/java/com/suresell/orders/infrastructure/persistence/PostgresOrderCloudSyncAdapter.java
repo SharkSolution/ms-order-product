@@ -61,6 +61,9 @@ public class PostgresOrderCloudSyncAdapter implements OrderCloudSyncPort {
                         // Para edit_history seguimos usando order_id (bigint) según esquema
                         upsertEditHistory(root.path("history"));
                         break;
+                    case "DAILY_PAYMENT_RECORD_SAVED":
+                        upsertDailyPaymentRecord(root.path("record"));
+                        break;
                     default:
                         log.warn("Evento de sincronización no reconocido: {}", eventType);
                 }
@@ -304,6 +307,29 @@ public class PostgresOrderCloudSyncAdapter implements OrderCloudSyncPort {
                 asString(n.path("productId")), asString(n.path("productName")), asInteger(n.path("oldQuantity")),
                 asInteger(n.path("newQuantity")), asBigDecimal(n.path("oldTotal")),
                 asBigDecimal(n.path("newTotal")), asTimestamp(n.path("editedAt")));
+    }
+
+    private void upsertDailyPaymentRecord(JsonNode n) {
+        cloudJdbcTemplate.update(
+                """
+                INSERT INTO daily_payment_records (
+                    id, record_date, payment_method, amount, registered_by, notes, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT (id) DO UPDATE SET
+                    amount = EXCLUDED.amount,
+                    registered_by = EXCLUDED.registered_by,
+                    notes = EXCLUDED.notes,
+                    updated_at = EXCLUDED.updated_at
+                """,
+                asUuid(n.path("id")),
+                asLocalDate(n.path("recordDate")),
+                asString(n.path("paymentMethod")),
+                asBigDecimal(n.path("amount")),
+                asString(n.path("registeredBy")),
+                asString(n.path("notes")),
+                asTimestamp(n.path("createdAt")),
+                asTimestamp(n.path("updatedAt")));
+        log.info("Daily payment record sincronizado a cloud: {}", asUuid(n.path("id")));
     }
 
     private String asString(JsonNode node) { return (node == null || node.isNull() || node.isMissingNode()) ? null : node.asText(); }

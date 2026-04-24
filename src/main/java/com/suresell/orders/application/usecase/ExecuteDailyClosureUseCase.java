@@ -13,8 +13,13 @@ import com.suresell.orders.infrastructure.persistence.OrderRepository;
 import lombok.extern.log4j.Log4j2;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.client.RestTemplate;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.ResponseEntity;
+import com.fasterxml.jackson.databind.JsonNode;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.HashMap;
@@ -46,6 +51,11 @@ public class ExecuteDailyClosureUseCase {
         this.dailyPaymentRecordService = dailyPaymentRecordService;
     }
 
+    @Value("${sync.cloud.core-url:http://localhost:8083/api/core}")
+    private String coreApiUrl;
+
+    private final RestTemplate restTemplate = new RestTemplate();
+
     @Transactional
     public CashierClosureResponse execute(ExecuteClosureRequest request, String userName) {
         BigDecimal calculatedTotalCash = cashflowCalculator.calculateTotalCash(request.cashDetail());
@@ -76,12 +86,8 @@ public class ExecuteDailyClosureUseCase {
 
         expected.put("CASH", trueExpectedCash);
 
-        // Obtener el valor QR registrado por admin, si no existe usar el del request (fallback manual)
-        BigDecimal countedQr = dailyPaymentRecordService.getQrAmountForDate(closingTime.toLocalDate())
-                .orElseGet(() -> {
-                    log.info("No se encontró registro de QR del admin, usando valor manual del cajero: {}", request.countedQr());
-                    return request.countedQr() != null ? request.countedQr() : BigDecimal.ZERO;
-                });
+        // Obtener el valor QR registrado por admin desde ms-core-app
+        BigDecimal countedQr = getQrAmountFromCoreApp(closingTime.toLocalDate(), request.countedQr());
         log.info("Valor QR a usar en cierre: {}", countedQr);
 
         BigDecimal diffCash = calculatedTotalCash.subtract(trueExpectedCash);
@@ -128,6 +134,23 @@ public class ExecuteDailyClosureUseCase {
             map.put(method, amount);
         }
         return map;
+    }
+
+    private BigDecimal getQrAmountFromCoreApp(LocalDate date, BigDecimal fallbackManualQr) {
+        try {
+            String url = coreApiUrl + "/qr-payments/by-date?date=" + date.toString();
+            log.info("Consultando pagos QR en ms-core-app: {}", url);
+            ResponseEntity<JsonNode> response = restTemplate.getForEntity(url, JsonNode.class);
+            if (response.getStatusCode().is2xxSuccessful() && response.getBody() != null) {
+                BigDecimal qrAmount = new BigDecimal(response.getBody().get("amount").asText());
+                log.info("Valor QR obtenido exitosamente desde ms-core-app: {}", qrAmount);
+                return qrAmount;
+            }
+        } catch (Exception e) {
+            log.warn("Error al consultar pago QR en ms-core-app (posible falta de internet o registro no existe): {}", e.getMessage());
+        }
+        log.info("Usando valor QR manual del cajero como fallback: {}", fallbackManualQr);
+        return fallbackManualQr != null ? fallbackManualQr : BigDecimal.ZERO;
     }
 
     private LocalDateTime getOpeningTime(String sellerId) {

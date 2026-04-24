@@ -1,8 +1,11 @@
 package com.suresell.orders.application.usecase;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.suresell.orders.application.dto.request.RegisterPaymentRecordRequest;
 import com.suresell.orders.application.dto.responses.PaymentRecordResponse;
 import com.suresell.orders.domain.model.DailyPaymentRecord;
+import com.suresell.orders.domain.model.SyncOutbox;
+import com.suresell.orders.domain.port.out.SyncOutboxRepositoryPort;
 import com.suresell.orders.infrastructure.persistence.DailyPaymentRecordRepository;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -12,7 +15,9 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -22,9 +27,15 @@ public class DailyPaymentRecordService {
 
     private static final ZoneId BOGOTA_ZONE = ZoneId.of("America/Bogota");
     private final DailyPaymentRecordRepository repository;
+    private final SyncOutboxRepositoryPort syncOutboxRepositoryPort;
+    private final ObjectMapper objectMapper;
 
-    public DailyPaymentRecordService(DailyPaymentRecordRepository repository) {
+    public DailyPaymentRecordService(DailyPaymentRecordRepository repository,
+                                     SyncOutboxRepositoryPort syncOutboxRepositoryPort,
+                                     ObjectMapper objectMapper) {
         this.repository = repository;
+        this.syncOutboxRepositoryPort = syncOutboxRepositoryPort;
+        this.objectMapper = objectMapper;
     }
 
     @Transactional
@@ -60,7 +71,41 @@ public class DailyPaymentRecordService {
         }
 
         DailyPaymentRecord saved = repository.save(record);
+        saveToOutbox(saved);
         return toResponse(saved);
+    }
+
+    private void saveToOutbox(DailyPaymentRecord record) {
+        try {
+            Map<String, Object> payload = new HashMap<>();
+            payload.put("eventType", "DAILY_PAYMENT_RECORD_SAVED");
+            payload.put("record", Map.of(
+                    "id", record.getId().toString(),
+                    "recordDate", record.getRecordDate().toString(),
+                    "paymentMethod", record.getPaymentMethod(),
+                    "amount", record.getAmount(),
+                    "registeredBy", record.getRegisteredBy() != null ? record.getRegisteredBy() : "",
+                    "notes", record.getNotes() != null ? record.getNotes() : "",
+                    "createdAt", record.getCreatedAt().toString(),
+                    "updatedAt", record.getUpdatedAt() != null ? record.getUpdatedAt().toString() : record.getCreatedAt().toString()
+            ));
+
+            SyncOutbox outbox = new SyncOutbox();
+            outbox.setAggregateType("DAILY_PAYMENT_RECORD");
+            outbox.setAggregateUuid(record.getId());
+            outbox.setAggregateId(0L);
+            outbox.setEventType("DAILY_PAYMENT_RECORD_SAVED");
+            outbox.setPayloadJson(objectMapper.writeValueAsString(payload));
+            outbox.setStatus("PENDING");
+            outbox.setAttempts(0);
+            outbox.setNextRetryAt(System.currentTimeMillis());
+            outbox.setCreatedAt(System.currentTimeMillis());
+            outbox.setUpdatedAt(System.currentTimeMillis());
+            syncOutboxRepositoryPort.save(outbox);
+            log.info("Evento DAILY_PAYMENT_RECORD_SAVED encolado para sincronización: {}", record.getId());
+        } catch (Exception e) {
+            log.error("Error encolando sincronización de pago diario: {}", e.getMessage());
+        }
     }
 
     public Optional<PaymentRecordResponse> getQrForDate(LocalDate date) {

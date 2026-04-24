@@ -4,9 +4,11 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.suresell.orders.application.dto.request.RegisterPaymentRecordRequest;
 import com.suresell.orders.application.dto.responses.PaymentRecordResponse;
 import com.suresell.orders.domain.model.DailyPaymentRecord;
+import com.suresell.orders.domain.port.out.SyncOutboxRepositoryPort;
 import com.suresell.orders.infrastructure.persistence.DailyPaymentRecordRepository;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -32,14 +34,19 @@ class DailyPaymentRecordServiceTest {
     @Mock
     private DailyPaymentRecordRepository repository;
 
+    @Mock
+    private SyncOutboxRepositoryPort syncOutboxRepositoryPort;
+
     @Captor
     private ArgumentCaptor<DailyPaymentRecord> recordCaptor;
 
     private DailyPaymentRecordService service;
+    private ObjectMapper objectMapper;
 
     @BeforeEach
     void setUp() {
-        service = new DailyPaymentRecordService(repository);
+        objectMapper = new ObjectMapper();
+        service = new DailyPaymentRecordService(repository, syncOutboxRepositoryPort, objectMapper);
     }
 
     private DailyPaymentRecord createRecord(LocalDate date, String method, BigDecimal amount) {
