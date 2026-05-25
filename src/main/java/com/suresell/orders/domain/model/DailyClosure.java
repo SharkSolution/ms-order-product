@@ -98,6 +98,12 @@ public class DailyClosure implements Persistable<UUID> {
     @Column(name = "base_balance_for_next_day", precision = 15, scale = 2)
     private BigDecimal baseBalanceForNextDay;
 
+    @Column(name = "petty_cash_expenses", precision = 15, scale = 2)
+    private BigDecimal pettyCashExpenses = BigDecimal.ZERO;
+
+    @Column(name = "petty_cash_expenses_audit", columnDefinition = "TEXT")
+    private String pettyCashExpensesAudit;
+
     @Column(name = "cash_count_audit", columnDefinition = "TEXT")
     private String cashCountAudit;
 

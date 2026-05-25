@@ -410,13 +410,29 @@ public class OrderHandler implements OrderPort {
                 .orElseThrow(() -> new RuntimeException("Orden no encontrada con ID: " + orderId));
         
         OrderDeliveryTracking tracking = order.getDeliveryTracking();
+        boolean isNewTracking = false;
         if (tracking == null) {
             tracking = new OrderDeliveryTracking();
             tracking.setOrder(order);
+            tracking.setOrderId(order.getIdOrder());
+            tracking.setOrderIdUuid(order.getUuidId());
+            order.setDeliveryTracking(tracking);
+            isNewTracking = true;
+        } else {
+            if (tracking.getOrderId() == null) {
+                tracking.setOrderId(order.getIdOrder());
+            }
+            if (tracking.getOrderIdUuid() == null) {
+                tracking.setOrderIdUuid(order.getUuidId());
+            }
         }
         
         tracking.setDelivered(true);
         tracking.setPagerReturned(true);
+        
+        if (isNewTracking) {
+            orderDeliveryTrackingRepositoryPort.save(tracking);
+        }
         
         orderRepositoryPort.save(order);
         log.info("Orden #{} marcada como ENTREGADA y Pager liberado MANUALMENTE (Acción de Cajero).", orderId);

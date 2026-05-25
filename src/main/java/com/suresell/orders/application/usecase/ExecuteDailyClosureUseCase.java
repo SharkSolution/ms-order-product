@@ -82,7 +82,19 @@ public class ExecuteDailyClosureUseCase {
                 .orElse(BigDecimal.ZERO);
 
         BigDecimal salesCash = expected.getOrDefault("CASH", BigDecimal.ZERO);
-        BigDecimal trueExpectedCash = salesCash.add(previousBase); // Ventas + Base Inicial
+
+        // Calcular gastos menores acumulados y sumarlos de forma automática en el backend
+        BigDecimal totalPettyCashExpenses = BigDecimal.ZERO;
+        if (request.pettyCashExpenses() != null) {
+            for (com.suresell.orders.application.dto.request.PettyCashExpenseRequest expense : request.pettyCashExpenses()) {
+                if (expense.amount() != null) {
+                    totalPettyCashExpenses = totalPettyCashExpenses.add(expense.amount());
+                }
+            }
+        }
+
+        // Deducir el total de gastos menores de la caja esperada
+        BigDecimal trueExpectedCash = salesCash.add(previousBase).subtract(totalPettyCashExpenses); // Ventas + Base Inicial - Gastos Menores
 
         expected.put("CASH", trueExpectedCash);
 
@@ -103,7 +115,7 @@ public class ExecuteDailyClosureUseCase {
         }
 
         DailyClosure savedClosure = saveClosureAudit(request, expected, totalDifference, openingTime, closingTime,
-                userName, calculatedTotalCash, calculatedBase, diffCash, diffCard, diffNequi, diffQr, previousBase, pureSales, countedQr);
+                userName, calculatedTotalCash, calculatedBase, diffCash, diffCard, diffNequi, diffQr, previousBase, pureSales, countedQr, totalPettyCashExpenses);
 
         saveClosureToOutbox(savedClosure);
 
@@ -113,12 +125,14 @@ public class ExecuteDailyClosureUseCase {
         if (diffNequi.compareTo(BigDecimal.ZERO) < 0) shortages.put("Nequi", diffNequi);
         if (diffQr.compareTo(BigDecimal.ZERO) < 0) shortages.put("QR", diffQr);
 
-        String message = (shortages.isEmpty())
+        boolean hasNetShortage = totalDifference.compareTo(BigDecimal.ZERO) < 0;
+
+        String message = (!hasNetShortage)
                 ? "Cierre exitoso. Por favor ajuste la base."
                 : "Cierre con novedades. Se detectaron faltantes. ¡Notificación enviada a Administrador!";
 
         return new CashierClosureResponse(
-                (shortages.isEmpty() ? "SUCCESS" : "SHORTAGE"),
+                (!hasNetShortage ? "SUCCESS" : "SHORTAGE"),
                 message,
                 shortages,
                 calculatedBase,
@@ -172,7 +186,8 @@ public class ExecuteDailyClosureUseCase {
                                   BigDecimal diffQr,
                                   BigDecimal previousBase,
                                   BigDecimal pureSales,
-                                  BigDecimal countedQr
+                                  BigDecimal countedQr,
+                                  BigDecimal pettyCashExpenses
                                           ) {
 
         DailyClosure entity = new DailyClosure();
@@ -184,6 +199,16 @@ public class ExecuteDailyClosureUseCase {
         entity.setNotes(request.notes());
         entity.setBaseBalanceForNextDay(calculatedBase != null ? calculatedBase : BigDecimal.ZERO);
         entity.setTotalSales(pureSales);
+        entity.setPettyCashExpenses(pettyCashExpenses != null ? pettyCashExpenses : BigDecimal.ZERO);
+
+        try {
+            if (request.pettyCashExpenses() != null) {
+                entity.setPettyCashExpensesAudit(objectMapper.writeValueAsString(request.pettyCashExpenses()));
+            }
+        } catch (JsonProcessingException e) {
+            log.error("Error serializando auditoria de gastos menores", e);
+            entity.setPettyCashExpensesAudit("ERROR_SERIALIZING_EXPENSES");
+        }
 
         try {
             if (request.cashDetail() != null) {
