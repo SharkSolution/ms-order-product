@@ -37,6 +37,8 @@ public record OrderResponseRecord(
     @Schema(description = "Duración de preparación en segundos", example = "300")
     Integer preparationDurationSeconds, 
     @Schema(description = "Items incluidos en la orden")
-    List<OrderItemResponseRecord> items
+    List<OrderItemResponseRecord> items,
+    @Schema(description = "Nombre del mesero que creó la orden", example = "Juan")
+    String waiterName
 ) {
 }

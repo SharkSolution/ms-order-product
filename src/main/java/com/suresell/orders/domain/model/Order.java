@@ -76,6 +76,10 @@ public class Order implements org.springframework.data.domain.Persistable<java.u
     public void setSynced(Boolean synced) { this.synced = synced; }
     public Boolean getIsPrinted() { return isPrinted; }
     public void setIsPrinted(Boolean isPrinted) { this.isPrinted = isPrinted; }
+    public String getWaiterId() { return waiterId; }
+    public void setWaiterId(String waiterId) { this.waiterId = waiterId; }
+    public String getWaiterName() { return waiterName; }
+    public void setWaiterName(String waiterName) { this.waiterName = waiterName; }
 
     @Column(name = "pager_color")
     private String pagerColor;
@@ -100,7 +104,13 @@ public class Order implements org.springframework.data.domain.Persistable<java.u
         @Column(name = "synced", nullable = false)
         private Boolean synced = false;
     
-        @Column(name = "is_printed", nullable = false)
+        @Column(name = "waiter_id")
+    private String waiterId;
+
+    @Column(name = "waiter_name")
+    private String waiterName;
+
+    @Column(name = "is_printed", nullable = false)
     private Boolean isPrinted = false;
 
     @OneToMany(mappedBy = "order", orphanRemoval = true)    
