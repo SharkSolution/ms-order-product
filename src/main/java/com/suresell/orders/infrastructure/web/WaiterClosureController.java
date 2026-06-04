@@ -13,7 +13,6 @@ import org.springframework.web.bind.annotation.*;
 
 @RestController
 @RequestMapping("/orders/waiter-closures")
-@CrossOrigin(origins = "*", allowedHeaders = "*")
 @Tag(name = "Waiter Closures", description = "Endpoints para el Cierre de Caja de Meseros")
 public class WaiterClosureController {
 
