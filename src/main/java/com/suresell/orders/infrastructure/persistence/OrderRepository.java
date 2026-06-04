@@ -94,14 +94,4 @@ public interface OrderRepository extends JpaRepository<Order, java.util.UUID> {
           @Param("startTime") LocalDateTime startTime,
           @Param("endTime") LocalDateTime endTime
   );
-
-  @Query("SELECT o.paymentMethod, SUM(o.total) FROM Order o " +
-         "WHERE o.waiterId = :waiterId AND o.status = :status AND o.createdAt BETWEEN :startTime AND :endTime " +
-         "GROUP BY o.paymentMethod")
-  List<Object[]> sumTotalsByPaymentMethodAndWaiter(
-          @Param("waiterId") String waiterId,
-          @Param("status") OrderStatus status,
-          @Param("startTime") LocalDateTime startTime,
-          @Param("endTime") LocalDateTime endTime
-  );
 }

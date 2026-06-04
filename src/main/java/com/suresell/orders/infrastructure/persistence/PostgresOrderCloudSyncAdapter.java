@@ -24,44 +24,6 @@ public class PostgresOrderCloudSyncAdapter implements OrderCloudSyncPort {
     private final @Qualifier("cloudTransactionTemplate") TransactionTemplate cloudTransactionTemplate;
     private final ObjectMapper objectMapper;
 
-    @jakarta.annotation.PostConstruct
-    public void initSchema() {
-        try {
-            log.info("Inicializando/Verificando esquema en Supabase...");
-            // Asegurar columnas en orders
-            cloudJdbcTemplate.execute("ALTER TABLE orders ADD COLUMN IF NOT EXISTS waiter_id VARCHAR(100);");
-            cloudJdbcTemplate.execute("ALTER TABLE orders ADD COLUMN IF NOT EXISTS waiter_name VARCHAR(255);");
-            
-            // Crear tabla de cierres de meseros
-            cloudJdbcTemplate.execute("""
-                CREATE TABLE IF NOT EXISTS waiter_closures (
-                    id UUID PRIMARY KEY,
-                    waiter_id VARCHAR(100) NOT NULL,
-                    waiter_name VARCHAR(255) NOT NULL,
-                    closure_date DATE NOT NULL,
-                    base_cash NUMERIC(38,2) NOT NULL,
-                    total_expected_cash NUMERIC(38,2) NOT NULL,
-                    total_expected_card NUMERIC(38,2) NOT NULL,
-                    total_expected_qr NUMERIC(38,2) NOT NULL,
-                    total_counted_cash NUMERIC(38,2) NOT NULL,
-                    total_counted_card NUMERIC(38,2) NOT NULL,
-                    total_counted_qr NUMERIC(38,2) NOT NULL,
-                    difference_cash NUMERIC(38,2) NOT NULL,
-                    difference_card NUMERIC(38,2) NOT NULL,
-                    difference_qr NUMERIC(38,2) NOT NULL,
-                    total_difference NUMERIC(38,2) NOT NULL,
-                    status VARCHAR(50) NOT NULL,
-                    notes TEXT,
-                    closed_at TIMESTAMP NOT NULL,
-                    UNIQUE (waiter_id, closure_date)
-                );
-            """);
-            log.info("Esquema Supabase verificado con éxito.");
-        } catch (Exception e) {
-            log.error("Error inicializando esquema en Supabase (puede ignorarse si no hay conexión): {}", e.getMessage());
-        }
-    }
-
     @Override
     public void syncOrderCreatedPayload(String payloadJson) {
         cloudTransactionTemplate.executeWithoutResult(status -> {
@@ -101,9 +63,6 @@ public class PostgresOrderCloudSyncAdapter implements OrderCloudSyncPort {
                         break;
                     case "DAILY_PAYMENT_RECORD_SAVED":
                         upsertDailyPaymentRecord(root.path("record"));
-                        break;
-                    case "WAITER_CLOSURE_SAVED":
-                        upsertWaiterClosure(root.path("closure"));
                         break;
                     default:
                         log.warn("Evento de sincronización no reconocido: {}", eventType);
@@ -182,9 +141,8 @@ public class PostgresOrderCloudSyncAdapter implements OrderCloudSyncPort {
                 """
                 INSERT INTO orders (
                     uuid_id, created_at, discount_amount, discount_code, discount_percentage,
-                    pager_color, pager_number, payment_method, status, subtotal, total, synced, is_printed,
-                    waiter_id, waiter_name
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    pager_color, pager_number, payment_method, status, subtotal, total, synced, is_printed
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT (uuid_id) DO UPDATE SET
                     status = EXCLUDED.status,
                     subtotal = EXCLUDED.subtotal,
@@ -196,8 +154,6 @@ public class PostgresOrderCloudSyncAdapter implements OrderCloudSyncPort {
                     discount_percentage = EXCLUDED.discount_percentage,
                     payment_method = EXCLUDED.payment_method,
                     is_printed = EXCLUDED.is_printed,
-                    waiter_id = EXCLUDED.waiter_id,
-                    waiter_name = EXCLUDED.waiter_name,
                     synced = true
                 """,
                 orderUuid,
@@ -212,9 +168,7 @@ public class PostgresOrderCloudSyncAdapter implements OrderCloudSyncPort {
                 asBigDecimal(orderNode.path("subtotal")),
                 asBigDecimal(orderNode.path("total")),
                 true,
-                asBoolean(orderNode.path("isPrinted")),
-                asString(orderNode.path("waiterId")),
-                asString(orderNode.path("waiterName")));
+                asBoolean(orderNode.path("isPrinted")));
     }
 
     private void upsertDeliveryTracking(JsonNode trackingNode, java.util.UUID orderUuid) {
@@ -263,9 +217,8 @@ public class PostgresOrderCloudSyncAdapter implements OrderCloudSyncPort {
                     id, user_name, opening_time, closing_time, total_expected_cash, total_expected_card,
                     total_expected_nequi, total_expected_qr, total_counted_cash, total_counted_card,
                     total_counted_nequi, total_counted_qr, difference_amount, status, notes, 
-                    base_balance_for_next_day, cash_count_audit, closure_date, petty_cash_expenses, petty_cash_expenses_audit,
-                    total_counted, status_message, sales_of_day
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    base_balance_for_next_day, cash_count_audit, closure_date, petty_cash_expenses, petty_cash_expenses_audit
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT (id) DO UPDATE SET
                     status = EXCLUDED.status,
                     notes = EXCLUDED.notes,
@@ -277,10 +230,7 @@ public class PostgresOrderCloudSyncAdapter implements OrderCloudSyncPort {
                     closing_time = EXCLUDED.closing_time,
                     base_balance_for_next_day = EXCLUDED.base_balance_for_next_day,
                     petty_cash_expenses = EXCLUDED.petty_cash_expenses,
-                    petty_cash_expenses_audit = EXCLUDED.petty_cash_expenses_audit,
-                    total_counted = EXCLUDED.total_counted,
-                    status_message = EXCLUDED.status_message,
-                    sales_of_day = EXCLUDED.sales_of_day
+                    petty_cash_expenses_audit = EXCLUDED.petty_cash_expenses_audit
                 """,
                 asUuid(n.path("id")), asString(n.path("userName")), asTimestamp(n.path("openingTime")),
                 asTimestamp(n.path("closingTime")), asBigDecimal(n.path("totalExpectedCash")),
@@ -291,8 +241,7 @@ public class PostgresOrderCloudSyncAdapter implements OrderCloudSyncPort {
                 asString(n.path("status")), asString(n.path("notes")),
                 asBigDecimal(n.path("baseBalanceForNextDay")), asString(n.path("cashCountAudit")),
                 asLocalDate(n.path("closureDate")), asBigDecimal(n.path("pettyCashExpenses")),
-                asString(n.path("pettyCashExpensesAudit")),
-                asBigDecimal(n.path("totalCounted")), asString(n.path("statusMessage")), asBigDecimal(n.path("totalSales")));
+                asString(n.path("pettyCashExpensesAudit")));
     }
 
     private void upsertCoupon(JsonNode n) {
@@ -447,53 +396,5 @@ public class PostgresOrderCloudSyncAdapter implements OrderCloudSyncPort {
                                     node.size() > 6 ? node.get(6).asInt() : 0);
         }
         return null;
-    }
-
-    private void upsertWaiterClosure(JsonNode n) {
-        cloudJdbcTemplate.update(
-                """
-                INSERT INTO waiter_closures (
-                    id, waiter_id, waiter_name, closure_date, base_cash,
-                    total_expected_cash, total_expected_card, total_expected_qr,
-                    total_counted_cash, total_counted_card, total_counted_qr,
-                    difference_cash, difference_card, difference_qr,
-                    total_difference, status, notes, closed_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT (waiter_id, closure_date) DO UPDATE SET
-                    base_cash = EXCLUDED.base_cash,
-                    total_expected_cash = EXCLUDED.total_expected_cash,
-                    total_expected_card = EXCLUDED.total_expected_card,
-                    total_expected_qr = EXCLUDED.total_expected_qr,
-                    total_counted_cash = EXCLUDED.total_counted_cash,
-                    total_counted_card = EXCLUDED.total_counted_card,
-                    total_counted_qr = EXCLUDED.total_counted_qr,
-                    difference_cash = EXCLUDED.difference_cash,
-                    difference_card = EXCLUDED.difference_card,
-                    difference_qr = EXCLUDED.difference_qr,
-                    total_difference = EXCLUDED.total_difference,
-                    status = EXCLUDED.status,
-                    notes = EXCLUDED.notes,
-                    closed_at = EXCLUDED.closed_at
-                """,
-                asUuid(n.path("id")),
-                asString(n.path("waiterId")),
-                asString(n.path("waiterName")),
-                asLocalDate(n.path("closureDate")),
-                asBigDecimal(n.path("baseCash")),
-                asBigDecimal(n.path("totalExpectedCash")),
-                asBigDecimal(n.path("totalExpectedCard")),
-                asBigDecimal(n.path("totalExpectedQr")),
-                asBigDecimal(n.path("totalCountedCash")),
-                asBigDecimal(n.path("totalCountedCard")),
-                asBigDecimal(n.path("totalCountedQr")),
-                asBigDecimal(n.path("differenceCash")),
-                asBigDecimal(n.path("differenceCard")),
-                asBigDecimal(n.path("differenceQr")),
-                asBigDecimal(n.path("totalDifference")),
-                asString(n.path("status")),
-                asString(n.path("notes")),
-                asTimestamp(n.path("closedAt"))
-        );
-        log.info("Cierre de mesero sincronizado a cloud: {}", asUuid(n.path("id")));
     }
 }

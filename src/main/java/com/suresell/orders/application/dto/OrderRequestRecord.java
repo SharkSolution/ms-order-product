@@ -17,10 +17,6 @@ public record OrderRequestRecord(
     String discountCode, 
     @NotBlank(message="El método de pago es obligatorio") 
     @Schema(description = "Método de pago", example = "CASH", allowableValues = {"CASH", "CARD", "NEQUI", "QR"})
-    String paymentMethod,
-    @Schema(description = "ID del mesero que creó la orden", example = "1")
-    String waiterId,
-    @Schema(description = "Nombre del mesero que creó la orden", example = "Juan")
-    String waiterName
+    String paymentMethod
 ) {
 }
