@@ -1,0 +1,46 @@
+# =====================================================================
+# Perfil 'cloud' — servicio multi-tenant sobre Postgres (Railway).
+# Se activa con SPRING_PROFILES_ACTIVE=cloud. NO afecta el arranque local-first
+# por defecto. Ver docs/40-multitenant.md.
+#
+# Credenciales y secretos vienen de variables de entorno (nada en el repo).
+# =====================================================================
+server:
+  # Railway inyecta PORT.
+  port: ${PORT:8081}
+
+spring:
+  datasource:
+    driver-class-name: org.postgresql.Driver
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/postgres}
+    # La app corre como rol NO superusuario para que RLS aplique.
+    username: ${DB_APP_USER:app_user}
+    password: ${DB_APP_PASSWORD:app_pw}
+    hikari:
+      maximum-pool-size: ${DB_POOL_SIZE:10}
+      minimum-idle: 1
+  jpa:
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+    hibernate:
+      ddl-auto: none
+    show-sql: false
+  flyway:
+    enabled: true
+    # Las migraciones (crean el rol app_user, etc.) corren con un usuario
+    # PRIVILEGIADO, distinto del rol de aplicación.
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/postgres}
+    user: ${DB_MIGRATION_USER:postgres}
+    password: ${DB_MIGRATION_PASSWORD:postgres}
+    locations: classpath:db/migration
+
+# Desactiva la maquinaria local-first (outbox/sync-inversa/segundo datasource).
+sync:
+  cloud:
+    enabled: false
+
+# Secreto para validar el JWT del tenant.
+security:
+  jwt:
+    secret: ${JWT_SECRET:cambia-esta-clave-en-produccion-min-32-bytes!}
