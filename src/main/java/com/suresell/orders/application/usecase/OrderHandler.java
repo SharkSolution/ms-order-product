@@ -105,6 +105,8 @@ public class OrderHandler implements OrderPort {
         order.setPagerNumber(dto.pagerNumber());
         order.setStatus(OrderStatus.pagado);
         order.setPaymentMethod(dto.paymentMethod());
+        order.setWaiterId(dto.waiterId());
+        order.setWaiterName(dto.waiterName());
         order.setCreatedAt(LocalDateTime.now(BOGOTA_ZONE));
         
         BigDecimal subtotal = dto.items().stream()
@@ -564,6 +566,8 @@ public class OrderHandler implements OrderPort {
         orderPayload.put("discountPercentage", order.getDiscountPercentage());
         orderPayload.put("discountAmount", order.getDiscountAmount());
         orderPayload.put("isPrinted", Boolean.TRUE.equals(order.getIsPrinted()));
+        if (order.getWaiterId() != null) orderPayload.put("waiterId", order.getWaiterId());
+        if (order.getWaiterName() != null) orderPayload.put("waiterName", order.getWaiterName());
         orderPayload.put("items", items);
         return orderPayload;
     }

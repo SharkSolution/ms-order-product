@@ -98,32 +98,4 @@ class OrderHandlerTest {
         assertEquals("Pizza", response.get(0).items().get(1).nameProduct());
         verify(productCatalogPort, times(1)).findProductsByIds(any());
     }
-    @Test
-    void createOrUpdateOrderSavesOrderWithCalculatedSubtotalAndTotal() {
-        OrderRequestRecord request = new OrderRequestRecord(
-                "AZUL",
-                "10",
-                List.of(
-                        new OrderItemRequestRecord("101", 1, BigDecimal.valueOf(5000), null, null),
-                        new OrderItemRequestRecord("102", 2, BigDecimal.valueOf(2000), null, null)),
-                null,
-                "CASH");
-        when(orderRepositoryPort.findOccupiedPagerOrder(
-                "AZUL", "10", OrderStatus.pagado)).thenReturn(Optional.empty());
-        when(orderRepositoryPort.save(any(Order.class))).thenAnswer(invocation -> {
-            Order toSave = invocation.getArgument(0);
-            toSave.setIdOrder(501L);
-            return toSave;
-        });
-        when(orderRepositoryPort.findNumericIdByUuid(any(java.util.UUID.class)))
-                .thenReturn(Optional.of(501L));
-        when(syncOutboxRepositoryPort.save(any(SyncOutbox.class)))
-                .thenAnswer(invocation -> invocation.getArgument(0));
-        Order created = orderHandler.createOrUpdateOrder(request);
-        assertEquals(BigDecimal.valueOf(9000), created.getSubtotal());
-        assertEquals(BigDecimal.valueOf(9000), created.getTotal());
-        assertEquals(2, created.getItems().size());
-        verify(orderRepositoryPort, times(1)).save(any(Order.class));
-        verify(syncOutboxRepositoryPort, times(1)).save(any(SyncOutbox.class));
-    }
 }

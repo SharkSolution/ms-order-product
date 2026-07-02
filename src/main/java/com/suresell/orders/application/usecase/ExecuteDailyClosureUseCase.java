@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.suresell.orders.application.dto.request.ExecuteClosureRequest;
 import com.suresell.orders.application.dto.responses.CashierClosureResponse;
 import com.suresell.orders.domain.model.DailyClosure;
+import com.suresell.orders.domain.model.OrderStatus;
 import com.suresell.orders.domain.model.SyncOutbox;
 import com.suresell.orders.domain.port.out.SyncOutboxRepositoryPort;
 import com.suresell.orders.domain.service.CashflowCalculator;
@@ -59,12 +60,16 @@ public class ExecuteDailyClosureUseCase {
     @Transactional
     public CashierClosureResponse execute(ExecuteClosureRequest request, String userName) {
         BigDecimal calculatedTotalCash = cashflowCalculator.calculateTotalCash(request.cashDetail());
-        BigDecimal calculatedBase = cashflowCalculator.calculateBaseForNextDay(request.cashDetail());
+        // Base real que deja el cajero (variable). Fallback al cálculo por denominaciones si no se envía.
+        BigDecimal calculatedBase = request.baseForNextDay() != null
+                ? request.baseForNextDay()
+                : cashflowCalculator.calculateBaseForNextDay(request.cashDetail());
 
         LocalDateTime closingTime = LocalDateTime.now(BOGOTA_ZONE);
-        LocalDateTime openingTime = getOpeningTime(request.sellerId());
+        LocalDateTime openingTime = getOpeningTime();
 
         List<Object[]> totals = orderRepository.sumTotalsByPaymentMethodAndSeller(
+                OrderStatus.pagado,
                 openingTime,
                 closingTime
         );
@@ -167,9 +172,16 @@ public class ExecuteDailyClosureUseCase {
         return fallbackManualQr != null ? fallbackManualQr : BigDecimal.ZERO;
     }
 
-    private LocalDateTime getOpeningTime(String sellerId) {
-        return closureRepository.findLastClosingTimeByUser(sellerId)
-                .orElse(LocalDateTime.now().toLocalDate().atStartOfDay());
+    /**
+     * Apertura del turno = hora de cierre del ÚLTIMO cierre real (global), para que la ventana de
+     * ventas coincida exactamente con el periodo que cubre la base anterior. Antes dependía de
+     * findLastClosingTimeByUser(sellerId), que fallaba por el desajuste sellerId/userName y forzaba
+     * la ventana a "hoy 00:00". Fallback: inicio del día actual en zona Bogotá.
+     */
+    private LocalDateTime getOpeningTime() {
+        return closureRepository.findFirstByOrderByClosingTimeDesc()
+                .map(DailyClosure::getClosingTime)
+                .orElse(LocalDate.now(BOGOTA_ZONE).atStartOfDay());
     }
 
     private DailyClosure saveClosureAudit(ExecuteClosureRequest request,

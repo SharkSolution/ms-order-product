@@ -11,6 +11,8 @@ public record ExecuteClosureRequest(
         BigDecimal countedQr,
         String notes,
         String sellerId,
-        List<PettyCashExpenseRequest> pettyCashExpenses
+        List<PettyCashExpenseRequest> pettyCashExpenses,
+        // Base real que el cajero deja para el día siguiente (variable). Si es null, se calcula por denominaciones (compatibilidad).
+        BigDecimal baseForNextDay
 ) {
 }

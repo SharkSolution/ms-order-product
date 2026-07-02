@@ -88,9 +88,10 @@ public interface OrderRepository extends JpaRepository<Order, java.util.UUID> {
     @Query("UPDATE Order o SET o.synced = true WHERE o.idOrder = :orderId")
     void markOrderAsSynced(@Param("orderId") Long orderId);
   @Query("SELECT o.paymentMethod, SUM(o.total) FROM Order o " +
-          "WHERE o.createdAt BETWEEN :startTime AND :endTime " +
+          "WHERE o.status = :status AND o.createdAt BETWEEN :startTime AND :endTime " +
           "GROUP BY o.paymentMethod")
   List<Object[]> sumTotalsByPaymentMethodAndSeller(
+          @Param("status") OrderStatus status,
           @Param("startTime") LocalDateTime startTime,
           @Param("endTime") LocalDateTime endTime
   );

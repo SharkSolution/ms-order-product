@@ -216,9 +216,10 @@ public class PostgresOrderCloudSyncAdapter implements OrderCloudSyncPort {
                 INSERT INTO daily_closures (
                     id, user_name, opening_time, closing_time, total_expected_cash, total_expected_card,
                     total_expected_nequi, total_expected_qr, total_counted_cash, total_counted_card,
-                    total_counted_nequi, total_counted_qr, difference_amount, status, notes, 
-                    base_balance_for_next_day, cash_count_audit, closure_date, petty_cash_expenses, petty_cash_expenses_audit
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    total_counted_nequi, total_counted_qr, difference_amount, status, notes,
+                    base_balance_for_next_day, cash_count_audit, closure_date, petty_cash_expenses, petty_cash_expenses_audit,
+                    sales_of_day
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT (id) DO UPDATE SET
                     status = EXCLUDED.status,
                     notes = EXCLUDED.notes,
@@ -230,7 +231,8 @@ public class PostgresOrderCloudSyncAdapter implements OrderCloudSyncPort {
                     closing_time = EXCLUDED.closing_time,
                     base_balance_for_next_day = EXCLUDED.base_balance_for_next_day,
                     petty_cash_expenses = EXCLUDED.petty_cash_expenses,
-                    petty_cash_expenses_audit = EXCLUDED.petty_cash_expenses_audit
+                    petty_cash_expenses_audit = EXCLUDED.petty_cash_expenses_audit,
+                    sales_of_day = EXCLUDED.sales_of_day
                 """,
                 asUuid(n.path("id")), asString(n.path("userName")), asTimestamp(n.path("openingTime")),
                 asTimestamp(n.path("closingTime")), asBigDecimal(n.path("totalExpectedCash")),
@@ -241,7 +243,7 @@ public class PostgresOrderCloudSyncAdapter implements OrderCloudSyncPort {
                 asString(n.path("status")), asString(n.path("notes")),
                 asBigDecimal(n.path("baseBalanceForNextDay")), asString(n.path("cashCountAudit")),
                 asLocalDate(n.path("closureDate")), asBigDecimal(n.path("pettyCashExpenses")),
-                asString(n.path("pettyCashExpensesAudit")));
+                asString(n.path("pettyCashExpensesAudit")), asBigDecimal(n.path("totalSales")));
     }
 
     private void upsertCoupon(JsonNode n) {

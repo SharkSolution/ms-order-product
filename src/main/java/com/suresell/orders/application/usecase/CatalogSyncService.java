@@ -90,8 +90,12 @@ public class CatalogSyncService {
                             newOrder.setCreatedAt(rs.getTimestamp("created_at").toLocalDateTime());
                             newOrder.setStatus(OrderStatus.valueOf(rs.getString("status")));
                             newOrder.setPaymentMethod(rs.getString("payment_method"));
-                            newOrder.setSubtotal(rs.getBigDecimal("subtotal"));
-                            newOrder.setTotal(rs.getBigDecimal("total"));
+                            // Órdenes de la app móvil pueden llegar sin subtotal: usar total como respaldo
+                            // para que la factura imprima (el ticket formatea el subtotal).
+                            java.math.BigDecimal cloudSubtotal = rs.getBigDecimal("subtotal");
+                            java.math.BigDecimal cloudTotal = rs.getBigDecimal("total");
+                            newOrder.setSubtotal(cloudSubtotal != null ? cloudSubtotal : cloudTotal);
+                            newOrder.setTotal(cloudTotal);
                             newOrder.setDiscountCode(rs.getString("discount_code"));
                             newOrder.setDiscountPercentage(rs.getBigDecimal("discount_percentage"));
                             newOrder.setDiscountAmount(rs.getBigDecimal("discount_amount"));

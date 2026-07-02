@@ -37,7 +37,11 @@ sync:
     enabled: true
     datasource:
       driver-class-name: org.postgresql.Driver
-      url: jdbc:postgresql://aws-1-us-east-1.pooler.supabase.com:6543/postgres
+      # prepareThreshold=0: el pooler de Supabase (6543, modo transacción / PgBouncer) NO soporta
+      # server-side prepared statements; sin esto el driver crea statements con nombre (S_1, S_17...)
+      # que colisionan al reutilizar conexiones del pool -> "prepared statement already exists" ->
+      # la transacción se aborta y las órdenes de caja no se sincronizan a la nube (no llegan a cocina).
+      url: jdbc:postgresql://aws-1-us-east-1.pooler.supabase.com:6543/postgres?prepareThreshold=0
       username: postgres.iwlbtkqszbkugfxdpzyk
       password: w9Rz3wcIeT3i184t
       hikari:

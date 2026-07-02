@@ -5,6 +5,7 @@ import com.suresell.orders.domain.port.out.PrinterPort;
 import com.suresell.orders.infrastructure.printer.EscPosBuilder;
 import lombok.extern.log4j.Log4j2;
 import org.springframework.stereotype.Service;
+import java.math.BigDecimal;
 import java.text.DecimalFormat;
 
 @Log4j2
@@ -13,6 +14,11 @@ public class PrintTicketUseCase {
     private final PrinterPort printerPort;
     private final EscPosBuilder pos;
     private static final DecimalFormat MONEY_FMT = new DecimalFormat("$ #,##0");
+
+    /** Formatea dinero de forma segura: un valor null no debe romper la impresión. */
+    private String money(BigDecimal value) {
+        return MONEY_FMT.format(value != null ? value : BigDecimal.ZERO);
+    }
     public PrintTicketUseCase(PrinterPort printerPort, EscPosBuilder pos) {
         this.printerPort = printerPort;
         this.pos = pos;
@@ -51,22 +57,24 @@ public class PrintTicketUseCase {
             for (PosTicketItem item : ticket.items()) {
                 pos.alignLeft(bos);
                 pos.textLn(bos, item.name());
-                String quantityPrice = item.quantity() + " x " + MONEY_FMT.format(item.unitPrice());
-                String totalStr = MONEY_FMT.format(item.total());
+                String quantityPrice = item.quantity() + " x " + money(item.unitPrice());
+                String totalStr = money(item.total());
                 String line = String.format("%-25s %15s", quantityPrice, totalStr);
                 pos.textLn(bos, line);
             }
             pos.textLn(bos, "------------------------------------------");
             pos.alignRight(bos);
-            pos.textLn(bos, "SUBTOTAL: " + MONEY_FMT.format(ticket.subtotal()));
-            pos.textLn(bos, "IMPUESTOS (INC): " + MONEY_FMT.format(ticket.tax()));
+            // Si la orden no trae subtotal (p.ej. órdenes de la app móvil), usar el total.
+            BigDecimal subtotalToPrint = ticket.subtotal() != null ? ticket.subtotal() : ticket.total();
+            pos.textLn(bos, "SUBTOTAL: " + money(subtotalToPrint));
+            pos.textLn(bos, "IMPUESTOS (INC): " + money(ticket.tax()));
             pos.boldOn(bos);
-            pos.feed(bos, 1);  
-            pos.textLn(bos, "TOTAL A PAGAR: " + MONEY_FMT.format(ticket.total()));
+            pos.feed(bos, 1);
+            pos.textLn(bos, "TOTAL A PAGAR: " + money(ticket.total()));
             pos.boldOff(bos);
             pos.feed(bos, 1);
-            pos.textLn(bos, "Efectivo: " + MONEY_FMT.format(ticket.cashGiven()));
-            pos.textLn(bos, "Cambio: " + MONEY_FMT.format(ticket.change()));
+            pos.textLn(bos, "Efectivo: " + money(ticket.cashGiven()));
+            pos.textLn(bos, "Cambio: " + money(ticket.change()));
             pos.feed(bos, 1);
             pos.alignCenter(bos);
             pos.textLn(bos, "Forma de Pago: " + ticket.paymentMethod());
