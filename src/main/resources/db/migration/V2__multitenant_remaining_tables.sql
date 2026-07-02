@@ -1,0 +1,153 @@
+-- =====================================================================
+-- Multi-tenancy (B1) — resto de tablas de negocio con tenant_id + RLS.
+-- Mismo patrón que V1. Ver docs/40-multitenant.md.
+--
+-- Nota de diseño: los UNIQUE globales del esquema mono-tenant (closure_date,
+-- coupon.code) pasan a ser ÚNICOS POR TENANT (compuestos con tenant_id). Si no,
+-- dos negocios no podrían tener el mismo código de cupón ni cerrar caja el mismo
+-- día.
+-- =====================================================================
+
+CREATE TABLE order_delivery_tracking (
+    order_id_uuid                 UUID PRIMARY KEY,
+    tenant_id                     TEXT NOT NULL,
+    order_id                      BIGINT,
+    delivered                     BOOLEAN NOT NULL DEFAULT FALSE,
+    pager_returned                BOOLEAN NOT NULL DEFAULT FALSE,
+    preparation_duration_seconds  INT
+);
+
+CREATE TABLE order_edit_history (
+    id            BIGINT PRIMARY KEY,
+    tenant_id     TEXT NOT NULL,
+    order_id      BIGINT NOT NULL,
+    edit_type     TEXT,
+    product_id    TEXT,
+    product_name  TEXT,
+    old_quantity  INT,
+    new_quantity  INT,
+    old_total     NUMERIC(15,2),
+    new_total     NUMERIC(15,2),
+    edited_at     TIMESTAMP
+);
+
+CREATE TABLE daily_closures (
+    id                        UUID PRIMARY KEY,
+    tenant_id                 TEXT NOT NULL,
+    user_name                 VARCHAR(100) NOT NULL,
+    opening_time              TIMESTAMP NOT NULL,
+    closing_time              TIMESTAMP,
+    closure_date              DATE,
+    total_expected_cash       NUMERIC(15,2),
+    total_expected_card       NUMERIC(15,2),
+    total_expected_nequi      NUMERIC(15,2),
+    total_expected_qr         NUMERIC(15,2),
+    total_counted_cash        NUMERIC(15,2),
+    total_counted_card        NUMERIC(15,2),
+    total_counted_nequi       NUMERIC(15,2),
+    total_counted_qr          NUMERIC(15,2),
+    total_expected            NUMERIC(15,2),
+    total_counted             NUMERIC(15,2),
+    total_difference          NUMERIC(15,2),
+    difference_cash           NUMERIC(15,2),
+    difference_card           NUMERIC(15,2),
+    difference_nequi          NUMERIC(15,2),
+    difference_qr             NUMERIC(15,2),
+    difference_amount         NUMERIC(15,2),
+    status                    VARCHAR(20),
+    status_message            TEXT,
+    notes                     TEXT,
+    base_balance_for_next_day NUMERIC(15,2),
+    petty_cash_expenses       NUMERIC(15,2) DEFAULT 0,
+    petty_cash_expenses_audit TEXT,
+    cash_count_audit          TEXT,
+    sales_of_day              NUMERIC(15,2),
+    CONSTRAINT uq_daily_closures_tenant_date UNIQUE (tenant_id, closure_date)
+);
+
+CREATE TABLE daily_payment_records (
+    id             UUID PRIMARY KEY,
+    tenant_id      TEXT NOT NULL,
+    record_date    DATE NOT NULL,
+    payment_method VARCHAR(20) NOT NULL,
+    amount         NUMERIC(15,2) NOT NULL,
+    registered_by  VARCHAR(100),
+    notes          TEXT,
+    created_at     TIMESTAMP NOT NULL,
+    updated_at     TIMESTAMP
+);
+
+CREATE TABLE discount_coupon (
+    id                  BIGINT PRIMARY KEY,
+    tenant_id           TEXT NOT NULL,
+    code                TEXT NOT NULL,
+    name                TEXT,
+    description         TEXT,
+    discount_percentage NUMERIC(15,2),
+    valid_from          DATE,
+    valid_to            DATE,
+    valid_weekdays      TEXT,
+    is_active           BOOLEAN DEFAULT TRUE,
+    created_at          TIMESTAMP,
+    updated_at          TIMESTAMP,
+    CONSTRAINT uq_discount_coupon_tenant_code UNIQUE (tenant_id, code)
+);
+
+CREATE TABLE coupon_product (
+    id           BIGINT PRIMARY KEY,
+    tenant_id    TEXT NOT NULL,
+    coupon_id    BIGINT NOT NULL,
+    product_id   TEXT,
+    product_name TEXT
+);
+
+CREATE TABLE discount_usage (
+    id                       BIGINT PRIMARY KEY,
+    tenant_id                TEXT NOT NULL,
+    order_id                 BIGINT NOT NULL,
+    coupon_id                BIGINT NOT NULL,
+    discount_code            TEXT,
+    subtotal_before_discount NUMERIC(15,2),
+    discount_amount          NUMERIC(15,2),
+    total_after_discount     NUMERIC(15,2),
+    created_at               TIMESTAMP
+);
+
+CREATE TABLE menu_categories (
+    id_category   VARCHAR(255) PRIMARY KEY,
+    tenant_id     TEXT NOT NULL,
+    name_category VARCHAR(255) NOT NULL
+);
+
+CREATE TABLE menu_products (
+    id_product   VARCHAR(255) PRIMARY KEY,
+    tenant_id    TEXT NOT NULL,
+    name_product VARCHAR(255) NOT NULL,
+    price        INT NOT NULL,
+    active       BOOLEAN NOT NULL,
+    category_id  VARCHAR(255)
+);
+
+-- Aplica el mismo patrón RLS a todas las tablas nuevas: índice por tenant,
+-- ENABLE + FORCE RLS, política de aislamiento y grant al rol de aplicación.
+DO $$
+DECLARE
+    t TEXT;
+    tables TEXT[] := ARRAY[
+        'order_delivery_tracking', 'order_edit_history', 'daily_closures',
+        'daily_payment_records', 'discount_coupon', 'coupon_product',
+        'discount_usage', 'menu_categories', 'menu_products'
+    ];
+BEGIN
+    FOREACH t IN ARRAY tables LOOP
+        EXECUTE format('CREATE INDEX idx_%1$s_tenant ON %1$s (tenant_id)', t);
+        EXECUTE format('ALTER TABLE %1$s ENABLE ROW LEVEL SECURITY', t);
+        EXECUTE format('ALTER TABLE %1$s FORCE ROW LEVEL SECURITY', t);
+        EXECUTE format(
+            'CREATE POLICY tenant_isolation_%1$s ON %1$s '
+            'USING (tenant_id = current_setting(''app.tenant_id'', true)) '
+            'WITH CHECK (tenant_id = current_setting(''app.tenant_id'', true))', t);
+        EXECUTE format('GRANT SELECT, INSERT, UPDATE, DELETE ON %1$s TO app_user', t);
+    END LOOP;
+END
+$$;

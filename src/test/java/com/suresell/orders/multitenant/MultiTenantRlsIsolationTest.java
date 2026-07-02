@@ -115,4 +115,57 @@ class MultiTenantRlsIsolationTest {
             assertNotNull(ex);
         }
     }
+
+    // ----- V2: resto de tablas (discount_coupon) -----
+
+    private void insertCoupon(Connection c, String tenant, long id, String code) throws SQLException {
+        try (PreparedStatement ps = c.prepareStatement(
+                "INSERT INTO discount_coupon (id, tenant_id, code) VALUES (?, ?, ?)")) {
+            ps.setLong(1, id);
+            ps.setString(2, tenant);
+            ps.setString(3, code);
+            ps.executeUpdate();
+        }
+    }
+
+    @Test
+    void rlsAplicaAlRestoDeTablas_discountCoupon() throws SQLException {
+        try (Connection a = appConnection()) {
+            setTenant(a, "t-rls-a");
+            insertCoupon(a, "t-rls-a", 2001, "A1");
+            insertCoupon(a, "t-rls-a", 2002, "A2");
+        }
+        try (Connection b = appConnection()) {
+            setTenant(b, "t-rls-b");
+            insertCoupon(b, "t-rls-b", 2003, "B1");
+        }
+        try (Connection a = appConnection()) {
+            setTenant(a, "t-rls-a");
+            try (Statement s = a.createStatement();
+                 ResultSet rs = s.executeQuery("SELECT count(*) FROM discount_coupon")) {
+                rs.next();
+                assertEquals(2, rs.getInt(1), "Tenant A ve solo sus 2 cupones");
+            }
+        }
+    }
+
+    @Test
+    void codigoDeCuponEsUnicoPorTenantNoGlobal() throws SQLException {
+        // Dos tenants pueden tener el MISMO código de cupón (único por tenant).
+        try (Connection a = appConnection()) {
+            setTenant(a, "t-cup-a");
+            insertCoupon(a, "t-cup-a", 1001, "BIENVENIDA");
+        }
+        try (Connection b = appConnection()) {
+            setTenant(b, "t-cup-b");
+            insertCoupon(b, "t-cup-b", 1002, "BIENVENIDA");
+        }
+        // El MISMO tenant NO puede repetir el código.
+        try (Connection a = appConnection()) {
+            setTenant(a, "t-cup-a");
+            SQLException ex = assertThrows(SQLException.class,
+                    () -> insertCoupon(a, "t-cup-a", 1003, "BIENVENIDA"));
+            assertNotNull(ex);
+        }
+    }
 }
