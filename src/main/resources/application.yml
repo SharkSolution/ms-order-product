@@ -1,6 +1,10 @@
 server:
   port: 8081
 spring:
+  # Multi-tenancy (B1): las migraciones Flyway son SOLO para el esquema Postgres
+  # cloud. Se desactiva el auto-run para NO ejecutarlas contra el SQLite local.
+  flyway:
+    enabled: false
   datasource:
     driver-class-name: org.sqlite.JDBC
     url: jdbc:sqlite:./data/ms_order_product.db
