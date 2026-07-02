@@ -1,0 +1,48 @@
+package com.suresell.orders.multitenant;
+
+import jakarta.servlet.FilterChain;
+import jakarta.servlet.ServletException;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import org.springframework.context.annotation.Profile;
+import org.springframework.stereotype.Component;
+import org.springframework.web.filter.OncePerRequestFilter;
+
+import java.io.IOException;
+import java.util.Optional;
+
+/**
+ * Fija el tenant del request (desde el JWT) en TenantContext y lo limpia al final.
+ *
+ * SOLO activo en el perfil `cloud` (multi-tenant sobre Postgres) — el arranque
+ * local-first por defecto NO lo carga, así que es aditivo y no rompe el flujo actual.
+ *
+ * Pendiente (siguiente paso): a partir de TenantContext, fijar `app.tenant_id` en
+ * la conexión Postgres por transacción para que RLS aplique. Ver docs/40-multitenant.md.
+ */
+@Component
+@Profile("cloud")
+public class TenantContextFilter extends OncePerRequestFilter {
+
+    private final JwtTenantResolver resolver;
+
+    public TenantContextFilter(JwtTenantResolver resolver) {
+        this.resolver = resolver;
+    }
+
+    @Override
+    protected void doFilterInternal(HttpServletRequest req, HttpServletResponse res, FilterChain chain)
+            throws ServletException, IOException {
+        Optional<String> tenant = resolver.resolveTenant(req.getHeader("Authorization"));
+        if (tenant.isEmpty()) {
+            res.sendError(HttpServletResponse.SC_UNAUTHORIZED, "Token de tenant ausente o inválido");
+            return;
+        }
+        try {
+            TenantContext.set(tenant.get());
+            chain.doFilter(req, res);
+        } finally {
+            TenantContext.clear();
+        }
+    }
+}
