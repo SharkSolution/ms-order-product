@@ -3,6 +3,7 @@ import com.suresell.orders.domain.model.SyncOutbox;
 import com.suresell.orders.domain.port.out.SyncOutboxRepositoryPort;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
@@ -11,8 +12,20 @@ import org.springframework.transaction.annotation.Transactional;
 public class SyncOutboxRepositoryAdapter implements SyncOutboxRepositoryPort {
     private final SyncOutboxRepository syncOutboxRepository;
     private final OrderRepository orderRepository;
+
+    // Local-first: el outbox solo tiene sentido cuando hay sync a la nube. En el
+    // perfil cloud (sync.cloud.enabled=false) NINGÚN scheduler lo drena, así que
+    // encolar solo dejaría filas inertes; aquí el save se vuelve no-op. Cubre a
+    // todos los que encolan (órdenes, cierres, descuentos, pagos, tracking) en un
+    // solo punto. Default true → el arranque local-first no cambia.
+    @Value("${sync.cloud.enabled:true}")
+    private boolean cloudSyncEnabled;
+
     @Override
     public SyncOutbox save(SyncOutbox outbox) {
+        if (!cloudSyncEnabled) {
+            return outbox; // no se persiste: sin drenador, sería basura
+        }
         return syncOutboxRepository.save(outbox);
     }
     @Override
