@@ -32,6 +32,9 @@ dependencies {
 	// Multi-tenancy (B1): migraciones disciplinadas del esquema Postgres cloud.
 	implementation 'org.flywaydb:flyway-core'
 	implementation 'org.flywaydb:flyway-database-postgresql'
+	// Auth real (F1): hashing de contraseñas con BCrypt. Solo el módulo crypto
+	// (no el starter de Spring Security completo, para no reescribir el filtro actual).
+	implementation 'org.springframework.security:spring-security-crypto'
 	// Multi-tenancy: JWT con tenant_id (contexto de tenant por request).
 	implementation 'io.jsonwebtoken:jjwt-api:0.12.6'
 	runtimeOnly 'io.jsonwebtoken:jjwt-impl:0.12.6'

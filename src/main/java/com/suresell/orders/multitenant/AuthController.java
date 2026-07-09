@@ -1,68 +1,69 @@
 package com.suresell.orders.multitenant;
 
-import io.jsonwebtoken.Jwts;
-import io.jsonwebtoken.security.Keys;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Profile;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
-import javax.crypto.SecretKey;
-import java.nio.charset.StandardCharsets;
-import java.time.Instant;
-import java.util.Date;
 import java.util.Map;
 
 /**
- * Emite el JWT de tenant que el resto de endpoints exige (lo valida
- * {@link JwtTenantResolver}). SOLO en el perfil `cloud`. Está exento del
- * {@link TenantContextFilter} (si no, haría falta un token para pedir un token).
+ * Endpoints de autenticación (perfil `cloud`). Exentos del {@link TenantContextFilter}
+ * (si no, haría falta un token para pedir un token). Ver docs/110-plan-auth-real.md.
  *
- * Auth mínima para F1/staging: se valida una clave compartida (`auth.login.password`,
- * por env) y se emite un token firmado con `tenant_id`. NO es gestión de usuarios
- * real — eso llega con el panel SaaS (ver docs/50). Si `auth.login.password` está
- * vacío, no se exige clave (modo demo local).
+ * - POST /auth/login    → credenciales de usuario (email+clave); deriva el tenant.
+ * - POST /auth/register → alta self-service de un negocio (crea tenant + admin).
+ * - POST /auth/token    → LEGACY (clave compartida + tenant tecleado); deprecar.
+ *
+ * La lógica vive en {@link AuthService}; aquí solo se mapea HTTP y errores.
  */
 @RestController
 @Profile("cloud")
 public class AuthController {
 
-    private final SecretKey key;
-    private final String loginPassword;
-    private final long ttlSeconds;
+    private final AuthService auth;
 
-    public AuthController(
-            @Value("${security.jwt.secret:cambia-esta-clave-en-produccion-min-32-bytes!}") String secret,
-            @Value("${auth.login.password:}") String loginPassword,
-            @Value("${auth.token.ttl-seconds:43200}") long ttlSeconds) {
-        this.key = Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
-        this.loginPassword = loginPassword;
-        this.ttlSeconds = ttlSeconds;
+    public AuthController(AuthService auth) {
+        this.auth = auth;
     }
 
+    @PostMapping("/auth/login")
+    public ResponseEntity<?> login(@RequestBody LoginRequest req) {
+        try {
+            return ResponseEntity.ok(auth.login(req.email(), req.password()));
+        } catch (AuthException e) {
+            return error(e);
+        }
+    }
+
+    @PostMapping("/auth/register")
+    public ResponseEntity<?> register(@RequestBody RegisterRequest req) {
+        try {
+            return ResponseEntity.ok(auth.register(req.businessName(), req.email(), req.password()));
+        } catch (AuthException e) {
+            return error(e);
+        }
+    }
+
+    /** LEGACY — mantiene vivo staging mientras el front migra a /auth/login. */
     @PostMapping("/auth/token")
     public ResponseEntity<?> token(@RequestBody TokenRequest req) {
-        if (loginPassword != null && !loginPassword.isBlank()
-                && !loginPassword.equals(req.password())) {
-            return ResponseEntity.status(401).body(Map.of("error", "Clave de acceso inválida"));
+        try {
+            var res = auth.legacyToken(req.tenantId(), req.userName(), req.password());
+            return ResponseEntity.ok(Map.of("token", res.token(), "tenantId", res.tenantId()));
+        } catch (AuthException e) {
+            return error(e);
         }
-        if (req.tenantId() == null || req.tenantId().isBlank()) {
-            return ResponseEntity.badRequest().body(Map.of("error", "tenantId es requerido"));
-        }
-
-        Instant now = Instant.now();
-        String jwt = Jwts.builder()
-                .claim("tenant_id", req.tenantId())
-                .subject(req.userName() == null ? "" : req.userName())
-                .issuedAt(Date.from(now))
-                .expiration(Date.from(now.plusSeconds(ttlSeconds)))
-                .signWith(key)
-                .compact();
-
-        return ResponseEntity.ok(Map.of("token", jwt, "tenantId", req.tenantId()));
     }
+
+    private ResponseEntity<?> error(AuthException e) {
+        return ResponseEntity.status(e.status()).body(Map.of("error", e.getMessage()));
+    }
+
+    public record LoginRequest(String email, String password) {}
+
+    public record RegisterRequest(String businessName, String email, String password) {}
 
     public record TokenRequest(String tenantId, String userName, String password) {}
 }
