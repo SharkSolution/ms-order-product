@@ -17,7 +17,11 @@ import java.util.UUID;
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
-public class DailyPaymentRecord implements Persistable<UUID> {
+@jakarta.persistence.EntityListeners(com.suresell.orders.multitenant.TenantEntityListener.class)
+public class DailyPaymentRecord implements Persistable<UUID>, com.suresell.orders.multitenant.TenantOwned {
+
+    @Column(name = "tenant_id")
+    private String tenantId;
 
     @Id
     @Column(name = "id", updatable = false, nullable = false)

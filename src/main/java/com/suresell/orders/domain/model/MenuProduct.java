@@ -14,7 +14,11 @@ import lombok.NoArgsConstructor;
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
-public class MenuProduct {
+@jakarta.persistence.EntityListeners(com.suresell.orders.multitenant.TenantEntityListener.class)
+public class MenuProduct implements com.suresell.orders.multitenant.TenantOwned {
+    @Column(name = "tenant_id")
+    private String tenantId;
+
     @Id
     @Column(name = "id_product", nullable = false, length = 255)
     private String idProduct;

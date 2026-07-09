@@ -9,7 +9,11 @@ import java.math.BigDecimal;
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
-public class OrderItem implements org.springframework.data.domain.Persistable<java.util.UUID> {
+@jakarta.persistence.EntityListeners(com.suresell.orders.multitenant.TenantEntityListener.class)
+public class OrderItem implements org.springframework.data.domain.Persistable<java.util.UUID>, com.suresell.orders.multitenant.TenantOwned {
+    @Column(name = "tenant_id")
+    private String tenantId;
+
     @Column(name = "id_order_item", insertable = true, updatable = true)
     private Long idOrderItem;
 

@@ -13,7 +13,11 @@ import lombok.ToString;
 @NoArgsConstructor
 @AllArgsConstructor
 @EqualsAndHashCode(exclude = "order")
-public class OrderDeliveryTracking implements org.springframework.data.domain.Persistable<java.util.UUID> {
+@jakarta.persistence.EntityListeners(com.suresell.orders.multitenant.TenantEntityListener.class)
+public class OrderDeliveryTracking implements org.springframework.data.domain.Persistable<java.util.UUID>, com.suresell.orders.multitenant.TenantOwned {
+    @Column(name = "tenant_id")
+    private String tenantId;
+
     @Column(name = "order_id", insertable = true, updatable = true)
     private Long orderId;
     @OneToOne(fetch = FetchType.LAZY)

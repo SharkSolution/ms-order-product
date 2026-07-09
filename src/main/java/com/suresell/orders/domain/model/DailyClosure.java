@@ -17,10 +17,14 @@ import java.util.UUID;
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
-public class DailyClosure implements Persistable<UUID> {
+@jakarta.persistence.EntityListeners(com.suresell.orders.multitenant.TenantEntityListener.class)
+public class DailyClosure implements Persistable<UUID>, com.suresell.orders.multitenant.TenantOwned {
 
     @Transient
     private static final ZoneId BOGOTA_ZONE = ZoneId.of("America/Bogota");
+
+    @Column(name = "tenant_id")
+    private String tenantId;
 
     @Id
     @Column(name = "id", updatable = false, nullable = false)

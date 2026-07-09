@@ -11,7 +11,11 @@ import java.time.ZoneId;
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
-public class DiscountUsage {
+@jakarta.persistence.EntityListeners(com.suresell.orders.multitenant.TenantEntityListener.class)
+public class DiscountUsage implements com.suresell.orders.multitenant.TenantOwned {
+    @Column(name = "tenant_id")
+    private String tenantId;
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
