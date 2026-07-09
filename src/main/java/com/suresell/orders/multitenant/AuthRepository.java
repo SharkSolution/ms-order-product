@@ -27,7 +27,8 @@ public class AuthRepository {
     public record UserRow(long id, String email, String passwordHash, String tenantId,
                           String role, String status) {}
 
-    public record TenantRow(String id, String name, String plan, String status) {}
+    public record TenantRow(String id, String name, String plan, String status,
+                            String nit, String address, String phone, String ticketFooter) {}
 
     /** Busca el usuario por email (case-insensitive). */
     public Optional<UserRow> findUserByEmail(String email) {
@@ -48,9 +49,12 @@ public class AuthRepository {
     public Optional<TenantRow> findTenant(String id) {
         try {
             TenantRow row = jdbc.queryForObject(
-                    "SELECT id, name, plan, status FROM tenants WHERE id = ?",
+                    "SELECT id, name, plan, status, nit, address, phone, ticket_footer "
+                            + "FROM tenants WHERE id = ?",
                     (rs, i) -> new TenantRow(rs.getString("id"), rs.getString("name"),
-                            rs.getString("plan"), rs.getString("status")),
+                            rs.getString("plan"), rs.getString("status"),
+                            rs.getString("nit"), rs.getString("address"),
+                            rs.getString("phone"), rs.getString("ticket_footer")),
                     id);
             return Optional.ofNullable(row);
         } catch (EmptyResultDataAccessException e) {
@@ -70,8 +74,19 @@ public class AuthRepository {
         return n != null && n > 0;
     }
 
-    public void insertTenant(String id, String name, String plan) {
-        jdbc.update("INSERT INTO tenants (id, name, plan) VALUES (?, ?, ?)", id, name, plan);
+    public void insertTenant(String id, String name, String plan,
+                             String nit, String address, String phone) {
+        jdbc.update("INSERT INTO tenants (id, name, plan, nit, address, phone) "
+                        + "VALUES (?, ?, ?, ?, ?, ?)",
+                id, name, plan, nit, address, phone);
+    }
+
+    /** Actualiza el perfil del negocio (datos del ticket). Acotado por id de tenant. */
+    public void updateBusinessProfile(String tenantId, String name, String nit,
+                                      String address, String phone, String ticketFooter) {
+        jdbc.update("UPDATE tenants SET name = ?, nit = ?, address = ?, phone = ?, "
+                        + "ticket_footer = ? WHERE id = ?",
+                name, nit, address, phone, ticketFooter, tenantId);
     }
 
     public void insertUser(String email, String passwordHash, String tenantId, String role) {

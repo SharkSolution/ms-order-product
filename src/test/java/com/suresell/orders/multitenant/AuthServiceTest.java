@@ -60,7 +60,7 @@ class AuthServiceTest {
         when(repo.findUserByEmail("ana@shark.co")).thenReturn(Optional.of(
                 new AuthRepository.UserRow(1, "ana@shark.co", hash, "shark-burger", "admin", "active")));
         when(repo.findTenant("shark-burger")).thenReturn(Optional.of(
-                new AuthRepository.TenantRow("shark-burger", "Shark Burger", "pro", "active")));
+                new AuthRepository.TenantRow("shark-burger", "Shark Burger", "pro", "active", "NIT-1", "Calle 1", "3001", "Gracias")));
 
         AuthService.AuthResponse res = newService(repo).login("ana@shark.co", "s3cret");
 
@@ -102,7 +102,7 @@ class AuthServiceTest {
                 new AuthRepository.UserRow(1, "ana@shark.co", encoder.encode("s3cret"),
                         "shark-burger", "admin", "active")));
         when(repo.findTenant("shark-burger")).thenReturn(Optional.of(
-                new AuthRepository.TenantRow("shark-burger", "Shark Burger", "pro", "suspended")));
+                new AuthRepository.TenantRow("shark-burger", "Shark Burger", "pro", "suspended", null, null, null, null)));
 
         AuthException ex = assertThrows(AuthException.class,
                 () -> newService(repo).login("ana@shark.co", "s3cret"));
@@ -118,10 +118,10 @@ class AuthServiceTest {
         doAnswer(inv -> { insertedTenant.put("id", inv.getArgument(0));
                           insertedTenant.put("name", inv.getArgument(1));
                           return null; })
-                .when(repo).insertTenant(anyString(), anyString(), anyString());
+                .when(repo).insertTenant(anyString(), anyString(), anyString(), any(), any(), any());
 
         AuthService.AuthResponse res =
-                newService(repo).register("¡Mi Negocio!", "owner@mn.co", "s3cret1", REG_KEY);
+                newService(repo).register("¡Mi Negocio!", "owner@mn.co", "s3cret1", REG_KEY, null, null, null);
 
         assertEquals("mi-negocio", res.tenantId(), "slug limpio del nombre");
         assertEquals("mi-negocio", insertedTenant.get("id"));
@@ -138,7 +138,7 @@ class AuthServiceTest {
         when(repo.tenantExists("shark-burger-2")).thenReturn(false);
 
         AuthService.AuthResponse res =
-                newService(repo).register("Shark Burger", "b@x.co", "s3cret1", REG_KEY);
+                newService(repo).register("Shark Burger", "b@x.co", "s3cret1", REG_KEY, null, null, null);
 
         assertEquals("shark-burger-2", res.tenantId());
     }
@@ -149,16 +149,16 @@ class AuthServiceTest {
         when(repo.emailExists("dup@x.co")).thenReturn(true);
 
         AuthException ex = assertThrows(AuthException.class,
-                () -> newService(repo).register("Neg", "dup@x.co", "s3cret1", REG_KEY));
+                () -> newService(repo).register("Neg", "dup@x.co", "s3cret1", REG_KEY, null, null, null));
         assertEquals(409, ex.status());
-        verify(repo, never()).insertTenant(any(), any(), any());
+        verify(repo, never()).insertTenant(any(), any(), any(), any(), any(), any());
     }
 
     @Test
     void registerShortPasswordIs400() {
         AuthRepository repo = mock(AuthRepository.class);
         AuthException ex = assertThrows(AuthException.class,
-                () -> newService(repo).register("Neg", "a@x.co", "123", REG_KEY));
+                () -> newService(repo).register("Neg", "a@x.co", "123", REG_KEY, null, null, null));
         assertEquals(400, ex.status());
     }
 
@@ -166,9 +166,9 @@ class AuthServiceTest {
     void registerWrongKeyIs403AndCreatesNothing() {
         AuthRepository repo = mock(AuthRepository.class);
         AuthException ex = assertThrows(AuthException.class,
-                () -> newService(repo).register("Neg", "a@x.co", "s3cret1", "clave-mala"));
+                () -> newService(repo).register("Neg", "a@x.co", "s3cret1", "clave-mala", null, null, null));
         assertEquals(403, ex.status());
-        verify(repo, never()).insertTenant(any(), any(), any());
+        verify(repo, never()).insertTenant(any(), any(), any(), any(), any(), any());
         verify(repo, never()).insertUser(any(), any(), any(), any());
     }
 
@@ -176,9 +176,9 @@ class AuthServiceTest {
     void registerDisabledWhenNoKeyConfiguredIs403() {
         AuthRepository repo = mock(AuthRepository.class);
         AuthException ex = assertThrows(AuthException.class,
-                () -> newServiceNoRegister(repo).register("Neg", "a@x.co", "s3cret1", "cualquiera"));
+                () -> newServiceNoRegister(repo).register("Neg", "a@x.co", "s3cret1", "cualquiera", null, null, null));
         assertEquals(403, ex.status());
-        verify(repo, never()).insertTenant(any(), any(), any());
+        verify(repo, never()).insertTenant(any(), any(), any(), any(), any(), any());
     }
 
     @Test
@@ -225,5 +225,48 @@ class AuthServiceTest {
                 newService(repo).changePassword("ana@shark.co", "shark-burger", "vieja", "nueva123"));
         assertEquals(401, ex.status());
         verify(repo, never()).updatePasswordHash(any(), any(), any());
+    }
+
+    @Test
+    void loginReturnsBusinessProfileForTicket() {
+        AuthRepository repo = mock(AuthRepository.class);
+        when(repo.findUserByEmail("ana@shark.co")).thenReturn(Optional.of(
+                new AuthRepository.UserRow(1, "ana@shark.co", encoder.encode("s3cret"),
+                        "shark-burger", "admin", "active")));
+        when(repo.findTenant("shark-burger")).thenReturn(Optional.of(
+                new AuthRepository.TenantRow("shark-burger", "Shark Burger", "pro", "active",
+                        "NIT-1", "Calle 1", "3001", "Gracias")));
+
+        AuthService.AuthResponse res = newService(repo).login("ana@shark.co", "s3cret");
+
+        assertEquals("NIT-1", res.nit());
+        assertEquals("Calle 1", res.address());
+        assertEquals("3001", res.phone());
+        assertEquals("Gracias", res.ticketFooter());
+    }
+
+    @Test
+    void updateBusinessPersistsAndReturnsProfile() {
+        AuthRepository repo = mock(AuthRepository.class);
+        when(repo.findTenant("shark-burger")).thenReturn(Optional.of(
+                new AuthRepository.TenantRow("shark-burger", "Nuevo Nombre", "pro", "active",
+                        "NIT-9", "Nueva Dir", "555", "Vuelva pronto")));
+
+        AuthService.BusinessProfile p = newService(repo).updateBusiness(
+                "shark-burger", "Nuevo Nombre", "NIT-9", "Nueva Dir", "555", "Vuelva pronto");
+
+        verify(repo).updateBusinessProfile("shark-burger", "Nuevo Nombre", "NIT-9",
+                "Nueva Dir", "555", "Vuelva pronto");
+        assertEquals("Nuevo Nombre", p.name());
+        assertEquals("NIT-9", p.nit());
+    }
+
+    @Test
+    void updateBusinessBlankNameIs400() {
+        AuthRepository repo = mock(AuthRepository.class);
+        AuthException ex = assertThrows(AuthException.class, () ->
+                newService(repo).updateBusiness("shark-burger", "  ", "n", "a", "p", "f"));
+        assertEquals(400, ex.status());
+        verify(repo, never()).updateBusinessProfile(any(), any(), any(), any(), any(), any());
     }
 }

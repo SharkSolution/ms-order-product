@@ -3,7 +3,9 @@ package com.suresell.orders.multitenant;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.context.annotation.Profile;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -45,5 +47,36 @@ public class AccountController {
         }
     }
 
+    /** Datos del negocio del tenant autenticado (para imprimirlos en el ticket). */
+    @GetMapping("/account/business")
+    public ResponseEntity<?> getBusiness() {
+        String tenantId = TenantContext.get();
+        if (tenantId == null || tenantId.isBlank()) {
+            return ResponseEntity.status(401).body(Map.of("error", "Sesión inválida"));
+        }
+        try {
+            return ResponseEntity.ok(auth.getBusiness(tenantId));
+        } catch (AuthException e) {
+            return ResponseEntity.status(e.status()).body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    @PutMapping("/account/business")
+    public ResponseEntity<?> updateBusiness(@RequestBody BusinessRequest req) {
+        String tenantId = TenantContext.get();
+        if (tenantId == null || tenantId.isBlank()) {
+            return ResponseEntity.status(401).body(Map.of("error", "Sesión inválida"));
+        }
+        try {
+            return ResponseEntity.ok(auth.updateBusiness(tenantId, req.name(), req.nit(),
+                    req.address(), req.phone(), req.ticketFooter()));
+        } catch (AuthException e) {
+            return ResponseEntity.status(e.status()).body(Map.of("error", e.getMessage()));
+        }
+    }
+
     public record ChangePasswordRequest(String currentPassword, String newPassword) {}
+
+    public record BusinessRequest(String name, String nit, String address, String phone,
+                                  String ticketFooter) {}
 }

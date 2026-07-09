@@ -45,7 +45,8 @@ public class AuthController {
         try {
             rateLimiter.check(clientIp(http));
             return ResponseEntity.ok(auth.register(
-                    req.businessName(), req.email(), req.password(), req.registrationKey()));
+                    req.businessName(), req.email(), req.password(), req.registrationKey(),
+                    req.nit(), req.address(), req.phone()));
         } catch (AuthException e) {
             return error(e);
         }
@@ -67,5 +68,6 @@ public class AuthController {
     public record LoginRequest(String email, String password) {}
 
     public record RegisterRequest(String businessName, String email, String password,
-                                  String registrationKey) {}
+                                  String registrationKey,
+                                  String nit, String address, String phone) {}
 }

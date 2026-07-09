@@ -44,7 +44,12 @@ public class AuthService {
     }
 
     public record AuthResponse(String token, String tenantId, String tenantName,
-                               String plan, String userName, String role) {}
+                               String plan, String userName, String role,
+                               String nit, String address, String phone, String ticketFooter) {}
+
+    /** Perfil del negocio (datos que se imprimen en el ticket). */
+    public record BusinessProfile(String tenantId, String name, String nit,
+                                  String address, String phone, String ticketFooter) {}
 
     /** Login por credenciales de usuario; el tenant sale de su cuenta. */
     public AuthResponse login(String email, String password) {
@@ -68,7 +73,8 @@ public class AuthService {
         }
         String token = issueToken(tenant.id(), user.email(), user.role());
         return new AuthResponse(token, tenant.id(), tenant.name(), tenant.plan(),
-                user.email(), user.role());
+                user.email(), user.role(),
+                tenant.nit(), tenant.address(), tenant.phone(), tenant.ticketFooter());
     }
 
     /**
@@ -79,7 +85,8 @@ public class AuthService {
      */
     @Transactional
     public AuthResponse register(String businessName, String email, String password,
-                                 String providedRegisterKey) {
+                                 String providedRegisterKey,
+                                 String nit, String address, String phone) {
         if (isBlank(registerKey)) {
             throw new AuthException(403, "El registro no está habilitado");
         }
@@ -97,12 +104,33 @@ public class AuthService {
             throw new AuthException(409, "Ese email ya está registrado");
         }
         String tenantId = uniqueSlug(businessName);
-        repo.insertTenant(tenantId, businessName.trim(), DEFAULT_PLAN);
+        repo.insertTenant(tenantId, businessName.trim(), DEFAULT_PLAN,
+                trimOrNull(nit), trimOrNull(address), trimOrNull(phone));
         repo.insertUser(cleanEmail, encoder.encode(password), tenantId, ADMIN_ROLE);
 
         String token = issueToken(tenantId, cleanEmail, ADMIN_ROLE);
         return new AuthResponse(token, tenantId, businessName.trim(), DEFAULT_PLAN,
-                cleanEmail, ADMIN_ROLE);
+                cleanEmail, ADMIN_ROLE,
+                trimOrNull(nit), trimOrNull(address), trimOrNull(phone), null);
+    }
+
+    /** Perfil del negocio del tenant autenticado (para mostrar/editar sus datos). */
+    public BusinessProfile getBusiness(String tenantId) {
+        var t = repo.findTenant(tenantId)
+                .orElseThrow(() -> new AuthException(404, "Negocio no encontrado"));
+        return new BusinessProfile(t.id(), t.name(), t.nit(), t.address(), t.phone(),
+                t.ticketFooter());
+    }
+
+    /** Actualiza el perfil del negocio (datos del ticket) del tenant autenticado. */
+    public BusinessProfile updateBusiness(String tenantId, String name, String nit,
+                                          String address, String phone, String ticketFooter) {
+        if (isBlank(name)) {
+            throw new AuthException(400, "El nombre del negocio es requerido");
+        }
+        repo.updateBusinessProfile(tenantId, name.trim(), trimOrNull(nit),
+                trimOrNull(address), trimOrNull(phone), trimOrNull(ticketFooter));
+        return getBusiness(tenantId);
     }
 
     /**
@@ -162,5 +190,9 @@ public class AuthService {
 
     private static boolean isBlank(String s) {
         return s == null || s.isBlank();
+    }
+
+    private static String trimOrNull(String s) {
+        return isBlank(s) ? null : s.trim();
     }
 }
