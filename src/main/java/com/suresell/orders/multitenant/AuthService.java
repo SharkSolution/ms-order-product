@@ -29,15 +29,18 @@ public class AuthService {
     private final AuthRepository repo;
     private final SecretKey key;
     private final long ttlSeconds;
+    private final String registerKey;
     private final BCryptPasswordEncoder encoder = new BCryptPasswordEncoder();
 
     public AuthService(
             AuthRepository repo,
             @Value("${security.jwt.secret:cambia-esta-clave-en-produccion-min-32-bytes!}") String secret,
-            @Value("${auth.token.ttl-seconds:43200}") long ttlSeconds) {
+            @Value("${auth.token.ttl-seconds:43200}") long ttlSeconds,
+            @Value("${auth.register.key:}") String registerKey) {
         this.repo = repo;
         this.key = Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
         this.ttlSeconds = ttlSeconds;
+        this.registerKey = registerKey;
     }
 
     public record AuthResponse(String token, String tenantId, String tenantName,
@@ -68,9 +71,21 @@ public class AuthService {
                 user.email(), user.role());
     }
 
-    /** Alta self-service: crea negocio + usuario admin y devuelve sesión iniciada. */
+    /**
+     * Alta de un negocio (crea tenant + usuario admin y devuelve sesión iniciada).
+     * NO es abierto al público: exige la clave de registro que solo conoce el KAM
+     * (env AUTH_REGISTER_KEY). Fail-closed: si no hay clave configurada, el registro
+     * queda deshabilitado. Ver docs/110 §8 / docs/120 §4.2.
+     */
     @Transactional
-    public AuthResponse register(String businessName, String email, String password) {
+    public AuthResponse register(String businessName, String email, String password,
+                                 String providedRegisterKey) {
+        if (isBlank(registerKey)) {
+            throw new AuthException(403, "El registro no está habilitado");
+        }
+        if (isBlank(providedRegisterKey) || !registerKey.equals(providedRegisterKey)) {
+            throw new AuthException(403, "Clave de registro inválida");
+        }
         if (isBlank(businessName) || isBlank(email) || isBlank(password)) {
             throw new AuthException(400, "Negocio, email y contraseña son requeridos");
         }

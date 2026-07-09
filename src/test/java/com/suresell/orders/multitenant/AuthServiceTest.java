@@ -27,8 +27,15 @@ class AuthServiceTest {
     private static final String SECRET = "clave-de-pruebas-suficientemente-larga-32bytes!";
     private final BCryptPasswordEncoder encoder = new BCryptPasswordEncoder();
 
+    private static final String REG_KEY = "KAM-SECRET";
+
     private AuthService newService(AuthRepository repo) {
-        return new AuthService(repo, SECRET, 3600);
+        return new AuthService(repo, SECRET, 3600, REG_KEY);
+    }
+
+    /** Servicio con el registro DESHABILITADO (sin clave configurada). */
+    private AuthService newServiceNoRegister(AuthRepository repo) {
+        return new AuthService(repo, SECRET, 3600, "");
     }
 
     private String tenantOf(String jwt) {
@@ -114,7 +121,7 @@ class AuthServiceTest {
                 .when(repo).insertTenant(anyString(), anyString(), anyString());
 
         AuthService.AuthResponse res =
-                newService(repo).register("¡Mi Negocio!", "owner@mn.co", "s3cret1");
+                newService(repo).register("¡Mi Negocio!", "owner@mn.co", "s3cret1", REG_KEY);
 
         assertEquals("mi-negocio", res.tenantId(), "slug limpio del nombre");
         assertEquals("mi-negocio", insertedTenant.get("id"));
@@ -131,7 +138,7 @@ class AuthServiceTest {
         when(repo.tenantExists("shark-burger-2")).thenReturn(false);
 
         AuthService.AuthResponse res =
-                newService(repo).register("Shark Burger", "b@x.co", "s3cret1");
+                newService(repo).register("Shark Burger", "b@x.co", "s3cret1", REG_KEY);
 
         assertEquals("shark-burger-2", res.tenantId());
     }
@@ -142,7 +149,7 @@ class AuthServiceTest {
         when(repo.emailExists("dup@x.co")).thenReturn(true);
 
         AuthException ex = assertThrows(AuthException.class,
-                () -> newService(repo).register("Neg", "dup@x.co", "s3cret1"));
+                () -> newService(repo).register("Neg", "dup@x.co", "s3cret1", REG_KEY));
         assertEquals(409, ex.status());
         verify(repo, never()).insertTenant(any(), any(), any());
     }
@@ -151,8 +158,27 @@ class AuthServiceTest {
     void registerShortPasswordIs400() {
         AuthRepository repo = mock(AuthRepository.class);
         AuthException ex = assertThrows(AuthException.class,
-                () -> newService(repo).register("Neg", "a@x.co", "123"));
+                () -> newService(repo).register("Neg", "a@x.co", "123", REG_KEY));
         assertEquals(400, ex.status());
+    }
+
+    @Test
+    void registerWrongKeyIs403AndCreatesNothing() {
+        AuthRepository repo = mock(AuthRepository.class);
+        AuthException ex = assertThrows(AuthException.class,
+                () -> newService(repo).register("Neg", "a@x.co", "s3cret1", "clave-mala"));
+        assertEquals(403, ex.status());
+        verify(repo, never()).insertTenant(any(), any(), any());
+        verify(repo, never()).insertUser(any(), any(), any(), any());
+    }
+
+    @Test
+    void registerDisabledWhenNoKeyConfiguredIs403() {
+        AuthRepository repo = mock(AuthRepository.class);
+        AuthException ex = assertThrows(AuthException.class,
+                () -> newServiceNoRegister(repo).register("Neg", "a@x.co", "s3cret1", "cualquiera"));
+        assertEquals(403, ex.status());
+        verify(repo, never()).insertTenant(any(), any(), any());
     }
 
     @Test
