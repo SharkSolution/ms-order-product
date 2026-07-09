@@ -30,17 +30,20 @@ public class AuthService {
     private final SecretKey key;
     private final long ttlSeconds;
     private final String registerKey;
+    private final String businessEditKey;
     private final BCryptPasswordEncoder encoder = new BCryptPasswordEncoder();
 
     public AuthService(
             AuthRepository repo,
             @Value("${security.jwt.secret:cambia-esta-clave-en-produccion-min-32-bytes!}") String secret,
             @Value("${auth.token.ttl-seconds:43200}") long ttlSeconds,
-            @Value("${auth.register.key:}") String registerKey) {
+            @Value("${auth.register.key:}") String registerKey,
+            @Value("${business.edit.password:}") String businessEditKey) {
         this.repo = repo;
         this.key = Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
         this.ttlSeconds = ttlSeconds;
         this.registerKey = registerKey;
+        this.businessEditKey = businessEditKey;
     }
 
     public record AuthResponse(String token, String tenantId, String tenantName,
@@ -122,9 +125,22 @@ public class AuthService {
                 t.ticketFooter());
     }
 
-    /** Actualiza el perfil del negocio (datos del ticket) del tenant autenticado. */
+    /**
+     * Actualiza el perfil del negocio (datos del ticket) del tenant autenticado.
+     * Protegido por una clave de edición (env BUSINESS_EDIT_PASSWORD): los datos son
+     * fiscales (NIT, etc.), así que no basta con estar logueado en el POS — hay que
+     * conocer esta clave (la tiene el KAM/dueño, no el cajero). Fail-closed: si no
+     * hay clave configurada, la edición queda deshabilitada. Ver docs/120.
+     */
     public BusinessProfile updateBusiness(String tenantId, String name, String nit,
-                                          String address, String phone, String ticketFooter) {
+                                          String address, String phone, String ticketFooter,
+                                          String editPassword) {
+        if (isBlank(businessEditKey)) {
+            throw new AuthException(403, "La edición de datos del negocio no está habilitada");
+        }
+        if (isBlank(editPassword) || !businessEditKey.equals(editPassword)) {
+            throw new AuthException(403, "Clave de edición inválida");
+        }
         if (isBlank(name)) {
             throw new AuthException(400, "El nombre del negocio es requerido");
         }

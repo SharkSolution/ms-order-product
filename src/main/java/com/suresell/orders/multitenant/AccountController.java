@@ -69,7 +69,7 @@ public class AccountController {
         }
         try {
             return ResponseEntity.ok(auth.updateBusiness(tenantId, req.name(), req.nit(),
-                    req.address(), req.phone(), req.ticketFooter()));
+                    req.address(), req.phone(), req.ticketFooter(), req.editPassword()));
         } catch (AuthException e) {
             return ResponseEntity.status(e.status()).body(Map.of("error", e.getMessage()));
         }
@@ -78,5 +78,5 @@ public class AccountController {
     public record ChangePasswordRequest(String currentPassword, String newPassword) {}
 
     public record BusinessRequest(String name, String nit, String address, String phone,
-                                  String ticketFooter) {}
+                                  String ticketFooter, String editPassword) {}
 }

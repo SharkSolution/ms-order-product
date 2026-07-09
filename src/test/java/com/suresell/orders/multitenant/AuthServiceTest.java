@@ -28,14 +28,15 @@ class AuthServiceTest {
     private final BCryptPasswordEncoder encoder = new BCryptPasswordEncoder();
 
     private static final String REG_KEY = "KAM-SECRET";
+    private static final String BIZ_KEY = "FISCAL-KEY";
 
     private AuthService newService(AuthRepository repo) {
-        return new AuthService(repo, SECRET, 3600, REG_KEY);
+        return new AuthService(repo, SECRET, 3600, REG_KEY, BIZ_KEY);
     }
 
     /** Servicio con el registro DESHABILITADO (sin clave configurada). */
     private AuthService newServiceNoRegister(AuthRepository repo) {
-        return new AuthService(repo, SECRET, 3600, "");
+        return new AuthService(repo, SECRET, 3600, "", BIZ_KEY);
     }
 
     private String tenantOf(String jwt) {
@@ -253,7 +254,7 @@ class AuthServiceTest {
                         "NIT-9", "Nueva Dir", "555", "Vuelva pronto")));
 
         AuthService.BusinessProfile p = newService(repo).updateBusiness(
-                "shark-burger", "Nuevo Nombre", "NIT-9", "Nueva Dir", "555", "Vuelva pronto");
+                "shark-burger", "Nuevo Nombre", "NIT-9", "Nueva Dir", "555", "Vuelva pronto", BIZ_KEY);
 
         verify(repo).updateBusinessProfile("shark-burger", "Nuevo Nombre", "NIT-9",
                 "Nueva Dir", "555", "Vuelva pronto");
@@ -265,8 +266,28 @@ class AuthServiceTest {
     void updateBusinessBlankNameIs400() {
         AuthRepository repo = mock(AuthRepository.class);
         AuthException ex = assertThrows(AuthException.class, () ->
-                newService(repo).updateBusiness("shark-burger", "  ", "n", "a", "p", "f"));
+                newService(repo).updateBusiness("shark-burger", "  ", "n", "a", "p", "f", BIZ_KEY));
         assertEquals(400, ex.status());
+        verify(repo, never()).updateBusinessProfile(any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void updateBusinessWrongEditPasswordIs403() {
+        AuthRepository repo = mock(AuthRepository.class);
+        AuthException ex = assertThrows(AuthException.class, () ->
+                newService(repo).updateBusiness("shark-burger", "Nombre", "n", "a", "p", "f", "mala"));
+        assertEquals(403, ex.status());
+        verify(repo, never()).updateBusinessProfile(any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void updateBusinessDisabledWhenNoEditKeyIs403() {
+        AuthRepository repo = mock(AuthRepository.class);
+        // Servicio sin clave de edición configurada.
+        AuthService svc = new AuthService(repo, SECRET, 3600, REG_KEY, "");
+        AuthException ex = assertThrows(AuthException.class, () ->
+                svc.updateBusiness("shark-burger", "Nombre", "n", "a", "p", "f", "cualquiera"));
+        assertEquals(403, ex.status());
         verify(repo, never()).updateBusinessProfile(any(), any(), any(), any(), any(), any());
     }
 }
