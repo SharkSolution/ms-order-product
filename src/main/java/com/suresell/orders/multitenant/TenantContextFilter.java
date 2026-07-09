@@ -6,6 +6,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
+import org.springframework.web.cors.CorsUtils;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
@@ -31,11 +32,17 @@ public class TenantContextFilter extends OncePerRequestFilter {
     }
 
     /**
-     * Rutas públicas que NO exigen tenant: emisión de token (chicken-and-egg) y
-     * documentación. Todo lo demás requiere un JWT de tenant válido.
+     * NO se filtra: los preflight CORS (OPTIONS, que el navegador manda sin
+     * Authorization antes de cada request con headers custom — si se rechazaran
+     * con 401, TODAS las llamadas del browser fallarían con ERR_FAILED), la
+     * emisión de token (chicken-and-egg) y la documentación. Todo lo demás exige
+     * un JWT de tenant válido.
      */
     @Override
     protected boolean shouldNotFilter(HttpServletRequest req) {
+        if (CorsUtils.isPreFlightRequest(req)) {
+            return true;
+        }
         String path = req.getRequestURI();
         if (path == null) {
             return false;
