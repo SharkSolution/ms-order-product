@@ -14,6 +14,7 @@ CREATE TABLE orders (
     pager_color         TEXT,
     pager_number        TEXT,
     created_at          TIMESTAMP,
+    delivered_at        TIMESTAMP,
     status              TEXT,
     payment_method      TEXT,
     subtotal            NUMERIC(15,2),
@@ -30,6 +31,7 @@ CREATE TABLE order_item (
     tenant_id      TEXT NOT NULL,
     id_order_item  BIGINT,
     order_id       BIGINT,
+    order_uuid_id  UUID,
     product_id     TEXT,
     quantity       INT,
     unit_price     NUMERIC(15,2),
@@ -40,6 +42,8 @@ CREATE TABLE order_item (
 
 CREATE INDEX idx_orders_tenant ON orders (tenant_id);
 CREATE INDEX idx_order_item_tenant ON order_item (tenant_id);
+-- La relación OrderItem→Order es por UUID (@JoinColumn "order_uuid_id"), no por order_id.
+CREATE INDEX idx_order_item_order_uuid ON order_item (order_uuid_id);
 
 -- Habilitar y FORZAR RLS. FORCE hace que la política aplique incluso al owner
 -- de la tabla (aunque los superusuarios y roles con BYPASSRLS siempre la saltan;
@@ -73,3 +77,22 @@ $$;
 
 GRANT USAGE ON SCHEMA public TO app_user;
 GRANT SELECT, INSERT, UPDATE, DELETE ON orders, order_item TO app_user;
+
+-- id_order (número de orden) lo genera la DB: la app inserta la fila con id_order
+-- NULL y luego lo relee por uuid (OrderHandler.findNumericIdByUuid). Como la entidad
+-- lo marca insertable=true (inserta NULL explícito), un DEFAULT no aplica; se usa un
+-- trigger BEFORE INSERT que asigna el siguiente valor de la secuencia cuando viene NULL.
+CREATE SEQUENCE IF NOT EXISTS orders_id_order_seq;
+GRANT USAGE, SELECT ON SEQUENCE orders_id_order_seq TO app_user;
+CREATE OR REPLACE FUNCTION set_order_id_order() RETURNS trigger
+LANGUAGE plpgsql SECURITY DEFINER AS $$
+BEGIN
+    IF NEW.id_order IS NULL THEN
+        NEW.id_order := nextval('orders_id_order_seq');
+    END IF;
+    RETURN NEW;
+END;
+$$;
+DROP TRIGGER IF EXISTS trg_set_order_id_order ON orders;
+CREATE TRIGGER trg_set_order_id_order BEFORE INSERT ON orders
+    FOR EACH ROW EXECUTE FUNCTION set_order_id_order();
