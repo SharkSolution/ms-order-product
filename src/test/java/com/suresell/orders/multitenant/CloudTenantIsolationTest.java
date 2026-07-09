@@ -1,11 +1,13 @@
 package com.suresell.orders.multitenant;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.suresell.orders.domain.model.MenuProduct;
 import com.suresell.orders.infrastructure.persistence.MenuProductRepository;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.http.MediaType;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -24,8 +26,10 @@ import java.sql.ResultSet;
 import java.sql.Statement;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -49,6 +53,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class CloudTenantIsolationTest {
 
     static final String SECRET = "clave-de-prueba-multitenant-min-32-bytes!!";
+    static final String LOGIN_PW = "clave-staging";
 
     @Container
     static final PostgreSQLContainer<?> PG = new PostgreSQLContainer<>("postgres:16-alpine");
@@ -63,6 +68,7 @@ class CloudTenantIsolationTest {
         r.add("spring.flyway.user", PG::getUsername);
         r.add("spring.flyway.password", PG::getPassword);
         r.add("security.jwt.secret", () -> SECRET);
+        r.add("auth.login.password", () -> LOGIN_PW);
     }
 
     @Autowired
@@ -70,6 +76,8 @@ class CloudTenantIsolationTest {
 
     @Autowired
     MenuProductRepository menuProductRepository;
+
+    final ObjectMapper json = new ObjectMapper();
 
     /** Siembra dos productos (uno por tenant) como superusuario, saltando RLS. */
     @BeforeEach
@@ -145,5 +153,31 @@ class CloudTenantIsolationTest {
         } finally {
             TenantContext.clear();
         }
+    }
+
+    @Test
+    void tokenEmitidoAutorizaYRespetaTenant() throws Exception {
+        // 1) Pedir token (endpoint público, sin bearer) con la clave correcta.
+        String body = "{\"tenantId\":\"tenant-a\",\"userName\":\"Angie\",\"password\":\"" + LOGIN_PW + "\"}";
+        String resp = mockMvc.perform(post("/auth/token")
+                        .contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        String token = json.readTree(resp).get("token").asText();
+        assertNotNull(token);
+
+        // 2) Usar el token emitido en un endpoint protegido → ve solo su tenant.
+        mockMvc.perform(get("/api/menu/products").header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].nameProduct").value("Hamburguesa A"));
+    }
+
+    @Test
+    void tokenConClaveIncorrectaRechaza401() throws Exception {
+        String body = "{\"tenantId\":\"tenant-a\",\"userName\":\"Angie\",\"password\":\"mala\"}";
+        mockMvc.perform(post("/auth/token")
+                        .contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isUnauthorized());
     }
 }

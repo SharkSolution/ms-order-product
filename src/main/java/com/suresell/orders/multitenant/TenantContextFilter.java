@@ -30,6 +30,22 @@ public class TenantContextFilter extends OncePerRequestFilter {
         this.resolver = resolver;
     }
 
+    /**
+     * Rutas públicas que NO exigen tenant: emisión de token (chicken-and-egg) y
+     * documentación. Todo lo demás requiere un JWT de tenant válido.
+     */
+    @Override
+    protected boolean shouldNotFilter(HttpServletRequest req) {
+        String path = req.getRequestURI();
+        if (path == null) {
+            return false;
+        }
+        return path.startsWith("/auth/")
+                || path.startsWith("/swagger")
+                || path.startsWith("/v3/api-docs")
+                || path.startsWith("/actuator");
+    }
+
     @Override
     protected void doFilterInternal(HttpServletRequest req, HttpServletResponse res, FilterChain chain)
             throws ServletException, IOException {
