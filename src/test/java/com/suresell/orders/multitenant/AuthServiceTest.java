@@ -154,4 +154,50 @@ class AuthServiceTest {
                 () -> newService(repo).register("Neg", "a@x.co", "123"));
         assertEquals(400, ex.status());
     }
+
+    @Test
+    void changePasswordHappyPathUpdatesHash() {
+        AuthRepository repo = mock(AuthRepository.class);
+        when(repo.findUserByEmail("ana@shark.co")).thenReturn(Optional.of(
+                new AuthRepository.UserRow(1, "ana@shark.co", encoder.encode("vieja"),
+                        "shark-burger", "admin", "active")));
+
+        newService(repo).changePassword("ana@shark.co", "shark-burger", "vieja", "nueva123");
+
+        verify(repo).updatePasswordHash(eq("ana@shark.co"), eq("shark-burger"), anyString());
+    }
+
+    @Test
+    void changePasswordWrongCurrentIs401() {
+        AuthRepository repo = mock(AuthRepository.class);
+        when(repo.findUserByEmail(anyString())).thenReturn(Optional.of(
+                new AuthRepository.UserRow(1, "ana@shark.co", encoder.encode("vieja"),
+                        "shark-burger", "admin", "active")));
+
+        AuthException ex = assertThrows(AuthException.class, () ->
+                newService(repo).changePassword("ana@shark.co", "shark-burger", "otra", "nueva123"));
+        assertEquals(401, ex.status());
+        verify(repo, never()).updatePasswordHash(any(), any(), any());
+    }
+
+    @Test
+    void changePasswordShortNewIs400() {
+        AuthRepository repo = mock(AuthRepository.class);
+        AuthException ex = assertThrows(AuthException.class, () ->
+                newService(repo).changePassword("ana@shark.co", "shark-burger", "vieja", "123"));
+        assertEquals(400, ex.status());
+    }
+
+    @Test
+    void changePasswordTenantMismatchIs401() {
+        AuthRepository repo = mock(AuthRepository.class);
+        when(repo.findUserByEmail(anyString())).thenReturn(Optional.of(
+                new AuthRepository.UserRow(1, "ana@shark.co", encoder.encode("vieja"),
+                        "otro-tenant", "admin", "active")));
+
+        AuthException ex = assertThrows(AuthException.class, () ->
+                newService(repo).changePassword("ana@shark.co", "shark-burger", "vieja", "nueva123"));
+        assertEquals(401, ex.status());
+        verify(repo, never()).updatePasswordHash(any(), any(), any());
+    }
 }

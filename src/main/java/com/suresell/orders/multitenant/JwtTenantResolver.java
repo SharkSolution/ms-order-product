@@ -27,6 +27,15 @@ public class JwtTenantResolver {
 
     /** Devuelve el tenant_id si el token es válido y lo contiene; si no, vacío. */
     public Optional<String> resolveTenant(String authorizationHeader) {
+        return parse(authorizationHeader).map(c -> c.get("tenant_id", String.class));
+    }
+
+    /** Devuelve el subject (email del usuario) si el token es válido; si no, vacío. */
+    public Optional<String> resolveSubject(String authorizationHeader) {
+        return parse(authorizationHeader).map(Claims::getSubject);
+    }
+
+    private Optional<Claims> parse(String authorizationHeader) {
         if (authorizationHeader == null || authorizationHeader.isBlank()) {
             return Optional.empty();
         }
@@ -34,9 +43,8 @@ public class JwtTenantResolver {
                 ? authorizationHeader.substring(7)
                 : authorizationHeader;
         try {
-            Claims claims = Jwts.parser().verifyWith(key).build()
-                    .parseSignedClaims(token).getPayload();
-            return Optional.ofNullable(claims.get("tenant_id", String.class));
+            return Optional.of(Jwts.parser().verifyWith(key).build()
+                    .parseSignedClaims(token).getPayload());
         } catch (JwtException | IllegalArgumentException e) {
             return Optional.empty();
         }

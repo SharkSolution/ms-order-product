@@ -78,4 +78,16 @@ public class AuthRepository {
         jdbc.update("INSERT INTO users (email, password_hash, tenant_id, role) VALUES (?, ?, ?, ?)",
                 email, passwordHash, tenantId, role);
     }
+
+    /**
+     * Actualiza el hash de un usuario acotando por email+tenant (defensa en
+     * profundidad: aunque la política RLS de app_user es abierta, nunca se toca la
+     * fila de otro negocio). Devuelve cuántas filas cambió (0 = no coincide).
+     */
+    public int updatePasswordHash(String email, String tenantId, String newHash) {
+        return jdbc.update(
+                "UPDATE users SET password_hash = ? "
+                        + "WHERE lower(email) = lower(?) AND tenant_id = ?",
+                newHash, email, tenantId);
+    }
 }

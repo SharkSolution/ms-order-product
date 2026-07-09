@@ -90,6 +90,29 @@ public class AuthService {
                 cleanEmail, ADMIN_ROLE);
     }
 
+    /**
+     * Cambia la contraseña del usuario autenticado (email+tenant del JWT), tras
+     * verificar la actual. No emite token nuevo (el actual sigue vigente). Ver docs/110 §8.
+     */
+    public void changePassword(String email, String tenantId, String currentPassword, String newPassword) {
+        if (isBlank(currentPassword) || isBlank(newPassword)) {
+            throw new AuthException(400, "La contraseña actual y la nueva son requeridas");
+        }
+        if (newPassword.trim().length() < 6) {
+            throw new AuthException(400, "La nueva contraseña debe tener al menos 6 caracteres");
+        }
+        var user = repo.findUserByEmail(email)
+                .orElseThrow(() -> new AuthException(401, "Sesión inválida"));
+        if (!user.tenantId().equals(tenantId)) {
+            // El email del token no pertenece al tenant del token: token manipulado.
+            throw new AuthException(401, "Sesión inválida");
+        }
+        if (!encoder.matches(currentPassword, user.passwordHash())) {
+            throw new AuthException(401, "La contraseña actual no es correcta");
+        }
+        repo.updatePasswordHash(email, tenantId, encoder.encode(newPassword));
+    }
+
     private String issueToken(String tenantId, String subject, String role) {
         Instant now = Instant.now();
         return Jwts.builder()
