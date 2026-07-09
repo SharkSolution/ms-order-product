@@ -28,7 +28,7 @@ class AuthServiceTest {
     private final BCryptPasswordEncoder encoder = new BCryptPasswordEncoder();
 
     private AuthService newService(AuthRepository repo) {
-        return new AuthService(repo, SECRET, 3600, "");
+        return new AuthService(repo, SECRET, 3600);
     }
 
     private String tenantOf(String jwt) {

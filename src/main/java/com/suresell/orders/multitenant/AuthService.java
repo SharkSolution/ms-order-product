@@ -18,9 +18,6 @@ import java.util.Locale;
  * Auth real (F1): login por email+contraseña (deriva el tenant del usuario) y
  * alta self-service de un negocio. Emite el JWT de tenant que valida
  * {@link JwtTenantResolver}. SOLO perfil `cloud`. Ver docs/110-plan-auth-real.md.
- *
- * Conserva {@link #legacyToken} (clave compartida + tenant tecleado) para no
- * romper staging mientras el front migra; deprecar una vez migrado.
  */
 @Service
 @Profile("cloud")
@@ -32,18 +29,15 @@ public class AuthService {
     private final AuthRepository repo;
     private final SecretKey key;
     private final long ttlSeconds;
-    private final String legacyPassword;
     private final BCryptPasswordEncoder encoder = new BCryptPasswordEncoder();
 
     public AuthService(
             AuthRepository repo,
             @Value("${security.jwt.secret:cambia-esta-clave-en-produccion-min-32-bytes!}") String secret,
-            @Value("${auth.token.ttl-seconds:43200}") long ttlSeconds,
-            @Value("${auth.login.password:}") String legacyPassword) {
+            @Value("${auth.token.ttl-seconds:43200}") long ttlSeconds) {
         this.repo = repo;
         this.key = Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
         this.ttlSeconds = ttlSeconds;
-        this.legacyPassword = legacyPassword;
     }
 
     public record AuthResponse(String token, String tenantId, String tenantName,
@@ -94,22 +88,6 @@ public class AuthService {
         String token = issueToken(tenantId, cleanEmail, ADMIN_ROLE);
         return new AuthResponse(token, tenantId, businessName.trim(), DEFAULT_PLAN,
                 cleanEmail, ADMIN_ROLE);
-    }
-
-    /**
-     * Login legacy (staging): clave compartida + tenant tecleado. NO autentica
-     * identidad. Se conserva para transición; deprecar. Ver docs/110 §6.
-     */
-    public AuthResponse legacyToken(String tenantId, String userName, String password) {
-        if (!isBlank(legacyPassword) && !legacyPassword.equals(password)) {
-            throw new AuthException(401, "Clave de acceso inválida");
-        }
-        if (isBlank(tenantId)) {
-            throw new AuthException(400, "tenantId es requerido");
-        }
-        String token = issueToken(tenantId, userName == null ? "" : userName, ADMIN_ROLE);
-        return new AuthResponse(token, tenantId, tenantId, DEFAULT_PLAN,
-                userName == null ? "" : userName, ADMIN_ROLE);
     }
 
     private String issueToken(String tenantId, String subject, String role) {
