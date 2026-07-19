@@ -9,6 +9,7 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import javax.crypto.SecretKey;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
@@ -43,6 +44,38 @@ class AuthServiceTest {
         SecretKey key = Keys.hmacShaKeyFor(SECRET.getBytes(StandardCharsets.UTF_8));
         Claims c = Jwts.parser().verifyWith(key).build().parseSignedClaims(jwt).getPayload();
         return c.get("tenant_id", String.class);
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<String> modulesOf(String jwt) {
+        SecretKey key = Keys.hmacShaKeyFor(SECRET.getBytes(StandardCharsets.UTF_8));
+        Claims c = Jwts.parser().verifyWith(key).build().parseSignedClaims(jwt).getPayload();
+        return (List<String>) c.get("modules", List.class);
+    }
+
+    private AuthRepository repoWithTenant(String plan) {
+        AuthRepository repo = mock(AuthRepository.class);
+        when(repo.findUserByEmail(anyString())).thenReturn(Optional.of(
+                new AuthRepository.UserRow(1, "u@x.co", encoder.encode("s3cret"),
+                        "t1", "admin", "active")));
+        when(repo.findTenant("t1")).thenReturn(Optional.of(
+                new AuthRepository.TenantRow("t1", "T", plan, "active", null, null, null, null)));
+        return repo;
+    }
+
+    @Test
+    void loginProReturnsModulesIncludingDescuentos_yEnElJwt() {
+        AuthService.AuthResponse res = newService(repoWithTenant("pro")).login("u@x.co", "s3cret");
+        assertTrue(res.modules().contains("descuentos"));
+        assertTrue(res.modules().contains("ventas"));
+        assertTrue(modulesOf(res.token()).contains("descuentos"), "el JWT trae el claim modules");
+    }
+
+    @Test
+    void loginBasicoNoIncluyeDescuentos() {
+        AuthService.AuthResponse res = newService(repoWithTenant("basico")).login("u@x.co", "s3cret");
+        assertFalse(res.modules().contains("descuentos"));
+        assertTrue(res.modules().contains("cierre"));
     }
 
     @Test

@@ -35,6 +35,22 @@ public class JwtTenantResolver {
         return parse(authorizationHeader).map(Claims::getSubject);
     }
 
+    /**
+     * Módulos del tenant (claim `modules`) para enforcement por módulo (F3). Vacío
+     * si el token no lo trae (tokens viejos) — el {@link ModuleAccessFilter} lo trata
+     * como "desconocido" y no bloquea, hasta que todos re-loguean.
+     */
+    @SuppressWarnings("unchecked")
+    public java.util.List<String> resolveModules(String authorizationHeader) {
+        return parse(authorizationHeader)
+                .map(c -> {
+                    Object m = c.get("modules");
+                    return m instanceof java.util.List ? (java.util.List<String>) m
+                            : java.util.Collections.<String>emptyList();
+                })
+                .orElse(java.util.Collections.emptyList());
+    }
+
     private Optional<Claims> parse(String authorizationHeader) {
         if (authorizationHeader == null || authorizationHeader.isBlank()) {
             return Optional.empty();

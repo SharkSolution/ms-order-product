@@ -12,6 +12,7 @@ import javax.crypto.SecretKey;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.Date;
+import java.util.List;
 import java.util.Locale;
 
 /**
@@ -48,7 +49,8 @@ public class AuthService {
 
     public record AuthResponse(String token, String tenantId, String tenantName,
                                String plan, String userName, String role,
-                               String nit, String address, String phone, String ticketFooter) {}
+                               String nit, String address, String phone, String ticketFooter,
+                               List<String> modules) {}
 
     /** Perfil del negocio (datos que se imprimen en el ticket). */
     public record BusinessProfile(String tenantId, String name, String nit,
@@ -74,10 +76,11 @@ public class AuthService {
         if (!"active".equals(tenant.status())) {
             throw new AuthException(403, "El negocio está suspendido");
         }
-        String token = issueToken(tenant.id(), user.email(), user.role());
+        List<String> modules = PlanCatalog.modulesForPlan(tenant.plan());
+        String token = issueToken(tenant.id(), user.email(), user.role(), modules);
         return new AuthResponse(token, tenant.id(), tenant.name(), tenant.plan(),
                 user.email(), user.role(),
-                tenant.nit(), tenant.address(), tenant.phone(), tenant.ticketFooter());
+                tenant.nit(), tenant.address(), tenant.phone(), tenant.ticketFooter(), modules);
     }
 
     /**
@@ -111,10 +114,11 @@ public class AuthService {
                 trimOrNull(nit), trimOrNull(address), trimOrNull(phone));
         repo.insertUser(cleanEmail, encoder.encode(password), tenantId, ADMIN_ROLE);
 
-        String token = issueToken(tenantId, cleanEmail, ADMIN_ROLE);
+        List<String> modules = PlanCatalog.modulesForPlan(DEFAULT_PLAN);
+        String token = issueToken(tenantId, cleanEmail, ADMIN_ROLE, modules);
         return new AuthResponse(token, tenantId, businessName.trim(), DEFAULT_PLAN,
                 cleanEmail, ADMIN_ROLE,
-                trimOrNull(nit), trimOrNull(address), trimOrNull(phone), null);
+                trimOrNull(nit), trimOrNull(address), trimOrNull(phone), null, modules);
     }
 
     /** Perfil del negocio del tenant autenticado (para mostrar/editar sus datos). */
@@ -172,11 +176,12 @@ public class AuthService {
         repo.updatePasswordHash(email, tenantId, encoder.encode(newPassword));
     }
 
-    private String issueToken(String tenantId, String subject, String role) {
+    private String issueToken(String tenantId, String subject, String role, List<String> modules) {
         Instant now = Instant.now();
         return Jwts.builder()
                 .claim("tenant_id", tenantId)
                 .claim("role", role)
+                .claim("modules", modules)
                 .subject(subject)
                 .issuedAt(Date.from(now))
                 .expiration(Date.from(now.plusSeconds(ttlSeconds)))
