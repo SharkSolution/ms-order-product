@@ -5,6 +5,7 @@ import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -29,6 +30,9 @@ public class AuthRepository {
 
     public record TenantRow(String id, String name, String plan, String status,
                             String nit, String address, String phone, String ticketFooter) {}
+
+    /** Proyección de usuario SIN el hash (para listar en el panel de usuarios). */
+    public record UserSummary(long id, String email, String role, String status) {}
 
     /** Busca el usuario por email (case-insensitive). */
     public Optional<UserRow> findUserByEmail(String email) {
@@ -92,6 +96,15 @@ public class AuthRepository {
     public void insertUser(String email, String passwordHash, String tenantId, String role) {
         jdbc.update("INSERT INTO users (email, password_hash, tenant_id, role) VALUES (?, ?, ?, ?)",
                 email, passwordHash, tenantId, role);
+    }
+
+    /** Usuarios de un tenant (sin hash), para el panel de gestión (F3, admin). */
+    public List<UserSummary> listUsers(String tenantId) {
+        return jdbc.query(
+                "SELECT id, email, role, status FROM users WHERE tenant_id = ? ORDER BY created_at",
+                (rs, i) -> new UserSummary(rs.getLong("id"), rs.getString("email"),
+                        rs.getString("role"), rs.getString("status")),
+                tenantId);
     }
 
     /**

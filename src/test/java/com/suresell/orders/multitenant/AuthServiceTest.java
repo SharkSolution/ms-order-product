@@ -323,4 +323,48 @@ class AuthServiceTest {
         assertEquals(403, ex.status());
         verify(repo, never()).updateBusinessProfile(any(), any(), any(), any(), any(), any());
     }
+
+    @Test
+    void createUserCajeroOk() {
+        AuthRepository repo = mock(AuthRepository.class);
+        when(repo.emailExists("caja@x.co")).thenReturn(false);
+        when(repo.listUsers("t1")).thenReturn(
+                List.of(new AuthRepository.UserSummary(2, "caja@x.co", "cajero", "active")));
+
+        AuthRepository.UserSummary u = newService(repo).createUser("t1", "caja@x.co", "clave123", "cajero");
+
+        assertEquals("cajero", u.role());
+        verify(repo).insertUser(eq("caja@x.co"), anyString(), eq("t1"), eq("cajero"));
+    }
+
+    @Test
+    void createUserSinRolPorDefectoEsCajero() {
+        AuthRepository repo = mock(AuthRepository.class);
+        when(repo.emailExists(anyString())).thenReturn(false);
+        when(repo.listUsers("t1")).thenReturn(
+                List.of(new AuthRepository.UserSummary(3, "x@x.co", "cajero", "active")));
+
+        newService(repo).createUser("t1", "x@x.co", "clave123", null);
+
+        verify(repo).insertUser(eq("x@x.co"), anyString(), eq("t1"), eq("cajero"));
+    }
+
+    @Test
+    void createUserRolInvalidoEs400() {
+        AuthRepository repo = mock(AuthRepository.class);
+        AuthException ex = assertThrows(AuthException.class, () ->
+                newService(repo).createUser("t1", "a@x.co", "clave123", "superadmin"));
+        assertEquals(400, ex.status());
+        verify(repo, never()).insertUser(any(), any(), any(), any());
+    }
+
+    @Test
+    void createUserEmailDuplicadoEs409() {
+        AuthRepository repo = mock(AuthRepository.class);
+        when(repo.emailExists("dup@x.co")).thenReturn(true);
+        AuthException ex = assertThrows(AuthException.class, () ->
+                newService(repo).createUser("t1", "dup@x.co", "clave123", "cajero"));
+        assertEquals(409, ex.status());
+        verify(repo, never()).insertUser(any(), any(), any(), any());
+    }
 }

@@ -75,8 +75,48 @@ public class AccountController {
         }
     }
 
+    // ---------- Gestión de usuarios (F3) — solo admin ----------
+
+    @GetMapping("/account/users")
+    public ResponseEntity<?> listUsers(HttpServletRequest http) {
+        String tenantId = TenantContext.get();
+        ResponseEntity<?> guard = requireAdmin(http, tenantId);
+        if (guard != null) {
+            return guard;
+        }
+        return ResponseEntity.ok(auth.listUsers(tenantId));
+    }
+
+    @PostMapping("/account/users")
+    public ResponseEntity<?> createUser(@RequestBody CreateUserRequest req, HttpServletRequest http) {
+        String tenantId = TenantContext.get();
+        ResponseEntity<?> guard = requireAdmin(http, tenantId);
+        if (guard != null) {
+            return guard;
+        }
+        try {
+            return ResponseEntity.ok(auth.createUser(tenantId, req.email(), req.password(), req.role()));
+        } catch (AuthException e) {
+            return ResponseEntity.status(e.status()).body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    /** null si es admin válido; si no, la respuesta 401/403 a devolver. */
+    private ResponseEntity<?> requireAdmin(HttpServletRequest http, String tenantId) {
+        if (tenantId == null || tenantId.isBlank()) {
+            return ResponseEntity.status(401).body(Map.of("error", "Sesión inválida"));
+        }
+        String role = resolver.resolveRole(http.getHeader("Authorization")).orElse("");
+        if (!"admin".equals(role)) {
+            return ResponseEntity.status(403).body(Map.of("error", "Solo un administrador puede gestionar usuarios"));
+        }
+        return null;
+    }
+
     public record ChangePasswordRequest(String currentPassword, String newPassword) {}
 
     public record BusinessRequest(String name, String nit, String address, String phone,
                                   String ticketFooter, String editPassword) {}
+
+    public record CreateUserRequest(String email, String password, String role) {}
 }

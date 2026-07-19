@@ -14,6 +14,7 @@ import java.time.Instant;
 import java.util.Date;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 
 /**
  * Auth real (F1): login por email+contraseña (deriva el tenant del usuario) y
@@ -174,6 +175,41 @@ public class AuthService {
             throw new AuthException(401, "La contraseña actual no es correcta");
         }
         repo.updatePasswordHash(email, tenantId, encoder.encode(newPassword));
+    }
+
+    private static final Set<String> VALID_ROLES = Set.of("admin", "cajero");
+
+    /** Lista los usuarios del tenant (sin hash). Lo usa el panel de usuarios (admin). */
+    public List<AuthRepository.UserSummary> listUsers(String tenantId) {
+        return repo.listUsers(tenantId);
+    }
+
+    /**
+     * Crea un usuario en el tenant (F3, gestión de usuarios). Rol ∈ {admin, cajero}.
+     * La autorización (que el solicitante sea admin) la verifica el controlador con
+     * el rol del JWT. Devuelve el usuario creado (sin hash).
+     */
+    public AuthRepository.UserSummary createUser(String tenantId, String email,
+                                                 String password, String role) {
+        if (isBlank(email) || isBlank(password)) {
+            throw new AuthException(400, "Email y contraseña son requeridos");
+        }
+        if (password.trim().length() < 6) {
+            throw new AuthException(400, "La contraseña debe tener al menos 6 caracteres");
+        }
+        String r = isBlank(role) ? "cajero" : role.trim().toLowerCase();
+        if (!VALID_ROLES.contains(r)) {
+            throw new AuthException(400, "Rol inválido (admin|cajero)");
+        }
+        String cleanEmail = email.trim();
+        if (repo.emailExists(cleanEmail)) {
+            throw new AuthException(409, "Ese email ya está registrado");
+        }
+        repo.insertUser(cleanEmail, encoder.encode(password), tenantId, r);
+        return repo.listUsers(tenantId).stream()
+                .filter(u -> u.email().equalsIgnoreCase(cleanEmail))
+                .findFirst()
+                .orElseThrow(() -> new AuthException(500, "No se pudo leer el usuario creado"));
     }
 
     private String issueToken(String tenantId, String subject, String role, List<String> modules) {

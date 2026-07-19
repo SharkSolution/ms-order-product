@@ -35,6 +35,11 @@ public class JwtTenantResolver {
         return parse(authorizationHeader).map(Claims::getSubject);
     }
 
+    /** Rol del usuario (claim `role`: admin|cajero…) para gating por rol (F3). */
+    public Optional<String> resolveRole(String authorizationHeader) {
+        return parse(authorizationHeader).map(c -> c.get("role", String.class));
+    }
+
     /**
      * Módulos del tenant (claim `modules`) para enforcement por módulo (F3). Vacío
      * si el token no lo trae (tokens viejos) — el {@link ModuleAccessFilter} lo trata
