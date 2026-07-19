@@ -10,7 +10,11 @@ import org.springframework.transaction.annotation.Transactional;
 
 import javax.crypto.SecretKey;
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.SecureRandom;
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
+import java.util.Base64;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
@@ -36,6 +40,18 @@ public class AuthService {
     private final String registerKey;
     private final String businessEditKey;
     private final BCryptPasswordEncoder encoder = new BCryptPasswordEncoder();
+
+    // Reset de contraseña (F3, Inc.5). Config por env.
+    @org.springframework.beans.factory.annotation.Value("${auth.reset.link-base:}")
+    private String resetLinkBase;
+    @org.springframework.beans.factory.annotation.Value("${auth.reset.ttl-minutes:60}")
+    private long resetTtlMinutes;
+    @org.springframework.beans.factory.annotation.Value("${auth.reset.expose-link:false}")
+    private boolean resetExposeLink;
+    @org.springframework.beans.factory.annotation.Value("${auth.reset.edge-url:}")
+    private String resetEdgeUrl;
+    @org.springframework.beans.factory.annotation.Value("${auth.reset.edge-key:}")
+    private String resetEdgeKey;
 
     public AuthService(
             AuthRepository repo,
@@ -258,6 +274,95 @@ public class AuthService {
                 .filter(u -> u.email().equalsIgnoreCase(cleanEmail))
                 .findFirst()
                 .orElseThrow(() -> new AuthException(500, "No se pudo leer el usuario creado"));
+    }
+
+    // ---------- Reset de contraseña (F3, Inc.5) ----------
+
+    public record ForgotResponse(boolean sent, String link) {}
+
+    /**
+     * Inicia el reset: si el email existe, genera un token de un solo uso (hash en
+     * DB), lo envía por email (Edge Function) y —solo en staging con expose-link—
+     * devuelve el link para pruebas. SIEMPRE responde igual (no revela si el email
+     * existe). Ver docs/160.
+     */
+    public ForgotResponse forgotPassword(String email) {
+        if (isBlank(email)) {
+            throw new AuthException(400, "Email es requerido");
+        }
+        var user = repo.findUserByEmail(email.trim());
+        String exposed = null;
+        if (user.isPresent()) {
+            String token = randomToken();
+            Instant expires = Instant.now().plus(resetTtlMinutes, ChronoUnit.MINUTES);
+            repo.insertReset(sha256(token), user.get().email(), user.get().tenantId(), expires);
+            String link = buildResetLink(token);
+            sendResetEmail(user.get().email(), link); // best-effort (no rompe el flujo)
+            if (resetExposeLink) {
+                exposed = link;
+            }
+        }
+        return new ForgotResponse(true, exposed);
+    }
+
+    /** Aplica la nueva contraseña usando el token del email. Un solo uso. */
+    public void resetPassword(String token, String newPassword) {
+        if (isBlank(token) || isBlank(newPassword)) {
+            throw new AuthException(400, "Token y nueva contraseña son requeridos");
+        }
+        if (newPassword.trim().length() < 6) {
+            throw new AuthException(400, "La contraseña debe tener al menos 6 caracteres");
+        }
+        String hash = sha256(token);
+        var reset = repo.findValidReset(hash)
+                .orElseThrow(() -> new AuthException(400, "Enlace inválido o expirado"));
+        repo.updatePasswordHash(reset.email(), reset.tenantId(), encoder.encode(newPassword));
+        repo.markResetUsed(hash);
+    }
+
+    private String randomToken() {
+        byte[] b = new byte[32];
+        new SecureRandom().nextBytes(b);
+        return Base64.getUrlEncoder().withoutPadding().encodeToString(b);
+    }
+
+    private static String sha256(String s) {
+        try {
+            byte[] d = MessageDigest.getInstance("SHA-256").digest(s.getBytes(StandardCharsets.UTF_8));
+            return Base64.getUrlEncoder().withoutPadding().encodeToString(d);
+        } catch (Exception e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
+    private String buildResetLink(String token) {
+        String base = isBlank(resetLinkBase) ? "" : resetLinkBase.trim().replaceAll("/+$", "");
+        return base + "/reset?token=" + token;
+    }
+
+    /** Envía el email de reset vía la Edge Function de Supabase (si está configurada). */
+    private void sendResetEmail(String to, String link) {
+        if (isBlank(resetEdgeUrl)) {
+            return; // sin proveedor configurado: staging usa expose-link
+        }
+        try {
+            String body = "{\"to\":" + jsonStr(to) + ",\"link\":" + jsonStr(link) + "}";
+            var req = java.net.http.HttpRequest.newBuilder()
+                    .uri(java.net.URI.create(resetEdgeUrl))
+                    .header("Content-Type", "application/json")
+                    .header("Authorization", "Bearer " + resetEdgeKey)
+                    .timeout(java.time.Duration.ofSeconds(8))
+                    .POST(java.net.http.HttpRequest.BodyPublishers.ofString(body))
+                    .build();
+            java.net.http.HttpClient.newHttpClient()
+                    .send(req, java.net.http.HttpResponse.BodyHandlers.discarding());
+        } catch (Exception e) {
+            /* best-effort: un fallo de email no rompe el flujo */
+        }
+    }
+
+    private static String jsonStr(String s) {
+        return "\"" + s.replace("\\", "\\\\").replace("\"", "\\\"") + "\"";
     }
 
     private String issueToken(String tenantId, String subject, String role, List<String> modules) {

@@ -5,6 +5,7 @@ import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import javax.crypto.SecretKey;
 import java.nio.charset.StandardCharsets;
@@ -388,5 +389,64 @@ class AuthServiceTest {
                 newService(repo).createUser("t1", "dup@x.co", "clave123", "cajero"));
         assertEquals(409, ex.status());
         verify(repo, never()).insertUser(any(), any(), any(), any());
+    }
+
+    @Test
+    void forgotEmailDesconocidoNoInsertaPeroResponde() {
+        AuthRepository repo = mock(AuthRepository.class);
+        when(repo.findUserByEmail(anyString())).thenReturn(Optional.empty());
+
+        AuthService.ForgotResponse r = newService(repo).forgotPassword("nadie@x.co");
+
+        assertTrue(r.sent());
+        assertNull(r.link(), "no revela nada");
+        verify(repo, never()).insertReset(any(), any(), any(), any());
+    }
+
+    @Test
+    void forgotEmailConocidoInsertaReset_yExponeLinkEnStaging() {
+        AuthRepository repo = mock(AuthRepository.class);
+        when(repo.findUserByEmail("ana@shark.co")).thenReturn(Optional.of(
+                new AuthRepository.UserRow(1, "ana@shark.co", "h", "shark-burger", "admin", "active")));
+        AuthService svc = newService(repo);
+        ReflectionTestUtils.setField(svc, "resetExposeLink", true);
+        ReflectionTestUtils.setField(svc, "resetLinkBase", "https://pos.test");
+        ReflectionTestUtils.setField(svc, "resetTtlMinutes", 60L);
+
+        AuthService.ForgotResponse r = svc.forgotPassword("ana@shark.co");
+
+        assertNotNull(r.link());
+        assertTrue(r.link().startsWith("https://pos.test/reset?token="));
+        verify(repo).insertReset(anyString(), eq("ana@shark.co"), eq("shark-burger"), any());
+    }
+
+    @Test
+    void resetValidoActualizaClaveYMarcaUsado() {
+        AuthRepository repo = mock(AuthRepository.class);
+        when(repo.findValidReset(anyString())).thenReturn(Optional.of(
+                new AuthRepository.ResetRow("ana@shark.co", "shark-burger")));
+
+        newService(repo).resetPassword("tok", "nueva123");
+
+        verify(repo).updatePasswordHash(eq("ana@shark.co"), eq("shark-burger"), anyString());
+        verify(repo).markResetUsed(anyString());
+    }
+
+    @Test
+    void resetTokenInvalidoOExpiradoEs400() {
+        AuthRepository repo = mock(AuthRepository.class);
+        when(repo.findValidReset(anyString())).thenReturn(Optional.empty());
+        AuthException ex = assertThrows(AuthException.class,
+                () -> newService(repo).resetPassword("tok", "nueva123"));
+        assertEquals(400, ex.status());
+        verify(repo, never()).updatePasswordHash(any(), any(), any());
+    }
+
+    @Test
+    void resetClaveCortaEs400() {
+        AuthRepository repo = mock(AuthRepository.class);
+        AuthException ex = assertThrows(AuthException.class,
+                () -> newService(repo).resetPassword("tok", "123"));
+        assertEquals(400, ex.status());
     }
 }

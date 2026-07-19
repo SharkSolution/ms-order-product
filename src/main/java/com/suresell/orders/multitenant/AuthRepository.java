@@ -131,6 +131,34 @@ public class AuthRepository {
         jdbc.update("DELETE FROM tenant_modules WHERE tenant_id = ? AND module = ?", tenantId, module);
     }
 
+    // ---------- Reset de contraseña (F3, Inc.5) ----------
+
+    public record ResetRow(String email, String tenantId) {}
+
+    public void insertReset(String tokenHash, String email, String tenantId, java.time.Instant expiresAt) {
+        jdbc.update(
+                "INSERT INTO password_resets (token_hash, email, tenant_id, expires_at) VALUES (?, ?, ?, ?)",
+                tokenHash, email, tenantId, java.sql.Timestamp.from(expiresAt));
+    }
+
+    /** Devuelve el reset si el token existe, no está usado y no expiró. */
+    public Optional<ResetRow> findValidReset(String tokenHash) {
+        try {
+            ResetRow r = jdbc.queryForObject(
+                    "SELECT email, tenant_id FROM password_resets "
+                            + "WHERE token_hash = ? AND used = false AND expires_at > now()",
+                    (rs, i) -> new ResetRow(rs.getString("email"), rs.getString("tenant_id")),
+                    tokenHash);
+            return Optional.ofNullable(r);
+        } catch (EmptyResultDataAccessException e) {
+            return Optional.empty();
+        }
+    }
+
+    public void markResetUsed(String tokenHash) {
+        jdbc.update("UPDATE password_resets SET used = true WHERE token_hash = ?", tokenHash);
+    }
+
     /**
      * Actualiza el hash de un usuario acotando por email+tenant (defensa en
      * profundidad: aunque la política RLS de app_user es abierta, nunca se toca la

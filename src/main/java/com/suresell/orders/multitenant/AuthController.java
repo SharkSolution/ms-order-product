@@ -61,11 +61,41 @@ public class AuthController {
         return http.getRemoteAddr();
     }
 
+    @PostMapping("/auth/forgot-password")
+    public ResponseEntity<?> forgotPassword(@RequestBody ForgotRequest req) {
+        try {
+            var r = auth.forgotPassword(req.email());
+            // link SOLO viene en staging (expose-link); en prod es null.
+            Map<String, Object> body = new java.util.HashMap<>();
+            body.put("message", "Si el email existe, enviamos un enlace para restablecer la contraseña.");
+            if (r.link() != null) {
+                body.put("resetLink", r.link());
+            }
+            return ResponseEntity.ok(body);
+        } catch (AuthException e) {
+            return error(e);
+        }
+    }
+
+    @PostMapping("/auth/reset-password")
+    public ResponseEntity<?> resetPassword(@RequestBody ResetRequest req) {
+        try {
+            auth.resetPassword(req.token(), req.newPassword());
+            return ResponseEntity.ok(Map.of("status", "ok"));
+        } catch (AuthException e) {
+            return error(e);
+        }
+    }
+
     private ResponseEntity<?> error(AuthException e) {
         return ResponseEntity.status(e.status()).body(Map.of("error", e.getMessage()));
     }
 
     public record LoginRequest(String email, String password) {}
+
+    public record ForgotRequest(String email) {}
+
+    public record ResetRequest(String token, String newPassword) {}
 
     public record RegisterRequest(String businessName, String email, String password,
                                   String registrationKey,
