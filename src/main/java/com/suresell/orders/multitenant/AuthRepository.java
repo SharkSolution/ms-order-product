@@ -34,6 +34,9 @@ public class AuthRepository {
     /** Proyección de usuario SIN el hash (para listar en el panel de usuarios). */
     public record UserSummary(long id, String email, String role, String status) {}
 
+    /** Override de módulo por tenant: enabled=true regala, false quita. */
+    public record ModuleOverride(String module, boolean enabled) {}
+
     /** Busca el usuario por email (case-insensitive). */
     public Optional<UserRow> findUserByEmail(String email) {
         try {
@@ -105,6 +108,27 @@ public class AuthRepository {
                 (rs, i) -> new UserSummary(rs.getLong("id"), rs.getString("email"),
                         rs.getString("role"), rs.getString("status")),
                 tenantId);
+    }
+
+    /** Overrides de módulos del tenant (F3, Inc.2). */
+    public List<ModuleOverride> getOverrides(String tenantId) {
+        return jdbc.query(
+                "SELECT module, enabled FROM tenant_modules WHERE tenant_id = ?",
+                (rs, i) -> new ModuleOverride(rs.getString("module"), rs.getBoolean("enabled")),
+                tenantId);
+    }
+
+    /** Fija (o actualiza) un override de módulo para el tenant. */
+    public void upsertOverride(String tenantId, String module, boolean enabled) {
+        jdbc.update(
+                "INSERT INTO tenant_modules (tenant_id, module, enabled) VALUES (?, ?, ?) "
+                        + "ON CONFLICT (tenant_id, module) DO UPDATE SET enabled = EXCLUDED.enabled",
+                tenantId, module, enabled);
+    }
+
+    /** Quita un override (el módulo vuelve a decidirse solo por el plan). */
+    public void deleteOverride(String tenantId, String module) {
+        jdbc.update("DELETE FROM tenant_modules WHERE tenant_id = ? AND module = ?", tenantId, module);
     }
 
     /**

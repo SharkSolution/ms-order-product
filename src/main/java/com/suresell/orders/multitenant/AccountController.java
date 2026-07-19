@@ -101,6 +101,36 @@ public class AccountController {
         }
     }
 
+    // ---------- Módulos del tenant (F3, Inc.2) — solo admin ----------
+
+    @GetMapping("/account/modules")
+    public ResponseEntity<?> getModules(HttpServletRequest http) {
+        String tenantId = TenantContext.get();
+        ResponseEntity<?> guard = requireAdmin(http, tenantId);
+        if (guard != null) {
+            return guard;
+        }
+        try {
+            return ResponseEntity.ok(auth.getModuleConfig(tenantId));
+        } catch (AuthException e) {
+            return ResponseEntity.status(e.status()).body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    @PutMapping("/account/modules")
+    public ResponseEntity<?> setModules(@RequestBody ModulesRequest req, HttpServletRequest http) {
+        String tenantId = TenantContext.get();
+        ResponseEntity<?> guard = requireAdmin(http, tenantId);
+        if (guard != null) {
+            return guard;
+        }
+        try {
+            return ResponseEntity.ok(auth.setModuleOverrides(tenantId, req.overrides()));
+        } catch (AuthException e) {
+            return ResponseEntity.status(e.status()).body(Map.of("error", e.getMessage()));
+        }
+    }
+
     /** null si es admin válido; si no, la respuesta 401/403 a devolver. */
     private ResponseEntity<?> requireAdmin(HttpServletRequest http, String tenantId) {
         if (tenantId == null || tenantId.isBlank()) {
@@ -119,4 +149,6 @@ public class AccountController {
                                   String ticketFooter, String editPassword) {}
 
     public record CreateUserRequest(String email, String password, String role) {}
+
+    public record ModulesRequest(Map<String, Boolean> overrides) {}
 }

@@ -15,6 +15,7 @@ import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.*;
 
@@ -76,6 +77,27 @@ class AuthServiceTest {
         AuthService.AuthResponse res = newService(repoWithTenant("basico")).login("u@x.co", "s3cret");
         assertFalse(res.modules().contains("descuentos"));
         assertTrue(res.modules().contains("cierre"));
+    }
+
+    @Test
+    void loginBasicoConOverrideGanaDescuentos() {
+        AuthRepository repo = repoWithTenant("basico");
+        when(repo.getOverrides("t1")).thenReturn(
+                List.of(new AuthRepository.ModuleOverride("descuentos", true)));
+
+        AuthService.AuthResponse res = newService(repo).login("u@x.co", "s3cret");
+
+        assertTrue(res.modules().contains("descuentos"), "el override regala el módulo");
+        assertTrue(modulesOf(res.token()).contains("descuentos"));
+    }
+
+    @Test
+    void setModuleOverrideModuloDesconocidoEs400() {
+        AuthRepository repo = mock(AuthRepository.class);
+        AuthException ex = assertThrows(AuthException.class, () ->
+                newService(repo).setModuleOverrides("t1", Map.of("xyz", true)));
+        assertEquals(400, ex.status());
+        verify(repo, never()).upsertOverride(any(), any(), anyBoolean());
     }
 
     @Test

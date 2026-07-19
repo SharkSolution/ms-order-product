@@ -1,7 +1,9 @@
 package com.suresell.orders.multitenant;
 
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Fuente de verdad (server-authoritative) del mapa **plan → módulos** (F3, docs/160
@@ -25,11 +27,39 @@ public final class PlanCatalog {
 
     private static final List<String> DEFAULT = List.of(VENTAS, HISTORIAL, CIERRE, DESCUENTOS);
 
+    /** Todos los módulos conocidos (para validar overrides). */
+    public static final Set<String> KNOWN = Set.of(VENTAS, HISTORIAL, CIERRE, DESCUENTOS);
+
     /** Módulos incluidos por el plan; si el plan es desconocido, cae a `pro` (todos). */
     public static List<String> modulesForPlan(String plan) {
         if (plan == null) {
             return DEFAULT;
         }
         return PLAN_MODULES.getOrDefault(plan.trim().toLowerCase(), DEFAULT);
+    }
+
+    public static boolean isKnownModule(String module) {
+        return module != null && KNOWN.contains(module.trim().toLowerCase());
+    }
+
+    /**
+     * Módulos EFECTIVOS = (módulos del plan ∪ grants) − revokes (F3, Inc.2).
+     * `overrides`: módulo → enabled (true regala, false quita).
+     */
+    public static List<String> effectiveModules(String plan, Map<String, Boolean> overrides) {
+        Set<String> set = new LinkedHashSet<>(modulesForPlan(plan));
+        if (overrides != null) {
+            for (Map.Entry<String, Boolean> e : overrides.entrySet()) {
+                if (!isKnownModule(e.getKey())) {
+                    continue;
+                }
+                if (Boolean.TRUE.equals(e.getValue())) {
+                    set.add(e.getKey());
+                } else {
+                    set.remove(e.getKey());
+                }
+            }
+        }
+        return List.copyOf(set);
     }
 }

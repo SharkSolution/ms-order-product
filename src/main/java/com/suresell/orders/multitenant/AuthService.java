@@ -12,8 +12,10 @@ import javax.crypto.SecretKey;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.Date;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -77,7 +79,7 @@ public class AuthService {
         if (!"active".equals(tenant.status())) {
             throw new AuthException(403, "El negocio está suspendido");
         }
-        List<String> modules = PlanCatalog.modulesForPlan(tenant.plan());
+        List<String> modules = effectiveModulesFor(tenant.id(), tenant.plan());
         String token = issueToken(tenant.id(), user.email(), user.role(), modules);
         return new AuthResponse(token, tenant.id(), tenant.name(), tenant.plan(),
                 user.email(), user.role(),
@@ -175,6 +177,52 @@ public class AuthService {
             throw new AuthException(401, "La contraseña actual no es correcta");
         }
         repo.updatePasswordHash(email, tenantId, encoder.encode(newPassword));
+    }
+
+    /** Módulos efectivos del tenant = plan ± overrides (F3, Inc.2). */
+    private List<String> effectiveModulesFor(String tenantId, String plan) {
+        Map<String, Boolean> overrides = new HashMap<>();
+        for (AuthRepository.ModuleOverride o : repo.getOverrides(tenantId)) {
+            overrides.put(o.module(), o.enabled());
+        }
+        return PlanCatalog.effectiveModules(plan, overrides);
+    }
+
+    public record ModuleConfig(String plan, List<String> planModules,
+                               Map<String, Boolean> overrides, List<String> effectiveModules) {}
+
+    /** Configuración de módulos del tenant (plan + overrides + efectivos). Para el panel. */
+    public ModuleConfig getModuleConfig(String tenantId) {
+        var tenant = repo.findTenant(tenantId)
+                .orElseThrow(() -> new AuthException(404, "Negocio no encontrado"));
+        Map<String, Boolean> overrides = new HashMap<>();
+        for (AuthRepository.ModuleOverride o : repo.getOverrides(tenantId)) {
+            overrides.put(o.module(), o.enabled());
+        }
+        return new ModuleConfig(tenant.plan(), PlanCatalog.modulesForPlan(tenant.plan()),
+                overrides, PlanCatalog.effectiveModules(tenant.plan(), overrides));
+    }
+
+    /**
+     * Fija overrides de módulos (admin). Por cada entrada: true regala, false quita,
+     * null borra el override (vuelve a decidirse por el plan). Devuelve la config
+     * resultante. Los cambios aplican al PRÓXIMO login del usuario (el JWT lleva los
+     * módulos). Ver docs/160.
+     */
+    public ModuleConfig setModuleOverrides(String tenantId, Map<String, Boolean> overrides) {
+        if (overrides != null) {
+            for (Map.Entry<String, Boolean> e : overrides.entrySet()) {
+                if (!PlanCatalog.isKnownModule(e.getKey())) {
+                    throw new AuthException(400, "Módulo desconocido: " + e.getKey());
+                }
+                if (e.getValue() == null) {
+                    repo.deleteOverride(tenantId, e.getKey());
+                } else {
+                    repo.upsertOverride(tenantId, e.getKey(), e.getValue());
+                }
+            }
+        }
+        return getModuleConfig(tenantId);
     }
 
     private static final Set<String> VALID_ROLES = Set.of("admin", "cajero");
