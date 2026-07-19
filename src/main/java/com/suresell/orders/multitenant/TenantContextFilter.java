@@ -48,6 +48,7 @@ public class TenantContextFilter extends OncePerRequestFilter {
             return false;
         }
         return path.startsWith("/auth/")
+                || path.startsWith("/admin/") // super-admin (KAM): no scopeado por tenant, valida su propio JWT
                 || path.startsWith("/swagger")
                 || path.startsWith("/v3/api-docs")
                 || path.startsWith("/actuator");

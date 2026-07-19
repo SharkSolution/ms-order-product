@@ -40,6 +40,13 @@ public class JwtTenantResolver {
         return parse(authorizationHeader).map(c -> c.get("role", String.class));
     }
 
+    /** true si el token es de un super-admin (KAM) válido (claim `super_admin`). F3. */
+    public boolean isSuperAdmin(String authorizationHeader) {
+        return parse(authorizationHeader)
+                .map(c -> Boolean.TRUE.equals(c.get("super_admin", Boolean.class)))
+                .orElse(false);
+    }
+
     /**
      * Módulos del tenant (claim `modules`) para enforcement por módulo (F3). Vacío
      * si el token no lo trae (tokens viejos) — el {@link ModuleAccessFilter} lo trata
