@@ -3,6 +3,7 @@ import com.suresell.orders.application.dto.OrderRequestRecord;
 import com.suresell.orders.application.dto.OrderResponseRecord;
 import com.suresell.orders.application.dto.PageResponse;
 import com.suresell.orders.application.dto.PagerAvailabilityResponse;
+import com.suresell.orders.domain.model.Order;
 import com.suresell.orders.domain.model.OrderEditHistory;
 import com.suresell.orders.domain.port.in.OrderPort;
 import com.suresell.orders.infrastructure.web.adapter.OrderRequestWebAdapter;
@@ -36,10 +37,15 @@ public class OrderController {
     }
     @PostMapping("/create")
     @Operation(summary = "Crear orden")
-    public ResponseEntity<Map<String, String>> createOrder(@RequestBody Map<String, Object> payload) {
+    public ResponseEntity<Map<String, Object>> createOrder(@RequestBody Map<String, Object> payload) {
         OrderRequestRecord dto = orderRequestWebAdapter.normalize(payload);
-        orderPort.createOrUpdateOrder(dto);
-        return ResponseEntity.status(HttpStatus.CREATED).body(Map.of("message", "Orden creada con éxito"));
+        Order created = orderPort.createOrUpdateOrder(dto);
+        // Devuelve el idOrder (número por-tenant) para que el cliente offline lo guarde
+        // sin tener que re-consultar el historial. Ver docs/140 (F2).
+        Map<String, Object> body = new java.util.HashMap<>();
+        body.put("message", "Orden creada con éxito");
+        body.put("idOrder", created != null ? created.getIdOrder() : null);
+        return ResponseEntity.status(HttpStatus.CREATED).body(body);
     }
     @PutMapping("/{orderId}")
     @Operation(summary = "Editar orden")
