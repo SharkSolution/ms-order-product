@@ -407,6 +407,9 @@ class CloudTenantIsolationTest {
             assertEquals("MIXED", rs.getString("payment_method"));
             assertEquals(2, rs.getInt("splits"));
             assertEquals(0, rs.getBigDecimal("suma").compareTo(new java.math.BigDecimal("20000")));
+        }
+    }
+
     private String jwtForRole(String tenant, String role) {
         return Jwts.builder()
                 .subject("admin@" + tenant + ".co")
