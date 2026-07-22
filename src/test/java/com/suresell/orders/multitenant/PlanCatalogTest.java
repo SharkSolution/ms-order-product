@@ -36,4 +36,16 @@ class PlanCatalogTest {
         assertTrue(PlanCatalog.isKnownModule("descuentos"));
         assertFalse(PlanCatalog.isKnownModule("xyz"));
     }
+
+    @Test
+    void cocinaIncluidaEnAmbosPlanes() {
+        assertTrue(PlanCatalog.modulesForPlan("basico").contains("cocina"));
+        assertTrue(PlanCatalog.modulesForPlan("pro").contains("cocina"));
+        assertTrue(PlanCatalog.isKnownModule("cocina"));
+    }
+
+    @Test
+    void overridePuedeQuitarCocina() {
+        assertFalse(PlanCatalog.effectiveModules("basico", Map.of("cocina", false)).contains("cocina"));
+    }
 }

@@ -79,12 +79,25 @@ class CloudTenantIsolationTest {
 
     final ObjectMapper json = new ObjectMapper();
 
-    /** Siembra dos productos (uno por tenant) como superusuario, saltando RLS. */
+    /** Hash BCrypt de LOGIN_PW para sembrar el usuario de /auth/login. */
+    static final String LOGIN_PW_HASH =
+            new org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder().encode(LOGIN_PW);
+
+    /** Siembra tenants, un usuario real y dos productos (uno por tenant) como superusuario, saltando RLS. */
     @BeforeEach
     void seed() throws Exception {
         try (Connection c = DriverManager.getConnection(PG.getJdbcUrl(), PG.getUsername(), PG.getPassword());
              Statement s = c.createStatement()) {
+            s.execute("DELETE FROM order_delivery_tracking");
+            s.execute("DELETE FROM order_item");
+            s.execute("DELETE FROM orders");
             s.execute("DELETE FROM menu_products");
+            s.execute("DELETE FROM users");
+            s.execute("DELETE FROM tenants");
+            s.execute("INSERT INTO tenants (id, name, plan) VALUES "
+                    + "('tenant-a', 'Tenant A', 'pro'), ('tenant-b', 'Tenant B', 'pro')");
+            s.execute("INSERT INTO users (email, password_hash, tenant_id, role) "
+                    + "VALUES ('angie@tenant-a.co', '" + LOGIN_PW_HASH + "', 'tenant-a', 'admin')");
             s.execute("INSERT INTO menu_products (id_product, tenant_id, name_product, price, active) "
                     + "VALUES ('P-A', 'tenant-a', 'Hamburguesa A', 10000, true)");
             s.execute("INSERT INTO menu_products (id_product, tenant_id, name_product, price, active) "
@@ -95,6 +108,14 @@ class CloudTenantIsolationTest {
     private String jwtFor(String tenant) {
         return Jwts.builder()
                 .claim("tenant_id", tenant)
+                .signWith(Keys.hmacShaKeyFor(SECRET.getBytes(StandardCharsets.UTF_8)))
+                .compact();
+    }
+
+    private String jwtFor(String tenant, java.util.List<String> modules) {
+        return Jwts.builder()
+                .claim("tenant_id", tenant)
+                .claim("modules", modules)
                 .signWith(Keys.hmacShaKeyFor(SECRET.getBytes(StandardCharsets.UTF_8)))
                 .compact();
     }
@@ -156,10 +177,10 @@ class CloudTenantIsolationTest {
     }
 
     @Test
-    void tokenEmitidoAutorizaYRespetaTenant() throws Exception {
-        // 1) Pedir token (endpoint público, sin bearer) con la clave correcta.
-        String body = "{\"tenantId\":\"tenant-a\",\"userName\":\"Angie\",\"password\":\"" + LOGIN_PW + "\"}";
-        String resp = mockMvc.perform(post("/auth/token")
+    void loginEmiteTokenQueAutorizaYRespetaTenant() throws Exception {
+        // 1) Login real (endpoint público) con el usuario sembrado → deriva el tenant.
+        String body = "{\"email\":\"angie@tenant-a.co\",\"password\":\"" + LOGIN_PW + "\"}";
+        String resp = mockMvc.perform(post("/auth/login")
                         .contentType(MediaType.APPLICATION_JSON).content(body))
                 .andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsString();
@@ -174,10 +195,83 @@ class CloudTenantIsolationTest {
     }
 
     @Test
-    void tokenConClaveIncorrectaRechaza401() throws Exception {
-        String body = "{\"tenantId\":\"tenant-a\",\"userName\":\"Angie\",\"password\":\"mala\"}";
-        mockMvc.perform(post("/auth/token")
+    void loginConClaveIncorrectaRechaza401() throws Exception {
+        String body = "{\"email\":\"angie@tenant-a.co\",\"password\":\"mala\"}";
+        mockMvc.perform(post("/auth/login")
                         .contentType(MediaType.APPLICATION_JSON).content(body))
                 .andExpect(status().isUnauthorized());
+    }
+
+    // ------------------------------------------------------------------
+    // Módulo cocina (F4 Inc.1): aislamiento por tenant + gating por módulo.
+    // ------------------------------------------------------------------
+
+    private void seedKitchenOrder(String uuid, String tenant, String producto) throws Exception {
+        try (Connection c = DriverManager.getConnection(PG.getJdbcUrl(), PG.getUsername(), PG.getPassword());
+             Statement s = c.createStatement()) {
+            s.execute("INSERT INTO orders (uuid_id, tenant_id, created_at, synced, is_printed) "
+                    + "VALUES ('" + uuid + "', '" + tenant + "', now(), true, false)");
+            s.execute("INSERT INTO order_item (uuid_id, tenant_id, order_uuid_id, product_id, quantity) "
+                    + "VALUES ('" + java.util.UUID.randomUUID() + "', '" + tenant + "', '" + uuid + "', '"
+                    + producto + "', 1)");
+            s.execute("INSERT INTO order_delivery_tracking (order_id_uuid, tenant_id, delivered, pager_returned) "
+                    + "VALUES ('" + uuid + "', '" + tenant + "', false, false)");
+        }
+    }
+
+    @Test
+    void cocinaActivasAisladasPorTenant() throws Exception {
+        String uuidA = java.util.UUID.randomUUID().toString();
+        String uuidB = java.util.UUID.randomUUID().toString();
+        seedKitchenOrder(uuidA, "tenant-a", "P-A");
+        seedKitchenOrder(uuidB, "tenant-b", "P-B");
+
+        mockMvc.perform(get("/api/kitchen/orders/active")
+                        .header("Authorization", "Bearer " + jwtFor("tenant-a")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].orderUuid").value(uuidA))
+                .andExpect(jsonPath("$[0].items[0].productName").value("Hamburguesa A"));
+
+        // Tenant B no puede entregar la orden de A (RLS: para él no existe → 400).
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                        .patch("/api/kitchen/orders/" + uuidA + "/deliver")
+                        .header("Authorization", "Bearer " + jwtFor("tenant-b"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"preparationDurationSeconds\":60}"))
+                .andExpect(status().isBadRequest());
+
+        // Tenant A sí entrega, y la orden sale de activas y aparece en entregadas.
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                        .patch("/api/kitchen/orders/" + uuidA + "/deliver")
+                        .header("Authorization", "Bearer " + jwtFor("tenant-a"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"preparationDurationSeconds\":60}"))
+                .andExpect(status().isNoContent());
+
+        mockMvc.perform(get("/api/kitchen/orders/active")
+                        .header("Authorization", "Bearer " + jwtFor("tenant-a")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(0));
+
+        mockMvc.perform(get("/api/kitchen/orders/delivered")
+                        .header("Authorization", "Bearer " + jwtFor("tenant-a")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content.length()").value(1))
+                .andExpect(jsonPath("$.content[0].tracking.preparationDurationSeconds").value(60))
+                .andExpect(jsonPath("$.totalElements").value(1));
+    }
+
+    @Test
+    void cocinaRequiereElModuloSiElTokenTraeClaim() throws Exception {
+        mockMvc.perform(get("/api/kitchen/orders/active")
+                        .header("Authorization", "Bearer "
+                                + jwtFor("tenant-a", java.util.List.of("ventas", "historial"))))
+                .andExpect(status().isForbidden());
+
+        mockMvc.perform(get("/api/kitchen/orders/active")
+                        .header("Authorization", "Bearer "
+                                + jwtFor("tenant-a", java.util.List.of("ventas", "cocina"))))
+                .andExpect(status().isOk());
     }
 }

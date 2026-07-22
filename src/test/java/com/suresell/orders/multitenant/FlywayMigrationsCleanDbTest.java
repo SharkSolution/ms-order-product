@@ -17,7 +17,7 @@ import java.util.UUID;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Valida que TODAS las migraciones (V1→V5) aplican limpias sobre un Postgres fresco
+ * Valida que TODAS las migraciones (V1→VN) aplican limpias sobre un Postgres fresco
  * — exactamente lo que hará un deploy de producción con Flyway ON (hoy staging las
  * aplica por MCP con Flyway OFF). Además comprueba end-to-end la numeración de orden
  * POR NEGOCIO introducida en V5. Ver docs/100 §5 / docs/120.
@@ -40,12 +40,14 @@ class FlywayMigrationsCleanDbTest {
     }
 
     @Test
-    void allMigrationsApplyCleanlyUpToV5() {
+    void allMigrationsApplyCleanly() {
         assertTrue(result.success, "Flyway debe migrar sin error");
-        assertEquals("5", result.targetSchemaVersion,
-                "La última migración aplicada debe ser V5");
-        assertTrue(result.migrationsExecuted >= 5,
-                "Deben ejecutarse al menos 5 migraciones (V1..V5)");
+        // Versiones contiguas V1..VN: la última versión aplicada debe igualar el
+        // total ejecutado, así el test no se desactualiza al agregar migraciones.
+        assertEquals(String.valueOf(result.migrationsExecuted), result.targetSchemaVersion,
+                "La última versión aplicada debe ser V<n> con n = migraciones ejecutadas");
+        assertTrue(result.migrationsExecuted >= 9,
+                "Deben ejecutarse al menos las 9 migraciones existentes (V1..V9)");
     }
 
     @Test

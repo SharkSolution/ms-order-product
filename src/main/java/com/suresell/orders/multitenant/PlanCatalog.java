@@ -20,15 +20,16 @@ public final class PlanCatalog {
     public static final String HISTORIAL = "historial";
     public static final String CIERRE = "cierre";
     public static final String DESCUENTOS = "descuentos";
+    public static final String COCINA = "cocina";
 
     private static final Map<String, List<String>> PLAN_MODULES = Map.of(
-            "basico", List.of(VENTAS, HISTORIAL, CIERRE),
-            "pro", List.of(VENTAS, HISTORIAL, CIERRE, DESCUENTOS));
+            "basico", List.of(VENTAS, HISTORIAL, CIERRE, COCINA),
+            "pro", List.of(VENTAS, HISTORIAL, CIERRE, DESCUENTOS, COCINA));
 
-    private static final List<String> DEFAULT = List.of(VENTAS, HISTORIAL, CIERRE, DESCUENTOS);
+    private static final List<String> DEFAULT = List.of(VENTAS, HISTORIAL, CIERRE, DESCUENTOS, COCINA);
 
     /** Todos los módulos conocidos (para validar overrides). */
-    public static final Set<String> KNOWN = Set.of(VENTAS, HISTORIAL, CIERRE, DESCUENTOS);
+    public static final Set<String> KNOWN = Set.of(VENTAS, HISTORIAL, CIERRE, DESCUENTOS, COCINA);
 
     /** Módulos incluidos por el plan; si el plan es desconocido, cae a `pro` (todos). */
     public static List<String> modulesForPlan(String plan) {
