@@ -124,8 +124,11 @@ public interface OrderRepository extends JpaRepository<Order, java.util.UUID> {
     @Modifying
     @Query("UPDATE Order o SET o.synced = true WHERE o.idOrder = :orderId")
     void markOrderAsSynced(@Param("orderId") Long orderId);
+  // F5 multipago: las órdenes MIXED no suman aquí — sus montos por método
+  // salen de order_payments (OrderPaymentRepository.sumSplitsByMethod).
   @Query("SELECT o.paymentMethod, SUM(o.total) FROM Order o " +
           "WHERE o.createdAt BETWEEN :startTime AND :endTime " +
+          "AND o.paymentMethod <> 'MIXED' " +
           "GROUP BY o.paymentMethod")
   List<Object[]> sumTotalsByPaymentMethodAndSeller(
           @Param("startTime") LocalDateTime startTime,

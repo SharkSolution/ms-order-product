@@ -16,7 +16,12 @@ public record OrderRequestRecord(
     @Schema(description = "Código de descuento opcional", example = "DESC10")
     String discountCode, 
     @NotBlank(message="El método de pago es obligatorio") 
-    @Schema(description = "Método de pago", example = "CASH", allowableValues = {"CASH", "CARD", "NEQUI", "QR"})
-    String paymentMethod
+    @Schema(description = "Método de pago", example = "CASH", allowableValues = {"CASH", "CARD", "NEQUI", "QR", "MIXED"})
+    String paymentMethod,
+    @Schema(description = "Multipago (F5): splits por medio; su suma debe igualar el total. Null/vacío = pago simple.")
+    List<PaymentSplitRecord> payments
 ) {
+    /** Split de multipago: método + monto. */
+    public record PaymentSplitRecord(String method, java.math.BigDecimal amount) {
+    }
 }

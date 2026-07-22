@@ -373,6 +373,43 @@ class CloudTenantIsolationTest {
         assertTrue(ms < 2000, "El sync en cloud debe ser no-op casi instantáneo (tomó " + ms + " ms)");
     }
 
+    // ------------------------------------------------------------------
+    // F5 multipago: split que cuadra → 201 + splits persistidos; que no cuadra → 400.
+    // ------------------------------------------------------------------
+
+    @Test
+    void multipagoPersisteSplitsYRechazaDescuadre() throws Exception {
+        String bearerA = "Bearer " + jwtFor("tenant-a");
+        String base = "{\"pagerColor\":\"AMARILLO\",\"pagerNumber\":\"9\",\"paymentMethod\":\"MIXED\"," +
+                "\"items\":[{\"productId\":\"P-A\",\"quantity\":2,\"unitPrice\":10000}],";
+
+        // No cuadra: splits suman 15000 y el total es 20000 → 400 y NO crea la orden.
+        mockMvc.perform(post("/orders/create")
+                        .header("Authorization", bearerA)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(base + "\"payments\":[{\"method\":\"CASH\",\"amount\":10000},{\"method\":\"CARD\",\"amount\":5000}]}"))
+                .andExpect(status().isBadRequest());
+
+        // Cuadra: 12000 CASH + 8000 CARD = 20000 → 201, orden MIXED y 2 splits.
+        mockMvc.perform(post("/orders/create")
+                        .header("Authorization", bearerA)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(base + "\"payments\":[{\"method\":\"CASH\",\"amount\":12000},{\"method\":\"CARD\",\"amount\":8000}]}"))
+                .andExpect(status().isCreated());
+
+        try (Connection c = DriverManager.getConnection(PG.getJdbcUrl(), PG.getUsername(), PG.getPassword());
+             Statement st = c.createStatement()) {
+            ResultSet rs = st.executeQuery(
+                    "SELECT o.payment_method, (SELECT count(*) FROM order_payments p WHERE p.order_uuid_id = o.uuid_id) AS splits, " +
+                    "(SELECT sum(p.amount) FROM order_payments p WHERE p.order_uuid_id = o.uuid_id) AS suma " +
+                    "FROM orders o WHERE o.tenant_id = 'tenant-a' ORDER BY o.created_at DESC LIMIT 1");
+            assertTrue(rs.next());
+            assertEquals("MIXED", rs.getString("payment_method"));
+            assertEquals(2, rs.getInt("splits"));
+            assertEquals(0, rs.getBigDecimal("suma").compareTo(new java.math.BigDecimal("20000")));
+        }
+    }
+
     @Test
     void cocinaRequiereElModuloSiElTokenTraeClaim() throws Exception {
         mockMvc.perform(get("/api/kitchen/orders/active")

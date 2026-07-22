@@ -66,6 +66,8 @@ public class OrderHandler implements OrderPort {
     private final ObjectMapper objectMapper;
     // F5 meseros: nombres de mesero en el historial (RLS acota al tenant).
     private final com.suresell.orders.infrastructure.persistence.WaiterRepository waiterRepository;
+    // F5 multipago: splits por medio de pago.
+    private final com.suresell.orders.infrastructure.persistence.OrderPaymentRepository orderPaymentRepository;
     private static final ZoneId BOGOTA_ZONE = ZoneId.of("America/Bogota");
     private static final int MAX_EDIT_MINUTES = 7;
 
@@ -100,13 +102,18 @@ public class OrderHandler implements OrderPort {
     @Override
     @Transactional
     public Order createOrUpdateOrder(OrderRequestRecord dto) {
-        validatePaymentMethod(dto.paymentMethod());
+        boolean multipago = dto.payments() != null && !dto.payments().isEmpty();
+        if (multipago) {
+            validatePaymentSplits(dto.payments());
+        } else {
+            validatePaymentMethod(dto.paymentMethod());
+        }
         validatePagerAvailability(dto.pagerColor(), dto.pagerNumber(), null);
         Order order = new Order();
         order.setPagerColor(dto.pagerColor());
         order.setPagerNumber(dto.pagerNumber());
         order.setStatus(OrderStatus.pagado);
-        order.setPaymentMethod(dto.paymentMethod());
+        order.setPaymentMethod(multipago ? derivePaymentMethod(dto.payments()) : dto.paymentMethod());
         order.setCreatedAt(LocalDateTime.now(BOGOTA_ZONE));
         
         BigDecimal subtotal = dto.items().stream()
@@ -143,9 +150,66 @@ public class OrderHandler implements OrderPort {
         orderDeliveryTrackingRepositoryPort.save(tracking);
         savedOrder.setDeliveryTracking(tracking);
 
+        if (multipago) {
+            validateSplitSum(savedOrder, dto.payments());
+            if ("MIXED".equals(savedOrder.getPaymentMethod())) {
+                persistPaymentSplits(savedOrder, dto.payments());
+            }
+        }
+
         saveOrderCreatedOutbox(savedOrder, tracking);
         linkCouponIfPresent(savedOrder);
         return savedOrder;
+    }
+
+    // ------------------------------------------------------------------
+    // F5 multipago
+    // ------------------------------------------------------------------
+
+    private static final List<String> SPLIT_METHODS = List.of("CASH", "CARD", "NEQUI", "QR");
+
+    private void validatePaymentSplits(List<OrderRequestRecord.PaymentSplitRecord> payments) {
+        for (var split : payments) {
+            if (split.method() == null || !SPLIT_METHODS.contains(split.method())) {
+                throw new IllegalArgumentException("Método de pago inválido en el multipago: " + split.method());
+            }
+            if (split.amount() == null || split.amount().compareTo(BigDecimal.ZERO) <= 0) {
+                throw new IllegalArgumentException("Cada split del multipago debe tener un monto mayor a cero");
+            }
+        }
+    }
+
+    /** Un solo split = ese método; varios = MIXED. */
+    private String derivePaymentMethod(List<OrderRequestRecord.PaymentSplitRecord> payments) {
+        Set<String> methods = payments.stream()
+                .map(OrderRequestRecord.PaymentSplitRecord::method)
+                .collect(java.util.stream.Collectors.toSet());
+        return methods.size() == 1 ? methods.iterator().next() : "MIXED";
+    }
+
+    /** La suma de splits debe igualar EXACTAMENTE el total (con descuento aplicado). */
+    private void validateSplitSum(Order savedOrder, List<OrderRequestRecord.PaymentSplitRecord> payments) {
+        BigDecimal sum = payments.stream()
+                .map(OrderRequestRecord.PaymentSplitRecord::amount)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        if (sum.compareTo(savedOrder.getTotal()) != 0) {
+            throw new IllegalArgumentException(String.format(
+                    "El multipago no cuadra: los medios suman $%s y el total de la orden es $%s",
+                    sum, savedOrder.getTotal()));
+        }
+    }
+
+    /** Solo para órdenes MIXED (un solo medio se comporta como pago simple). */
+    private void persistPaymentSplits(Order savedOrder, List<OrderRequestRecord.PaymentSplitRecord> payments) {
+        LocalDateTime now = LocalDateTime.now(BOGOTA_ZONE);
+        for (var split : payments) {
+            com.suresell.orders.domain.model.OrderPayment payment = new com.suresell.orders.domain.model.OrderPayment();
+            payment.setOrderUuidId(savedOrder.getUuidId());
+            payment.setMethod(split.method());
+            payment.setAmount(split.amount());
+            payment.setCreatedAt(now);
+            orderPaymentRepository.save(payment);
+        }
     }
 
     @Override

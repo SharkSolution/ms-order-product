@@ -38,17 +38,21 @@ public class ExecuteDailyClosureUseCase {
     private final ObjectMapper objectMapper;
     private final SyncOutboxRepositoryPort syncOutboxRepositoryPort;
     private final DailyPaymentRecordService dailyPaymentRecordService;
+    // F5 multipago: splits de órdenes MIXED para el esperado por método.
+    private final com.suresell.orders.infrastructure.persistence.OrderPaymentRepository orderPaymentRepository;
 
     public ExecuteDailyClosureUseCase(OrderRepository orderRepository, DailyClosureRepository closureRepository,
                                     CashflowCalculator cashflowCalculator, ObjectMapper objectMapper,
                                     SyncOutboxRepositoryPort syncOutboxRepositoryPort,
-                                    DailyPaymentRecordService dailyPaymentRecordService) {
+                                    DailyPaymentRecordService dailyPaymentRecordService,
+                                    com.suresell.orders.infrastructure.persistence.OrderPaymentRepository orderPaymentRepository) {
         this.orderRepository = orderRepository;
         this.closureRepository = closureRepository;
         this.cashflowCalculator = cashflowCalculator;
         this.objectMapper = objectMapper;
         this.syncOutboxRepositoryPort = syncOutboxRepositoryPort;
         this.dailyPaymentRecordService = dailyPaymentRecordService;
+        this.orderPaymentRepository = orderPaymentRepository;
     }
 
     @Value("${sync.cloud.core-url:http://localhost:8083/api/core}")
@@ -71,6 +75,13 @@ public class ExecuteDailyClosureUseCase {
         log.info("totales: {}", totals);
 
         Map<String, BigDecimal> expected = parseTotals(totals);
+
+        // F5 multipago: sumar los splits de las órdenes MIXED por método.
+        for (Object[] row : orderPaymentRepository.sumSplitsByMethod(openingTime, closingTime)) {
+            String method = String.valueOf(row[0]);
+            BigDecimal amount = (BigDecimal) row[1];
+            expected.merge(method, amount == null ? BigDecimal.ZERO : amount, BigDecimal::add);
+        }
 
         BigDecimal pureSales = expected.getOrDefault("CASH", BigDecimal.ZERO)
                 .add(expected.getOrDefault("CARD", BigDecimal.ZERO))

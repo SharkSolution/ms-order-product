@@ -63,7 +63,8 @@ class OrderHandlerTest {
                 discountPort,
                 orderEditHistoryRepositoryPort,
                 objectMapper,
-                org.mockito.Mockito.mock(com.suresell.orders.infrastructure.persistence.WaiterRepository.class));
+                org.mockito.Mockito.mock(com.suresell.orders.infrastructure.persistence.WaiterRepository.class),
+                org.mockito.Mockito.mock(com.suresell.orders.infrastructure.persistence.OrderPaymentRepository.class));
     }
     @Test
     void getAllOrdersCallsProductServiceOncePerDistinctProductId() {
@@ -108,7 +109,7 @@ class OrderHandlerTest {
                         new OrderItemRequestRecord("101", 1, BigDecimal.valueOf(5000), null, null),
                         new OrderItemRequestRecord("102", 2, BigDecimal.valueOf(2000), null, null)),
                 null,
-                "CASH");
+                "CASH", null);
         when(orderRepositoryPort.findOccupiedPagerOrder(
                 "AZUL", "10", OrderStatus.pagado)).thenReturn(Optional.empty());
         when(orderRepositoryPort.save(any(Order.class))).thenAnswer(invocation -> {
