@@ -45,6 +45,15 @@ class PlanCatalogTest {
     }
 
     @Test
+    void meserosSoloEnPro() {
+        assertFalse(PlanCatalog.modulesForPlan("basico").contains("meseros"));
+        assertTrue(PlanCatalog.modulesForPlan("pro").contains("meseros"));
+        assertTrue(PlanCatalog.isKnownModule("meseros"));
+        // Override puede regalarlo a un básico.
+        assertTrue(PlanCatalog.effectiveModules("basico", Map.of("meseros", true)).contains("meseros"));
+    }
+
+    @Test
     void overridePuedeQuitarCocina() {
         assertFalse(PlanCatalog.effectiveModules("basico", Map.of("cocina", false)).contains("cocina"));
     }

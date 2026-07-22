@@ -13,6 +13,43 @@ import org.springframework.data.repository.query.Param;
 public interface OrderRepository extends JpaRepository<Order, java.util.UUID> {
     Optional<Order> findByIdOrder(Long idOrder);
 
+    // F4 Inc.3 (docs/200): dedupe de reintentos del móvil (RLS acota al tenant).
+    Optional<Order> findByIdempotencyKey(String idempotencyKey);
+
+    /**
+     * Marca la orden recién creada con idempotencia + autoría del mesero.
+     * UPDATE dirigido (no merge): la entidad Order carga colecciones inmutables
+     * que Hibernate no puede reemplazar en un merge.
+     */
+    @Modifying
+    @Query("""
+            UPDATE Order o SET o.idempotencyKey = :key, o.waiterId = :waiterId,
+                   o.waiterSessionId = :sessionId
+            WHERE o.uuidId = :uuid
+            """)
+    int tagWaiterOrder(@Param("uuid") java.util.UUID uuid,
+                       @Param("key") String key,
+                       @Param("waiterId") Long waiterId,
+                       @Param("sessionId") java.util.UUID sessionId);
+
+    List<Order> findByWaiterSessionId(java.util.UUID waiterSessionId);
+
+    @Query("""
+            SELECT o FROM Order o
+            WHERE o.createdAt BETWEEN :start AND :end
+            AND (:idOrder IS NULL OR o.idOrder = :idOrder)
+            AND (:pagerNumber IS NULL OR o.pagerNumber = :pagerNumber)
+            AND (:pagerColor IS NULL OR o.pagerColor = :pagerColor)
+            AND (:waiterId IS NULL OR o.waiterId = :waiterId)
+            ORDER BY o.createdAt DESC
+            """)
+    List<Order> findWaiterHistory(@Param("start") LocalDateTime start,
+                                  @Param("end") LocalDateTime end,
+                                  @Param("idOrder") Long idOrder,
+                                  @Param("pagerNumber") String pagerNumber,
+                                  @Param("pagerColor") String pagerColor,
+                                  @Param("waiterId") Long waiterId);
+
     @Query("SELECT o.idOrder FROM Order o WHERE o.uuidId = :uuidId")
     Optional<Long> findNumericIdByUuid(@Param("uuidId") java.util.UUID uuidId);
 

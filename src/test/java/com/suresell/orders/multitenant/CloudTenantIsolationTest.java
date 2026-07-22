@@ -91,6 +91,8 @@ class CloudTenantIsolationTest {
             s.execute("DELETE FROM order_delivery_tracking");
             s.execute("DELETE FROM order_item");
             s.execute("DELETE FROM orders");
+            s.execute("DELETE FROM waiter_sessions");
+            s.execute("DELETE FROM waiters");
             s.execute("DELETE FROM menu_products");
             s.execute("DELETE FROM users");
             s.execute("DELETE FROM tenants");
@@ -260,6 +262,83 @@ class CloudTenantIsolationTest {
                 .andExpect(jsonPath("$.content.length()").value(1))
                 .andExpect(jsonPath("$.content[0].tracking.preparationDurationSeconds").value(60))
                 .andExpect(jsonPath("$.totalElements").value(1));
+    }
+
+    // ------------------------------------------------------------------
+    // Módulo meseros (F4 Inc.3): flujo completo + aislamiento + idempotencia.
+    // ------------------------------------------------------------------
+
+    @Test
+    void meserosFlujoCompletoConIdempotenciaYAislamiento() throws Exception {
+        String bearerA = "Bearer " + jwtFor("tenant-a");
+
+        // 1) Crear mesero y verlo listado; tenant B no lo ve.
+        String waiterJson = mockMvc.perform(post("/api/waiter/mobile/waiters")
+                        .header("Authorization", bearerA)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"Angie\"}"))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        long waiterId = json.readTree(waiterJson).get("id").asLong();
+
+        mockMvc.perform(get("/api/waiter/mobile/waiters").header("Authorization", bearerA))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1));
+        mockMvc.perform(get("/api/waiter/mobile/waiters")
+                        .header("Authorization", "Bearer " + jwtFor("tenant-b")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(0));
+
+        // 2) Login + abrir turno con base.
+        String sessionJson = mockMvc.perform(post("/api/waiter/mobile/login/" + waiterId)
+                        .header("Authorization", bearerA))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        String sessionId = json.readTree(sessionJson).get("id").asText();
+
+        mockMvc.perform(post("/api/waiter/shifts/open")
+                        .header("Authorization", bearerA)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"waiterId\":" + waiterId + ",\"openingCashBase\":50000}"))
+                .andExpect(status().isCreated());
+
+        // 3) Orden con idempotencyKey: el reintento devuelve LA MISMA orden.
+        String orderBody = "{\"pagerColor\":\"AMARILLO\",\"pagerNumber\":\"5\",\"paymentMethod\":\"CASH\","
+                + "\"items\":[{\"productId\":\"P-A\",\"quantity\":2,\"unitPrice\":10000}],"
+                + "\"idempotencyKey\":\"idem-1\",\"waiterSessionId\":\"" + sessionId + "\"}";
+        String created = mockMvc.perform(post("/api/waiter/mobile/orders")
+                        .header("Authorization", bearerA)
+                        .contentType(MediaType.APPLICATION_JSON).content(orderBody))
+                .andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString();
+        long idOrder = json.readTree(created).get("idOrder").asLong();
+
+        String retried = mockMvc.perform(post("/api/waiter/mobile/orders")
+                        .header("Authorization", bearerA)
+                        .contentType(MediaType.APPLICATION_JSON).content(orderBody))
+                .andExpect(status().is2xxSuccessful())
+                .andReturn().getResponse().getContentAsString();
+        assertEquals(idOrder, json.readTree(retried).get("idOrder").asLong(),
+                "El reintento con la misma idempotencyKey debe devolver la misma orden");
+
+        // 4) La orden del mesero aparece en la cola de cocina del tenant.
+        mockMvc.perform(get("/api/kitchen/orders/active").header("Authorization", bearerA))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].items[0].productName").value("Hamburguesa A"));
+
+        // 5) Cierre de turno: caja esperada = base + efectivo; diferencia contra lo declarado.
+        String summary = mockMvc.perform(post("/api/waiter/shifts/" + sessionId + "/close")
+                        .header("Authorization", bearerA)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"declaredCash\":70000}"))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        var tree = json.readTree(summary);
+        assertEquals(20000, tree.get("cashSales").asInt());
+        assertEquals(70000, tree.get("expectedCash").asInt());
+        assertEquals(0, tree.get("difference").asInt());
+        assertEquals("CLOSED", tree.get("status").asText());
     }
 
     @Test

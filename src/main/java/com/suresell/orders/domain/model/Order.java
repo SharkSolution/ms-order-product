@@ -107,7 +107,15 @@ public class Order implements org.springframework.data.domain.Persistable<java.u
         @Column(name = "is_printed", nullable = false)
     private Boolean isPrinted = false;
 
-    @OneToMany(mappedBy = "order", orphanRemoval = true)    
+    // F4 Inc.3 (docs/200): dedupe de reintentos del móvil + autoría del mesero.
+    @Column(name = "idempotency_key")
+    private String idempotencyKey;
+    @Column(name = "waiter_id")
+    private Long waiterId;
+    @Column(name = "waiter_session_id")
+    private java.util.UUID waiterSessionId;
+
+    @OneToMany(mappedBy = "order", orphanRemoval = true)
     private List<OrderItem> items;
     @OneToOne(mappedBy = "order", orphanRemoval = true, fetch = FetchType.EAGER)
     private OrderDeliveryTracking deliveryTracking;

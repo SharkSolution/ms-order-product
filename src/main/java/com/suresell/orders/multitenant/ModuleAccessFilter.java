@@ -29,7 +29,8 @@ public class ModuleAccessFilter extends OncePerRequestFilter {
     /** Prefijo de path → módulo requerido. Se irá extendiendo por módulo. */
     private static final Map<String, String> PATH_MODULE = Map.of(
             "/api/discounts", PlanCatalog.DESCUENTOS,
-            "/api/kitchen", PlanCatalog.COCINA);
+            "/api/kitchen", PlanCatalog.COCINA,
+            "/api/waiter", PlanCatalog.MESEROS);
 
     private final JwtTenantResolver resolver;
 
