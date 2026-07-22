@@ -178,15 +178,60 @@ class WaiterServiceTest {
         assertEquals(301901L, resp.idOrder());
     }
 
-    @Test
-    void ordenConSesionCerradaFalla() {
-        WaiterSession cerrada = activeSession(3L, null);
-        cerrada.setStatus(WaiterSession.STATUS_CLOSED);
-        when(sessionRepository.findById(cerrada.getId())).thenReturn(Optional.of(cerrada));
+    // Bug prod 2026-07-22 ("perfil pony"): una sesión vieja/rota NUNCA tumba la venta.
 
-        assertThrows(IllegalStateException.class, () -> service.createOrder(new WaiterOrderRequest(
+    @Test
+    void ordenConSesionInexistenteSeCreaSinAutoria() {
+        UUID fantasma = UUID.randomUUID();
+        when(sessionRepository.findById(fantasma)).thenReturn(Optional.empty());
+        Order creada = order("CASH", "10000");
+        creada.setIdOrder(301902L);
+        when(orderPort.createOrUpdateOrder(any())).thenReturn(creada);
+
+        WaiterOrderResponse resp = service.createOrder(new WaiterOrderRequest(
                 "AMARILLO", "5", "CASH",
                 List.of(new OrderItemRequestRecord("p1", 1, new BigDecimal("10000"), null, null)),
-                null, null, cerrada.getId().toString())));
+                null, null, fantasma.toString()));
+
+        assertEquals(301902L, resp.idOrder());
+        assertNull(creada.getWaiterId());
+        assertNull(creada.getWaiterSessionId());
+    }
+
+    @Test
+    void ordenConSesionCerradaSeReatribuyeALaActivaDelMesero() {
+        WaiterSession cerrada = activeSession(3L, null);
+        cerrada.setStatus(WaiterSession.STATUS_CLOSED);
+        WaiterSession activa = activeSession(3L, new BigDecimal("50000"));
+        when(sessionRepository.findById(cerrada.getId())).thenReturn(Optional.of(cerrada));
+        when(sessionRepository.findFirstByWaiterIdAndStatusOrderByLoginTimeDesc(3L, "ACTIVE"))
+                .thenReturn(Optional.of(activa));
+        Order creada = order("CASH", "10000");
+        creada.setIdOrder(301903L);
+        when(orderPort.createOrUpdateOrder(any())).thenReturn(creada);
+
+        WaiterOrderResponse resp = service.createOrder(new WaiterOrderRequest(
+                "AMARILLO", "5", "CASH",
+                List.of(new OrderItemRequestRecord("p1", 1, new BigDecimal("10000"), null, null)),
+                null, null, cerrada.getId().toString()));
+
+        assertEquals(301903L, resp.idOrder());
+        assertEquals(3L, creada.getWaiterId());
+        assertEquals(activa.getId(), creada.getWaiterSessionId());
+    }
+
+    @Test
+    void ordenConSesionMalformadaSeCreaSinAutoria() {
+        Order creada = order("CASH", "10000");
+        creada.setIdOrder(301904L);
+        when(orderPort.createOrUpdateOrder(any())).thenReturn(creada);
+
+        WaiterOrderResponse resp = service.createOrder(new WaiterOrderRequest(
+                "AMARILLO", "5", "CASH",
+                List.of(new OrderItemRequestRecord("p1", 1, new BigDecimal("10000"), null, null)),
+                null, null, "no-es-un-uuid"));
+
+        assertEquals(301904L, resp.idOrder());
+        assertNull(creada.getWaiterId());
     }
 }
