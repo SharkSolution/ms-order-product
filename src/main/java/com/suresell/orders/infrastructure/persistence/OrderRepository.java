@@ -16,6 +16,13 @@ public interface OrderRepository extends JpaRepository<Order, java.util.UUID> {
     // F4 Inc.3 (docs/200): dedupe de reintentos del móvil (RLS acota al tenant).
     Optional<Order> findByIdempotencyKey(String idempotencyKey);
 
+    /** F5 A13: soft-delete (idempotente — solo si aún no está borrada). */
+    @Modifying
+    @Query("UPDATE Order o SET o.deletedAt = :at, o.deletedBy = :by WHERE o.uuidId = :uuid AND o.deletedAt IS NULL")
+    int softDelete(@Param("uuid") java.util.UUID uuid,
+                   @Param("at") LocalDateTime at,
+                   @Param("by") String by);
+
     /**
      * Marca la orden recién creada con idempotencia + autoría del mesero.
      * UPDATE dirigido (no merge): la entidad Order carga colecciones inmutables
