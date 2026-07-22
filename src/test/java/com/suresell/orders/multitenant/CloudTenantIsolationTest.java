@@ -312,6 +312,8 @@ class CloudTenantIsolationTest {
                 .andExpect(status().isCreated())
                 .andReturn().getResponse().getContentAsString();
         long idOrder = json.readTree(created).get("idOrder").asLong();
+        assertEquals("Hamburguesa A", json.readTree(created).get("items").get(0).get("productName").asText(),
+                "La respuesta de la orden del mesero debe resolver el nombre del producto");
 
         String retried = mockMvc.perform(post("/api/waiter/mobile/orders")
                         .header("Authorization", bearerA)

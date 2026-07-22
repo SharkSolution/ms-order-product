@@ -45,6 +45,7 @@ import java.util.stream.Collectors;
 @Service
 public class WaiterService {
 
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(WaiterService.class);
     private static final ZoneId BOGOTA_ZONE = ZoneId.of("America/Bogota");
     public static final String CASH = "CASH";
 
@@ -210,15 +211,39 @@ public class WaiterService {
             }
         }
 
+        // Autoría del mesero: NUNCA se rechaza una venta por una sesión vieja/rota
+        // (bug prod 2026-07-22: la app guarda la sesión localmente y una sesión
+        // inexistente para RLS tumbaba la orden con 400). Se degrada con la mejor
+        // atribución posible:
+        //  - sesión ACTIVE → normal.
+        //  - sesión CLOSED → se atribuye al mesero y a su sesión ACTIVE más
+        //    reciente si existe (para que el turno cuadre).
+        //  - sesión inexistente o id malformado → orden sin autoría + warn.
         Long waiterId = null;
         UUID sessionUuid = null;
         if (hasText(request.waiterSessionId())) {
-            sessionUuid = UUID.fromString(request.waiterSessionId().trim());
-            WaiterSession session = requireSession(sessionUuid);
-            if (!WaiterSession.STATUS_ACTIVE.equals(session.getStatus())) {
-                throw new IllegalStateException("La sesión del mesero no está activa");
+            try {
+                UUID requested = UUID.fromString(request.waiterSessionId().trim());
+                var sessionOpt = sessionRepository.findById(requested);
+                if (sessionOpt.isEmpty()) {
+                    log.warn("Orden de mesero con sesión inexistente {} — se crea sin autoría", requested);
+                } else {
+                    WaiterSession session = sessionOpt.get();
+                    waiterId = session.getWaiterId();
+                    if (WaiterSession.STATUS_ACTIVE.equals(session.getStatus())) {
+                        sessionUuid = session.getId();
+                    } else {
+                        sessionUuid = sessionRepository
+                                .findFirstByWaiterIdAndStatusOrderByLoginTimeDesc(waiterId, WaiterSession.STATUS_ACTIVE)
+                                .map(WaiterSession::getId)
+                                .orElse(null);
+                        log.warn("Orden de mesero con sesión CERRADA {} — reatribuida a mesero {} (sesión activa: {})",
+                                requested, waiterId, sessionUuid);
+                    }
+                }
+            } catch (IllegalArgumentException e) {
+                log.warn("waiterSessionId malformado '{}' — la orden se crea sin autoría", request.waiterSessionId());
             }
-            waiterId = session.getWaiterId();
         }
 
         Order created = orderPort.createOrUpdateOrder(new OrderRequestRecord(
