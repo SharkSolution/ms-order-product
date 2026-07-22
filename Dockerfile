@@ -8,7 +8,10 @@ WORKDIR /app
 # Copy Gradle wrapper and configuration files first for dependency caching
 COPY gradlew ./
 COPY gradle ./gradle
-COPY build.gradle settings.gradle ./
+# lombok.config es OBLIGATORIO en la imagen: sin él, @Qualifier no se copia a los
+# constructores de Lombok y el perfil cloud inyecta el JdbcTemplate equivocado
+# (login lento ~60 s). Ver docs/220 / commit 5989c74.
+COPY build.gradle settings.gradle lombok.config ./
 
 # Download dependencies (this layer will be cached if dependencies don't change)
 RUN ./gradlew dependencies --no-daemon || true
