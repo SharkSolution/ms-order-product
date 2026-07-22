@@ -42,10 +42,9 @@ class FlywayMigrationsCleanDbTest {
     @Test
     void allMigrationsApplyCleanly() {
         assertTrue(result.success, "Flyway debe migrar sin error");
-        // Versiones contiguas V1..VN: la última versión aplicada debe igualar el
-        // total ejecutado, así el test no se desactualiza al agregar migraciones.
-        assertEquals(String.valueOf(result.migrationsExecuted), result.targetSchemaVersion,
-                "La última versión aplicada debe ser V<n> con n = migraciones ejecutadas");
+        // Nota F5: las ramas nocturnas coordinan numeración (V11 meseros, V12 caja,
+        // V13 pagos, V14 bajas) y cada rama puede tener huecos hasta el merge, así
+        // que NO se exige contigüidad — solo éxito y un mínimo de migraciones.
         assertTrue(result.migrationsExecuted >= 9,
                 "Deben ejecutarse al menos las 9 migraciones existentes (V1..V9)");
     }
