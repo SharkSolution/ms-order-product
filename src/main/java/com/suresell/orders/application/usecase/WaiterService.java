@@ -223,7 +223,7 @@ public class WaiterService {
 
         Order created = orderPort.createOrUpdateOrder(new OrderRequestRecord(
                 request.pagerColor(), request.pagerNumber(), request.items(),
-                request.discountCode(), request.paymentMethod()));
+                request.discountCode(), request.paymentMethod(), null));
         String key = hasText(request.idempotencyKey()) ? request.idempotencyKey().trim() : null;
         created.setIdempotencyKey(key);
         created.setWaiterId(waiterId);
