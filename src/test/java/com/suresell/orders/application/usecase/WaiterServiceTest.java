@@ -78,10 +78,24 @@ class WaiterServiceTest {
     @Test
     void crearMeseroExigeNombre() {
         assertThrows(IllegalArgumentException.class,
-                () -> service.createWaiter(new CreateWaiterRequest("  ", null)));
-        Waiter creado = service.createWaiter(new CreateWaiterRequest("Pedro", null));
+                () -> service.createWaiter(new CreateWaiterRequest("  ", null, null)));
+        Waiter creado = service.createWaiter(new CreateWaiterRequest("Pedro", null, null));
         assertEquals("Pedro", creado.getName());
         assertTrue(creado.getActive());
+    }
+
+    @Test
+    void updateWaiterEsParcial() {
+        Waiter w = waiter(3);
+        when(waiterRepository.findById(3L)).thenReturn(java.util.Optional.of(w));
+
+        service.updateWaiter(3L, new com.suresell.orders.application.dto.WaiterDtos.UpdateWaiterRequest(
+                null, false, null, new BigDecimal("40000")));
+
+        assertEquals("Angie", w.getName());            // sin cambio
+        assertEquals(false, w.getActive());            // desactivado
+        assertEquals(new BigDecimal("40000"), w.getDefaultCashBase());
+        verify(waiterRepository).save(w);
     }
 
     @Test

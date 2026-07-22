@@ -43,13 +43,19 @@ public class WaiterController {
     // ---------------------------- /mobile -----------------------------
 
     @GetMapping("/mobile/waiters")
-    public List<Waiter> getWaiters() {
-        return service.getActiveWaiters();
+    public List<Waiter> getWaiters(@RequestParam(name = "all", defaultValue = "false") boolean all) {
+        return all ? service.getAllWaiters() : service.getActiveWaiters();
     }
 
     @PostMapping("/mobile/waiters")
     public Waiter createWaiter(@RequestBody CreateWaiterRequest request) {
         return service.createWaiter(request);
+    }
+
+    @org.springframework.web.bind.annotation.PutMapping("/mobile/waiters/{id}")
+    public Waiter updateWaiter(@PathVariable Long id,
+                               @RequestBody com.suresell.orders.application.dto.WaiterDtos.UpdateWaiterRequest request) {
+        return service.updateWaiter(id, request);
     }
 
     @PostMapping("/mobile/login/{waiterId}")

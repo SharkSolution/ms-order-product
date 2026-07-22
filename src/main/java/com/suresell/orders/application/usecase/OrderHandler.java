@@ -64,6 +64,8 @@ public class OrderHandler implements OrderPort {
     private final DiscountPort discountService;
     private final OrderEditHistoryRepositoryPort orderEditHistoryRepository;
     private final ObjectMapper objectMapper;
+    // F5 meseros: nombres de mesero en el historial (RLS acota al tenant).
+    private final com.suresell.orders.infrastructure.persistence.WaiterRepository waiterRepository;
     private static final ZoneId BOGOTA_ZONE = ZoneId.of("America/Bogota");
     private static final int MAX_EDIT_MINUTES = 7;
 
@@ -169,7 +171,8 @@ public class OrderHandler implements OrderPort {
             order.setItems(orderItems);
         });
         Map<String, String> productNames = buildProductNameCacheFromOrders(ordersPage.getContent());
-        return ordersPage.map(order -> toOrderResponseRecord(order, productNames));
+        Map<Long, String> waiterNames = buildWaiterNameCache(ordersPage.getContent());
+        return ordersPage.map(order -> toOrderResponseRecord(order, productNames, waiterNames));
     }
 
     @Override
@@ -188,7 +191,8 @@ public class OrderHandler implements OrderPort {
             order.setItems(orderItems);
         });
         Map<String, String> productNames = buildProductNameCacheFromOrders(orders);
-        return orders.stream().map(order -> toOrderResponseRecord(order, productNames)).toList();
+        Map<Long, String> waiterNames = buildWaiterNameCache(orders);
+        return orders.stream().map(order -> toOrderResponseRecord(order, productNames, waiterNames)).toList();
     }
 
     @Override
@@ -645,7 +649,28 @@ public class OrderHandler implements OrderPort {
         }
     }
 
+    /** Nombres de mesero por id para las órdenes dadas (una sola query). */
+    private Map<Long, String> buildWaiterNameCache(List<Order> orders) {
+        Set<Long> ids = new LinkedHashSet<>();
+        for (Order order : orders) {
+            if (order.getWaiterId() != null) {
+                ids.add(order.getWaiterId());
+            }
+        }
+        if (ids.isEmpty()) {
+            return Map.of();
+        }
+        Map<Long, String> names = new java.util.HashMap<>();
+        waiterRepository.findAllById(ids).forEach(w -> names.put(w.getId(), w.getName()));
+        return names;
+    }
+
     private OrderResponseRecord toOrderResponseRecord(Order order, Map<String, String> productNames) {
+        return toOrderResponseRecord(order, productNames, Map.of());
+    }
+
+    private OrderResponseRecord toOrderResponseRecord(Order order, Map<String, String> productNames,
+                                                      Map<Long, String> waiterNames) {
         List<OrderItemResponseRecord> items = order.getItems() == null
                 ? List.of()
                 : order.getItems().stream().map(item -> toOrderItemResponseRecord(item, productNames)).toList();
@@ -670,7 +695,9 @@ public class OrderHandler implements OrderPort {
                 Boolean.TRUE.equals(order.getSynced()),
                 Boolean.TRUE.equals(order.getIsPrinted()),
                 preparationDurationSeconds,
-                items);
+                items,
+                order.getWaiterId(),
+                order.getWaiterId() == null ? null : waiterNames.get(order.getWaiterId()));
     }
 
     private OrderItemResponseRecord toOrderItemResponseRecord(OrderItem item, Map<String, String> productNames) {

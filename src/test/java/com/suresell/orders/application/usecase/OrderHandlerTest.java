@@ -62,7 +62,8 @@ class OrderHandlerTest {
                 productCatalogPort,
                 discountPort,
                 orderEditHistoryRepositoryPort,
-                objectMapper);
+                objectMapper,
+                org.mockito.Mockito.mock(com.suresell.orders.infrastructure.persistence.WaiterRepository.class));
     }
     @Test
     void getAllOrdersCallsProductServiceOncePerDistinctProductId() {
