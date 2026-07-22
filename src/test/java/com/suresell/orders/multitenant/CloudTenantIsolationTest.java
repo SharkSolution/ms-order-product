@@ -341,6 +341,36 @@ class CloudTenantIsolationTest {
         assertEquals("CLOSED", tree.get("status").asText());
     }
 
+    @Autowired
+    org.springframework.context.ApplicationContext applicationContext;
+
+    /**
+     * Regresión del login lento en prod (2026-07-22): sin lombok.config que copie
+     * @Qualifier al constructor, Spring inyectaba el JdbcTemplate PRIMARIO como
+     * "cloudJdbcTemplate" y cada /api/menu/sync re-sincronizaba el catálogo contra
+     * la misma DB (~60 s). En cloud ese bean NO debe existir y el service debe
+     * quedar con Optional.empty (sync = no-op instantáneo).
+     */
+    @Test
+    void enCloudElSyncDeCatalogoEsNoOp() throws Exception {
+        org.junit.jupiter.api.Assertions.assertFalse(
+                applicationContext.containsBean("cloudJdbcTemplate"),
+                "En perfil cloud no debe existir el bean cloudJdbcTemplate");
+        var service = applicationContext.getBean(
+                com.suresell.orders.application.usecase.CatalogSyncService.class);
+        Object injected = org.springframework.test.util.ReflectionTestUtils
+                .getField(service, "cloudJdbcTemplate");
+        org.junit.jupiter.api.Assertions.assertEquals(java.util.Optional.empty(), injected,
+                "CatalogSyncService debe recibir Optional.empty en cloud (no el JdbcTemplate primario)");
+
+        long t0 = System.nanoTime();
+        mockMvc.perform(post("/api/menu/sync")
+                        .header("Authorization", "Bearer " + jwtFor("tenant-a")))
+                .andExpect(status().isOk());
+        long ms = (System.nanoTime() - t0) / 1_000_000;
+        assertTrue(ms < 2000, "El sync en cloud debe ser no-op casi instantáneo (tomó " + ms + " ms)");
+    }
+
     @Test
     void cocinaRequiereElModuloSiElTokenTraeClaim() throws Exception {
         mockMvc.perform(get("/api/kitchen/orders/active")
