@@ -371,6 +371,71 @@ class CloudTenantIsolationTest {
         assertTrue(ms < 2000, "El sync en cloud debe ser no-op casi instantáneo (tomó " + ms + " ms)");
     }
 
+    private String jwtForRole(String tenant, String role) {
+        return Jwts.builder()
+                .subject("admin@" + tenant + ".co")
+                .claim("tenant_id", tenant)
+                .claim("role", role)
+                .signWith(Keys.hmacShaKeyFor(SECRET.getBytes(StandardCharsets.UTF_8)))
+                .compact();
+    }
+
+    // ------------------------------------------------------------------
+    // F5 A13: borrado admin = soft-delete + auditoría; cajero no puede.
+    // ------------------------------------------------------------------
+
+    @Test
+    void borradoDeOrdenEsSoftDeleteConAuditoriaYSoloAdmin() throws Exception {
+        String bearerA = "Bearer " + jwtFor("tenant-a");
+        String created = mockMvc.perform(post("/orders/create")
+                        .header("Authorization", bearerA)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"pagerColor\":\"AMARILLO\",\"pagerNumber\":\"7\",\"paymentMethod\":\"CASH\"," +
+                                "\"items\":[{\"productId\":\"P-A\",\"quantity\":1,\"unitPrice\":10000}]}"))
+                .andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString();
+        long idOrder = json.readTree(created).get("idOrder").asLong();
+
+        // Cajero → 403.
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                        .delete("/api/orders/" + idOrder)
+                        .header("Authorization", "Bearer " + jwtForRole("tenant-a", "cajero"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"reason\":\"prueba\"}"))
+                .andExpect(status().isForbidden());
+
+        // Admin sin motivo → 400.
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                        .delete("/api/orders/" + idOrder)
+                        .header("Authorization", "Bearer " + jwtForRole("tenant-a", "admin"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isBadRequest());
+
+        // Admin con motivo → 200.
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                        .delete("/api/orders/" + idOrder)
+                        .header("Authorization", "Bearer " + jwtForRole("tenant-a", "admin"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"reason\":\"orden de prueba anti-robo\"}"))
+                .andExpect(status().isOk());
+
+        // Desaparece del historial y de la cocina; la fila sigue en DB con deleted_at
+        // y hay rastro en order_deletions.
+        mockMvc.perform(get("/api/kitchen/orders/active").header("Authorization", bearerA))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(0));
+        try (Connection c = DriverManager.getConnection(PG.getJdbcUrl(), PG.getUsername(), PG.getPassword());
+             Statement st = c.createStatement()) {
+            ResultSet rs = st.executeQuery(
+                    "SELECT (SELECT count(*) FROM orders WHERE id_order = " + idOrder + " AND deleted_at IS NOT NULL) AS marcada, " +
+                    "(SELECT count(*) FROM order_deletions WHERE id_order = " + idOrder + ") AS auditada");
+            assertTrue(rs.next());
+            assertEquals(1, rs.getInt("marcada"), "La fila debe seguir en DB (soft-delete)");
+            assertEquals(1, rs.getInt("auditada"), "Debe quedar rastro en order_deletions");
+        }
+    }
+
     @Test
     void cocinaRequiereElModuloSiElTokenTraeClaim() throws Exception {
         mockMvc.perform(get("/api/kitchen/orders/active")

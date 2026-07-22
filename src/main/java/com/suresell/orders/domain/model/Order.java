@@ -14,6 +14,7 @@ import java.util.List;
 @NoArgsConstructor
 @AllArgsConstructor
 @jakarta.persistence.EntityListeners(com.suresell.orders.multitenant.TenantEntityListener.class)
+@org.hibernate.annotations.SQLRestriction("deleted_at IS NULL")
 public class Order implements org.springframework.data.domain.Persistable<java.util.UUID>, com.suresell.orders.multitenant.TenantOwned {
     @Column(name = "tenant_id")
     private String tenantId;
@@ -106,6 +107,14 @@ public class Order implements org.springframework.data.domain.Persistable<java.u
     
         @Column(name = "is_printed", nullable = false)
     private Boolean isPrinted = false;
+
+    // F5 A13: soft-delete por admin — las órdenes borradas desaparecen de TODAS
+    // las consultas de la entidad (historial, cocina, pagers, cierres) por el
+    // filtro global de abajo; el rastro queda en order_deletions.
+    @Column(name = "deleted_at")
+    private LocalDateTime deletedAt;
+    @Column(name = "deleted_by")
+    private String deletedBy;
 
     // F4 Inc.3 (docs/200): dedupe de reintentos del móvil + autoría del mesero.
     @Column(name = "idempotency_key")
