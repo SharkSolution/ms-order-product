@@ -83,17 +83,21 @@ public class DiscountHandler implements DiscountPort {
                 return this.createInvalidResult("El cupón no es válido para " + currentDay.toString());
             }
         }
+        // Cupón SIN productos asociados = descuento GENERAL: aplica a toda la orden.
+        // (Bug "cupones a medias": el admin permite crear cupones sin seleccionar
+        // productos, pero aquí se rechazaban con "no tiene productos asociados" y
+        // nunca aplicaban. La semántica de un cupón sin restricción es "todo".)
         List<CouponProduct> couponProducts = coupon.getProducts();
-        if (couponProducts == null || couponProducts.isEmpty()) {
-            return this.createInvalidResult("El cupón no tiene productos asociados");
-        }
-        Set<String> eligibleProductIds = couponProducts.stream().map(CouponProduct::getProductId).collect(Collectors.toSet());
+        boolean general = couponProducts == null || couponProducts.isEmpty();
+        Set<String> eligibleProductIds = general
+                ? Set.of()
+                : couponProducts.stream().map(CouponProduct::getProductId).collect(Collectors.toSet());
         BigDecimal baseAmount = BigDecimal.ZERO;
         List<String> appliedProductIds = command.items().stream()
-            .filter(item -> item.productId() != null && eligibleProductIds.contains(item.productId()))
+            .filter(item -> item.productId() != null && (general || eligibleProductIds.contains(item.productId())))
             .map(OrderItemDto::productId).collect(Collectors.toList());
         for (OrderItemDto item : command.items()) {
-            if (item.productId() == null || !eligibleProductIds.contains(item.productId())) continue;
+            if (item.productId() == null || (!general && !eligibleProductIds.contains(item.productId()))) continue;
             BigDecimal itemTotal = item.unitPrice().multiply(BigDecimal.valueOf(item.quantity()));
             baseAmount = baseAmount.add(itemTotal);
         }
@@ -105,7 +109,9 @@ public class DiscountHandler implements DiscountPort {
         if (newSubtotal.compareTo(BigDecimal.ZERO) < 0) {
             newSubtotal = BigDecimal.ZERO;
         }
-        String message = String.format("Se aplicó el cupón %s: %s%% de descuento en productos seleccionados. Descuento total: $%s", coupon.getCode().toUpperCase(), coupon.getDiscountPercentage(), discountAmount);
+        String message = String.format("Se aplicó el cupón %s: %s%% de descuento %s. Descuento total: $%s",
+                coupon.getCode().toUpperCase(), coupon.getDiscountPercentage(),
+                general ? "en toda la orden" : "en productos seleccionados", discountAmount);
         if (coupon.getName() != null && !coupon.getName().isEmpty()) {
             message = message + " (" + coupon.getName() + ")";
         }
