@@ -78,6 +78,12 @@ public class WaiterService {
         return waiterRepository.findByActiveTrueOrderByNameAsc();
     }
 
+    /** Lista completa para el admin (incluye desactivados). */
+    @Transactional(readOnly = true)
+    public List<Waiter> getAllWaiters() {
+        return waiterRepository.findAll(org.springframework.data.domain.Sort.by("name"));
+    }
+
     @Transactional
     public Waiter createWaiter(CreateWaiterRequest request) {
         if (request == null || request.name() == null || request.name().trim().isEmpty()) {
@@ -87,6 +93,30 @@ public class WaiterService {
         waiter.setName(request.name().trim());
         waiter.setActive(true);
         waiter.setDailySaleGoal(request.dailySaleGoal());
+        waiter.setDefaultCashBase(request.defaultCashBase());
+        return waiterRepository.save(waiter);
+    }
+
+    /** Edición parcial desde el admin (F5): null = campo sin cambio. */
+    @Transactional
+    public Waiter updateWaiter(Long id, com.suresell.orders.application.dto.WaiterDtos.UpdateWaiterRequest request) {
+        Waiter waiter = waiterRepository.findById(id)
+                .orElseThrow(() -> new IllegalArgumentException("Mesero no encontrado: " + id));
+        if (request == null) {
+            return waiter;
+        }
+        if (request.name() != null && !request.name().trim().isEmpty()) {
+            waiter.setName(request.name().trim());
+        }
+        if (request.active() != null) {
+            waiter.setActive(request.active());
+        }
+        if (request.dailySaleGoal() != null) {
+            waiter.setDailySaleGoal(request.dailySaleGoal());
+        }
+        if (request.defaultCashBase() != null) {
+            waiter.setDefaultCashBase(request.defaultCashBase());
+        }
         return waiterRepository.save(waiter);
     }
 

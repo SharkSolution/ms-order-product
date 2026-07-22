@@ -60,7 +60,12 @@ public final class WaiterDtos {
     public record MenuProductDto(String id, String name, Integer price, Boolean active) {
     }
 
-    public record CreateWaiterRequest(String name, BigDecimal dailySaleGoal) {
+    public record CreateWaiterRequest(String name, BigDecimal dailySaleGoal, BigDecimal defaultCashBase) {
+    }
+
+    /** Edición de mesero desde el admin (F5): campos null = sin cambio. */
+    public record UpdateWaiterRequest(String name, Boolean active, BigDecimal dailySaleGoal,
+                                      BigDecimal defaultCashBase) {
     }
 
     public record OpenShiftRequest(Long waiterId, BigDecimal openingCashBase) {

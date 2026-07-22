@@ -40,4 +40,8 @@ public class Waiter implements com.suresell.orders.multitenant.TenantOwned {
 
     @Column(name = "daily_sale_goal", precision = 12, scale = 2)
     private BigDecimal dailySaleGoal;
+
+    /** Base de caja por defecto asignada por el admin (V11); la app la sugiere al abrir turno. */
+    @Column(name = "default_cash_base", precision = 15, scale = 2)
+    private BigDecimal defaultCashBase;
 }
