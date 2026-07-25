@@ -52,9 +52,16 @@ class OrderHandlerTest {
     private OrderEditHistoryRepositoryPort orderEditHistoryRepositoryPort;
     private ObjectMapper objectMapper;
     private OrderHandler orderHandler;
+    /** N2/6.7: la disponibilidad de rastreadores sale de la config del negocio. */
+    private com.suresell.orders.application.usecase.PagerConfigService pagerConfigService;
     @BeforeEach
     void setUp() {
         objectMapper = JsonMapper.builder().findAndAddModules().build();
+        pagerConfigService = org.mockito.Mockito.mock(
+                com.suresell.orders.application.usecase.PagerConfigService.class);
+        org.mockito.Mockito.lenient().when(pagerConfigService.getGroups()).thenReturn(List.of(
+                new com.suresell.orders.application.dto.PagerGroupDto("AMARILLO", "Amarillo", "#eab308", 16),
+                new com.suresell.orders.application.dto.PagerGroupDto("AZUL", "Azul", "#3b82f6", 16)));
         orderHandler = new OrderHandler(
                 orderRepositoryPort,
                 orderDeliveryTrackingRepositoryPort,
@@ -65,7 +72,8 @@ class OrderHandlerTest {
                 orderEditHistoryRepositoryPort,
                 objectMapper,
                 org.mockito.Mockito.mock(com.suresell.orders.infrastructure.persistence.WaiterRepository.class),
-                org.mockito.Mockito.mock(com.suresell.orders.infrastructure.persistence.OrderPaymentRepository.class));
+                org.mockito.Mockito.mock(com.suresell.orders.infrastructure.persistence.OrderPaymentRepository.class),
+                pagerConfigService);
     }
     @Test
     void getAllOrdersCallsProductServiceOncePerDistinctProductId() {

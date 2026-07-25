@@ -68,6 +68,9 @@ public class OrderHandler implements OrderPort {
     private final com.suresell.orders.infrastructure.persistence.WaiterRepository waiterRepository;
     // F5 multipago: splits por medio de pago.
     private final com.suresell.orders.infrastructure.persistence.OrderPaymentRepository orderPaymentRepository;
+    // N2/6.7: los grupos y la cantidad de rastreadores salen de la config del
+    // negocio, ya no del enum PagerColor ni de un 16 quemado.
+    private final PagerConfigService pagerConfigService;
     // N2/D2: en el perfil cloud este servicio ES la nube (no hay outbox saliente),
     // así que las órdenes nacen ya sincronizadas. Ver createOrUpdateOrder.
     @org.springframework.beans.factory.annotation.Value("${sync.cloud.enabled:false}")
@@ -88,8 +91,9 @@ public class OrderHandler implements OrderPort {
                 .collect(Collectors.toSet());
         List<PagerAvailabilityDto> available = new ArrayList<>();
         List<PagerAvailabilityDto> occupied = new ArrayList<>();
-        for (PagerColor color : PagerColor.values()) {
-            for (int i = 1; i <= 16; i++) {
+        for (var group : pagerConfigService.getGroups()) {
+            PagerColor color = PagerColor.valueOf(group.code());
+            for (int i = 1; i <= group.quantity(); i++) {
                 String number = String.valueOf(i);
                 boolean isOccupied = occupiedPagers.contains(color.name() + "-" + number);
                 PagerAvailabilityDto dto = new PagerAvailabilityDto(color, number, !isOccupied);
