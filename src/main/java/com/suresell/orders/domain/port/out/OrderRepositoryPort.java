@@ -11,6 +11,12 @@ import java.util.Optional;
 public interface OrderRepositoryPort {
     Order save(Order order);
     Optional<Order> findById(Long id);
+    /**
+     * Busca una orden por la clave de idempotencia del cliente (N2/D1). Es lo que
+     * permite que un segundo POST de la misma venta devuelva la orden existente en
+     * vez de crear otra con folio nuevo. RLS acota la búsqueda al tenant.
+     */
+    Optional<Order> findByIdempotencyKey(String idempotencyKey);
     Optional<Long> findNumericIdByUuid(java.util.UUID uuidId);
     List<Order> findAll();
     Page<Order> findAll(Pageable pageable);

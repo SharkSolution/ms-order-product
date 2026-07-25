@@ -68,6 +68,10 @@ public class OrderHandler implements OrderPort {
     private final com.suresell.orders.infrastructure.persistence.WaiterRepository waiterRepository;
     // F5 multipago: splits por medio de pago.
     private final com.suresell.orders.infrastructure.persistence.OrderPaymentRepository orderPaymentRepository;
+    // N2/D2: en el perfil cloud este servicio ES la nube (no hay outbox saliente),
+    // así que las órdenes nacen ya sincronizadas. Ver createOrUpdateOrder.
+    @org.springframework.beans.factory.annotation.Value("${sync.cloud.enabled:false}")
+    private boolean cloudSyncEnabled;
     private static final ZoneId BOGOTA_ZONE = ZoneId.of("America/Bogota");
     private static final int MAX_EDIT_MINUTES = 7;
 
@@ -102,6 +106,21 @@ public class OrderHandler implements OrderPort {
     @Override
     @Transactional
     public Order createOrUpdateOrder(OrderRequestRecord dto) {
+        // N2/D1 — DEDUPE por idempotencia. Va ANTES de cualquier validación: en un
+        // reintento el pager ya quedó ocupado por la primera orden y
+        // validatePagerAvailability rechazaría con 400 en vez de devolver la orden
+        // que ya existe. Con esto, el doble POST del outbox del POS (checkout +
+        // SyncScheduler a la vez) deja UNA sola orden.
+        String idempotencyKey = dto.idempotencyKey();
+        if (idempotencyKey != null && !idempotencyKey.isBlank()) {
+            Optional<Order> existing = orderRepositoryPort.findByIdempotencyKey(idempotencyKey);
+            if (existing.isPresent()) {
+                Order previa = existing.get();
+                log.info("Orden duplicada descartada por idempotencia (key={}, idOrder={})",
+                        idempotencyKey, previa.getIdOrder());
+                return previa;
+            }
+        }
         boolean multipago = dto.payments() != null && !dto.payments().isEmpty();
         if (multipago) {
             validatePaymentSplits(dto.payments());
@@ -115,6 +134,16 @@ public class OrderHandler implements OrderPort {
         order.setStatus(OrderStatus.pagado);
         order.setPaymentMethod(multipago ? derivePaymentMethod(dto.payments()) : dto.paymentMethod());
         order.setCreatedAt(LocalDateTime.now(BOGOTA_ZONE));
+        if (idempotencyKey != null && !idempotencyKey.isBlank()) {
+            order.setIdempotencyKey(idempotencyKey);
+        }
+        // N2/D2 — estado de sincronización REAL. En el perfil `cloud`
+        // (sync.cloud.enabled=false) este backend ES la nube: no hay
+        // SyncOutboxScheduler que voltee el flag después, así que una orden
+        // persistida aquí ya está sincronizada por definición. En el despliegue
+        // local-first (sync.cloud.enabled=true) se mantiene la semántica vieja:
+        // nace en false y el outbox la marca al confirmar la nube.
+        order.setSynced(!cloudSyncEnabled);
         
         BigDecimal subtotal = dto.items().stream()
                 .map(item -> item.unitPrice().multiply(BigDecimal.valueOf(item.quantity())))
