@@ -22,6 +22,10 @@ public class OrderRepositoryAdapter implements OrderRepositoryPort {
         return orderRepository.findByIdOrder(id);
     }
     @Override
+    public Optional<Order> findByIdempotencyKey(String idempotencyKey) {
+        return orderRepository.findByIdempotencyKey(idempotencyKey);
+    }
+    @Override
     public Optional<Long> findNumericIdByUuid(java.util.UUID uuidId) {
         return orderRepository.findNumericIdByUuid(uuidId);
     }

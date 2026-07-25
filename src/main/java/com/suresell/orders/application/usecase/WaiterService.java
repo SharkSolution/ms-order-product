@@ -276,10 +276,14 @@ public class WaiterService {
             }
         }
 
+        // N2/D1: la clave viaja DENTRO de la creación para que el dedupe ocurra en
+        // el mismo paso que el insert. Antes se tageaba después (check-then-act):
+        // dos envíos simultáneos del móvil podían pasar ambos la verificación
+        // previa y el segundo insert chocaba contra el índice único.
+        String key = hasText(request.idempotencyKey()) ? request.idempotencyKey().trim() : null;
         Order created = orderPort.createOrUpdateOrder(new OrderRequestRecord(
                 request.pagerColor(), request.pagerNumber(), request.items(),
-                request.discountCode(), request.paymentMethod(), null));
-        String key = hasText(request.idempotencyKey()) ? request.idempotencyKey().trim() : null;
+                request.discountCode(), request.paymentMethod(), null, key));
         created.setIdempotencyKey(key);
         created.setWaiterId(waiterId);
         created.setWaiterSessionId(sessionUuid);

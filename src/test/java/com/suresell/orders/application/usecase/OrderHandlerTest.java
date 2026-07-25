@@ -1,6 +1,7 @@
 package com.suresell.orders.application.usecase;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -109,7 +110,7 @@ class OrderHandlerTest {
                         new OrderItemRequestRecord("101", 1, BigDecimal.valueOf(5000), null, null),
                         new OrderItemRequestRecord("102", 2, BigDecimal.valueOf(2000), null, null)),
                 null,
-                "CASH", null);
+                "CASH", null, null);
         when(orderRepositoryPort.findOccupiedPagerOrder(
                 "AZUL", "10", OrderStatus.pagado)).thenReturn(Optional.empty());
         when(orderRepositoryPort.save(any(Order.class))).thenAnswer(invocation -> {
@@ -127,5 +128,67 @@ class OrderHandlerTest {
         assertEquals(2, created.getItems().size());
         verify(orderRepositoryPort, times(1)).save(any(Order.class));
         verify(syncOutboxRepositoryPort, times(1)).save(any(SyncOutbox.class));
+    }
+
+    // --- N2/D1 y N2/D2 ------------------------------------------------------
+
+    /**
+     * Regresión del historial duplicado: el POS empujaba la misma venta dos veces
+     * (checkout + SyncScheduler drenando el mismo evento del outbox) y el servidor
+     * creaba DOS órdenes con folios distintos. Con la clave de idempotencia, el
+     * segundo POST devuelve la orden que ya existe y NO inserta nada.
+     */
+    @Test
+    void createOrUpdateOrderConClaveRepetidaDevuelveLaExistenteYNoInserta() {
+        Order previa = new Order();
+        previa.setIdOrder(301871L);
+        previa.setIdempotencyKey("clave-repetida");
+        when(orderRepositoryPort.findByIdempotencyKey("clave-repetida"))
+                .thenReturn(Optional.of(previa));
+
+        OrderRequestRecord request = new OrderRequestRecord(
+                "AZUL", "10",
+                List.of(new OrderItemRequestRecord("101", 1, BigDecimal.valueOf(5000), null, null)),
+                null, "CASH", null, "clave-repetida");
+
+        Order resultado = orderHandler.createOrUpdateOrder(request);
+
+        assertEquals(301871L, resultado.getIdOrder());
+        verify(orderRepositoryPort, never()).save(any(Order.class));
+        // El dedupe corre ANTES de validar el pager: en un reintento el pager ya
+        // está ocupado por la primera orden y si no, respondería 400.
+        verify(orderRepositoryPort, never())
+                .findOccupiedPagerOrder(any(), any(), any());
+    }
+
+    /**
+     * En el perfil `cloud` (sync.cloud.enabled=false, el default del test) este
+     * backend ES la nube: no hay SyncOutboxScheduler que marque después, así que
+     * la orden nace ya sincronizada. Antes quedaba en false para siempre y el
+     * historial la mostraba como "No sincronizada" aunque estuviera en la BD.
+     */
+    @Test
+    void createOrUpdateOrderMarcaLaOrdenComoSincronizadaEnPerfilCloud() {
+        OrderRequestRecord request = new OrderRequestRecord(
+                "AZUL", "11",
+                List.of(new OrderItemRequestRecord("101", 1, BigDecimal.valueOf(5000), null, null)),
+                null, "CASH", null, "clave-nueva");
+        when(orderRepositoryPort.findByIdempotencyKey("clave-nueva")).thenReturn(Optional.empty());
+        when(orderRepositoryPort.findOccupiedPagerOrder("AZUL", "11", OrderStatus.pagado))
+                .thenReturn(Optional.empty());
+        when(orderRepositoryPort.save(any(Order.class))).thenAnswer(invocation -> {
+            Order toSave = invocation.getArgument(0);
+            toSave.setIdOrder(502L);
+            return toSave;
+        });
+        when(orderRepositoryPort.findNumericIdByUuid(any(java.util.UUID.class)))
+                .thenReturn(Optional.of(502L));
+        when(syncOutboxRepositoryPort.save(any(SyncOutbox.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        Order created = orderHandler.createOrUpdateOrder(request);
+
+        assertEquals(Boolean.TRUE, created.getSynced());
+        assertEquals("clave-nueva", created.getIdempotencyKey());
     }
 }
