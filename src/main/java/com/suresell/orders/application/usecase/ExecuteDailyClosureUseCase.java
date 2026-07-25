@@ -83,9 +83,17 @@ public class ExecuteDailyClosureUseCase {
             expected.merge(method, amount == null ? BigDecimal.ZERO : amount, BigDecimal::add);
         }
 
+        // N2/6.6 — Nequi eliminado: lo que llegue rotulado NEQUI (histórico o de
+        // un APK viejo) se PLIEGA dentro de QR antes de cualquier cálculo, para
+        // que el cierre no arrastre una categoría que ya no existe.
+        BigDecimal nequiHeredado = expected.remove("NEQUI");
+        if (nequiHeredado != null && nequiHeredado.compareTo(BigDecimal.ZERO) != 0) {
+            expected.merge("QR", nequiHeredado, BigDecimal::add);
+            log.info("Cierre: ${} rotulados NEQUI se contabilizan como QR (Nequi eliminado)", nequiHeredado);
+        }
+
         BigDecimal pureSales = expected.getOrDefault("CASH", BigDecimal.ZERO)
                 .add(expected.getOrDefault("CARD", BigDecimal.ZERO))
-                .add(expected.getOrDefault("NEQUI", BigDecimal.ZERO))
                 .add(expected.getOrDefault("QR", BigDecimal.ZERO));
 
         BigDecimal previousBase = closureRepository.findFirstByOrderByClosingTimeDesc()
@@ -115,7 +123,8 @@ public class ExecuteDailyClosureUseCase {
 
         BigDecimal diffCash = calculatedTotalCash.subtract(trueExpectedCash);
         BigDecimal diffCard = request.countedCard().subtract(expected.getOrDefault("CARD", BigDecimal.ZERO));
-        BigDecimal diffNequi = request.countedNequi().subtract(expected.getOrDefault("NEQUI", BigDecimal.ZERO));
+        // Ya no hay diferencia propia de Nequi: la categoría desapareció.
+        BigDecimal diffNequi = BigDecimal.ZERO;
         BigDecimal diffQr = countedQr.subtract(expected.getOrDefault("QR", BigDecimal.ZERO));
 
         BigDecimal totalDifference = diffCash.add(diffCard).add(diffNequi).add(diffQr);
@@ -133,7 +142,6 @@ public class ExecuteDailyClosureUseCase {
         Map<String, BigDecimal> shortages = new HashMap<>();
         if (diffCash.compareTo(BigDecimal.ZERO) < 0) shortages.put("Efectivo", diffCash);
         if (diffCard.compareTo(BigDecimal.ZERO) < 0) shortages.put("Tarjeta", diffCard);
-        if (diffNequi.compareTo(BigDecimal.ZERO) < 0) shortages.put("Nequi", diffNequi);
         if (diffQr.compareTo(BigDecimal.ZERO) < 0) shortages.put("QR", diffQr);
 
         boolean hasNetShortage = totalDifference.compareTo(BigDecimal.ZERO) < 0;
@@ -233,7 +241,9 @@ public class ExecuteDailyClosureUseCase {
 
         entity.setTotalCountedCash(calculatedTotalCash != null ? calculatedTotalCash : BigDecimal.ZERO);
         entity.setTotalCountedCard(request.countedCard() != null ? request.countedCard() : BigDecimal.ZERO);
-        entity.setTotalCountedNequi(request.countedNequi() != null ? request.countedNequi() : BigDecimal.ZERO);
+        // Columna en vías de eliminación (paso "contract" de la migración): se
+        // deja en 0 y su valor se contabiliza dentro de QR.
+        entity.setTotalCountedNequi(BigDecimal.ZERO);
         entity.setTotalCountedQr(countedQr != null ? countedQr : BigDecimal.ZERO);
 
         BigDecimal totalCounted = entity.getTotalCountedCash()
@@ -244,7 +254,7 @@ public class ExecuteDailyClosureUseCase {
 
         entity.setTotalExpectedCash(expected.getOrDefault("CASH", BigDecimal.ZERO));
         entity.setTotalExpectedCard(expected.getOrDefault("CARD", BigDecimal.ZERO));
-        entity.setTotalExpectedNequi(expected.getOrDefault("NEQUI", BigDecimal.ZERO));
+        entity.setTotalExpectedNequi(BigDecimal.ZERO);
         entity.setTotalExpectedQr(expected.getOrDefault("QR", BigDecimal.ZERO));
 
         BigDecimal totalExpected = entity.getTotalExpectedCash()

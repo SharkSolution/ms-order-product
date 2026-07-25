@@ -132,7 +132,8 @@ public class OrderHandler implements OrderPort {
         order.setPagerColor(dto.pagerColor());
         order.setPagerNumber(dto.pagerNumber());
         order.setStatus(OrderStatus.pagado);
-        order.setPaymentMethod(multipago ? derivePaymentMethod(dto.payments()) : dto.paymentMethod());
+        order.setPaymentMethod(multipago ? derivePaymentMethod(dto.payments())
+                : normalizePaymentMethod(dto.paymentMethod()));
         order.setCreatedAt(LocalDateTime.now(BOGOTA_ZONE));
         if (idempotencyKey != null && !idempotencyKey.isBlank()) {
             order.setIdempotencyKey(idempotencyKey);
@@ -195,11 +196,11 @@ public class OrderHandler implements OrderPort {
     // F5 multipago
     // ------------------------------------------------------------------
 
-    private static final List<String> SPLIT_METHODS = List.of("CASH", "CARD", "NEQUI", "QR");
+    private static final List<String> SPLIT_METHODS = List.of("CASH", "CARD", "QR");
 
     private void validatePaymentSplits(List<OrderRequestRecord.PaymentSplitRecord> payments) {
         for (var split : payments) {
-            if (split.method() == null || !SPLIT_METHODS.contains(split.method())) {
+            if (split.method() == null || !SPLIT_METHODS.contains(normalizePaymentMethod(split.method()))) {
                 throw new IllegalArgumentException("Método de pago inválido en el multipago: " + split.method());
             }
             if (split.amount() == null || split.amount().compareTo(BigDecimal.ZERO) <= 0) {
@@ -212,6 +213,7 @@ public class OrderHandler implements OrderPort {
     private String derivePaymentMethod(List<OrderRequestRecord.PaymentSplitRecord> payments) {
         Set<String> methods = payments.stream()
                 .map(OrderRequestRecord.PaymentSplitRecord::method)
+                .map(OrderHandler::normalizePaymentMethod)
                 .collect(java.util.stream.Collectors.toSet());
         return methods.size() == 1 ? methods.iterator().next() : "MIXED";
     }
@@ -234,7 +236,9 @@ public class OrderHandler implements OrderPort {
         for (var split : payments) {
             com.suresell.orders.domain.model.OrderPayment payment = new com.suresell.orders.domain.model.OrderPayment();
             payment.setOrderUuidId(savedOrder.getUuidId());
-            payment.setMethod(split.method());
+            // Se persiste NORMALIZADO: un APK viejo que mande NEQUI queda como QR
+            // y el cierre no vuelve a tener una categoría que ya no existe.
+            payment.setMethod(normalizePaymentMethod(split.method()));
             payment.setAmount(split.amount());
             payment.setCreatedAt(now);
             orderPaymentRepository.save(payment);
@@ -582,9 +586,25 @@ public class OrderHandler implements OrderPort {
         }
     }
 
+    /** Medios de pago vigentes (N2/6.6: Nequi eliminado). */
+    private static final List<String> PAYMENT_METHODS = List.of("CASH", "CARD", "QR");
+
+    /**
+     * N2/6.6 — compatibilidad hacia atrás del retiro de Nequi.
+     *
+     * Nequi ya no existe como medio propio, pero hay **APKs viejos en campo**
+     * (meseros/cocina) que todavía mandan `NEQUI`. Rechazarlos con 400 tumbaría
+     * ventas en dispositivos que no controlamos, así que se normaliza a `QR`
+     * (ambos son transferencia digital) en vez de fallar. Cuando ya no queden
+     * clientes viejos, este mapeo se puede borrar.
+     */
+    static String normalizePaymentMethod(String paymentMethod) {
+        return "NEQUI".equals(paymentMethod) ? "QR" : paymentMethod;
+    }
+
     private void validatePaymentMethod(String paymentMethod) {
-        if (paymentMethod == null || !List.of("CASH", "CARD", "NEQUI", "QR").contains(paymentMethod)) {
-            throw new IllegalArgumentException("Método de pago inválido. Debe ser: CASH, CARD, NEQUI o QR");
+        if (paymentMethod == null || !PAYMENT_METHODS.contains(normalizePaymentMethod(paymentMethod))) {
+            throw new IllegalArgumentException("Método de pago inválido. Debe ser: CASH, CARD o QR");
         }
     }
 

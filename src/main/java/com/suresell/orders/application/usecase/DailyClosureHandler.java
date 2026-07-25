@@ -100,13 +100,19 @@ implements DailyClosurePort {
         List<Order> orders = this.getOrdersForPeriod(openingTime, closingTime);
         BigDecimal expectedCash = this.calculateTotalByPaymentMethod(orders, PAYMENT_CASH);
         BigDecimal expectedCard = this.calculateTotalByPaymentMethod(orders, PAYMENT_CARD);
-        BigDecimal expectedNequi = this.calculateTotalByPaymentMethod(orders, PAYMENT_NEQUI);
-        BigDecimal expectedQr = this.calculateTotalByPaymentMethod(orders, PAYMENT_QR);
+        // N2/6.6 — Nequi eliminado: lo histórico rotulado NEQUI se contabiliza
+        // dentro de QR (ambos son transferencia digital) para no perder plata del
+        // cuadre ni mantener viva una categoría que ya no existe.
+        BigDecimal expectedNequi = BigDecimal.ZERO;
+        BigDecimal expectedQr = this.calculateTotalByPaymentMethod(orders, PAYMENT_QR)
+                .add(this.calculateTotalByPaymentMethod(orders, PAYMENT_NEQUI));
         BigDecimal previousBaseBalance = this.closureRepositoryPort.findLastClosure().map(DailyClosure::getBaseBalanceForNextDay).orElse(BigDecimal.ZERO);
         BigDecimal countedCash = request.totalCountedCash().subtract(previousBaseBalance);
         BigDecimal countedCard = request.totalCountedCard();
-        BigDecimal countedNequi = request.totalCountedNequi();
-        BigDecimal countedQr = request.totalCountedQr();
+        BigDecimal countedNequi = BigDecimal.ZERO;
+        // Si un cliente viejo todavía manda countedNequi, su monto entra por QR.
+        BigDecimal countedQr = request.totalCountedQr()
+                .add(request.totalCountedNequi() != null ? request.totalCountedNequi() : BigDecimal.ZERO);
         BigDecimal totalExpected = expectedCash.add(expectedCard).add(expectedNequi).add(expectedQr);
         BigDecimal totalCounted = countedCash.add(countedCard).add(countedNequi).add(countedQr);
         BigDecimal difference = totalCounted.subtract(totalExpected);

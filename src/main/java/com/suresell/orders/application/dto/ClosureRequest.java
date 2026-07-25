@@ -19,10 +19,11 @@ public record ClosureRequest(
     @DecimalMin(value="0.0", inclusive=true, message="El total en tarjeta debe ser mayor o igual a 0") 
     @Schema(description = "Total en tarjeta contado físicamente", example = "150000")
     BigDecimal totalCountedCard, 
-    @NotNull(message="El total contado en Nequi es obligatorio") 
-    @DecimalMin(value="0.0", inclusive=true, message="El total en Nequi debe ser mayor o igual a 0") 
-    @Schema(description = "Total en Nequi contado físicamente", example = "75000")
-    BigDecimal totalCountedNequi, 
+    @DecimalMin(value="0.0", inclusive=true, message="El total en Nequi debe ser mayor o igual a 0")
+    @Deprecated
+    @Schema(deprecated = true, description = "OBSOLETO (N2/6.6): Nequi se eliminó como medio de pago. "
+            + "Ya NO es obligatorio; si un cliente viejo lo envía, el monto se contabiliza dentro de QR.")
+    BigDecimal totalCountedNequi,
     @NotNull(message="El total contado en QR es obligatorio") 
     @DecimalMin(value="0.0", inclusive=true, message="El total en QR debe ser mayor o igual a 0") 
     @Schema(description = "Total en QR contado físicamente", example = "30000")
