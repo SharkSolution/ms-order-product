@@ -12,6 +12,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -111,6 +112,50 @@ public class OrderDeletionController {
         return ResponseEntity.ok(Map.of(
                 "message", "Orden #" + idOrder + " borrada (soft-delete, con auditoría)",
                 "idOrder", idOrder));
+    }
+
+    /**
+     * N2/doc-17 — DESHACER un borrado. El soft-delete conserva el dato, pero no
+     * había forma de restaurar sin entrar a la base: un borrado por error era
+     * irreversible en la práctica. La restauración queda auditada igual que el
+     * borrado (una fila con motivo "RESTAURADA: ...").
+     */
+    @PostMapping("/{idOrder}/restore")
+    @Transactional
+    public ResponseEntity<?> restore(@PathVariable Long idOrder,
+                                     @RequestBody(required = false) DeleteOrderRequest request,
+                                     HttpServletRequest http) {
+        String role = resolver.resolveRole(http.getHeader("Authorization")).orElse("");
+        if (!"admin".equals(role)) {
+            return ResponseEntity.status(403)
+                    .body(Map.of("error", "Solo un administrador puede restaurar órdenes"));
+        }
+        if (deletePassword != null && !deletePassword.isBlank()) {
+            String enviada = request != null && request.authorizationPassword() != null
+                    ? request.authorizationPassword().trim() : "";
+            if (!deletePassword.equals(enviada)) {
+                return ResponseEntity.status(403)
+                        .body(Map.of("error", "Clave de autorización incorrecta"));
+            }
+        }
+        // findByIdOrder NO la encuentra: el @SQLRestriction de la entidad esconde
+        // las borradas. Por eso la restauración va por UPDATE directo.
+        int updated = orderRepository.restoreDeleted(idOrder);
+        if (updated == 0) {
+            return ResponseEntity.status(404)
+                    .body(Map.of("error", "No hay una orden borrada con el número #" + idOrder));
+        }
+        String by = resolver.resolveSubject(http.getHeader("Authorization")).orElse("admin");
+        LocalDateTime now = LocalDateTime.now(BOGOTA_ZONE);
+        OrderDeletion audit = new OrderDeletion();
+        audit.setIdOrder(idOrder);
+        audit.setReason("RESTAURADA: " + (request != null && request.reason() != null
+                ? request.reason().trim() : "sin motivo"));
+        audit.setDeletedBy(by);
+        audit.setCreatedAt(now);
+        deletionRepository.save(audit);
+        return ResponseEntity.ok(Map.of(
+                "message", "Orden #" + idOrder + " restaurada", "idOrder", idOrder));
     }
 
     /** Auditoría de borrados del negocio (admin). */
