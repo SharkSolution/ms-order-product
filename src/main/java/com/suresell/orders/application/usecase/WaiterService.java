@@ -2,6 +2,7 @@ package com.suresell.orders.application.usecase;
 
 import com.suresell.orders.application.dto.OrderRequestRecord;
 import com.suresell.orders.application.dto.WaiterDtos.CloseShiftRequest;
+import com.suresell.orders.application.dto.WaiterDtos.WaiterOrderTracking;
 import com.suresell.orders.application.dto.WaiterDtos.CreateWaiterRequest;
 import com.suresell.orders.application.dto.WaiterDtos.MenuCategoryDto;
 import com.suresell.orders.application.dto.WaiterDtos.MenuProductDto;
@@ -371,7 +372,20 @@ public class WaiterService {
                 order.getPagerColor(), order.getPagerNumber(), order.getCreatedAt(),
                 order.getStatus() == null ? null : order.getStatus().name(),
                 order.getPaymentMethod(), order.getSubtotal(), order.getTotal(),
-                order.getWaiterId(), order.getIdempotencyKey(), items);
+                order.getWaiterId(), order.getIdempotencyKey(), items,
+                toTracking(order));
+    }
+
+    /** N2 — el estado de entrega que la app usa para saber si ya salió el pedido. */
+    private static WaiterOrderTracking toTracking(Order order) {
+        var t = order.getDeliveryTracking();
+        if (t == null) {
+            return new WaiterOrderTracking(false, false, null);
+        }
+        return new WaiterOrderTracking(
+                Boolean.TRUE.equals(t.getDelivered()),
+                Boolean.TRUE.equals(t.getPagerReturned()),
+                t.getPreparationDurationSeconds());
     }
 
     private static boolean hasText(String s) {

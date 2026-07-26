@@ -40,7 +40,21 @@ public final class WaiterDtos {
             BigDecimal total,
             Long waiterId,
             String idempotencyKey,
-            List<WaiterOrderItem> items
+            List<WaiterOrderItem> items,
+            /**
+             * N2 — Estado de entrega. SIN esto la app de meseros no tenía forma
+             * de saber si la cocina ya despachó: pintaba "EN PREPARACIÓN" para
+             * siempre porque `tracking` llegaba nulo.
+             */
+            WaiterOrderTracking tracking
+    ) {
+    }
+
+    /** Seguimiento de entrega que la app necesita para pintar el estado. */
+    public record WaiterOrderTracking(
+            Boolean delivered,
+            Boolean pagerReturned,
+            Integer preparationDurationSeconds
     ) {
     }
 
