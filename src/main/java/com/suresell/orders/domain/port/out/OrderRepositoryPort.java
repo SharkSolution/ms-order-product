@@ -17,6 +17,8 @@ public interface OrderRepositoryPort {
      * vez de crear otra con folio nuevo. RLS acota la búsqueda al tenant.
      */
     Optional<Order> findByIdempotencyKey(String idempotencyKey);
+    /** N3 — Recalcula los totales de la orden de una mesa (UPDATE dirigido). */
+    int actualizarTotales(Long idOrder, java.math.BigDecimal subtotal, java.math.BigDecimal total);
     /** N3 — Órdenes de una cuenta de mesa (para acumular las rondas). */
     List<Order> findByTableSessionId(java.util.UUID tableSessionId);
     Optional<Long> findNumericIdByUuid(java.util.UUID uuidId);

@@ -51,6 +51,19 @@ public interface OrderRepository extends JpaRepository<Order, java.util.UUID> {
 
     List<Order> findByWaiterSessionId(java.util.UUID waiterSessionId);
 
+    /**
+     * N3 — Recalcula los totales de la orden de una mesa al agregarle una ronda.
+     * UPDATE dirigido y NO save(): `Order.items` es una colección con
+     * orphanRemoval, y reemplazarla con setItems() hace que Hibernate lance
+     * "A collection with orphan deletion was no longer referenced...". Misma
+     * razón por la que tagWaiterOrder también es un UPDATE.
+     */
+    @Modifying
+    @Query("UPDATE Order o SET o.subtotal = :subtotal, o.total = :total WHERE o.idOrder = :idOrder")
+    int actualizarTotales(@Param("idOrder") Long idOrder,
+                          @Param("subtotal") java.math.BigDecimal subtotal,
+                          @Param("total") java.math.BigDecimal total);
+
     /** N3 — Órdenes de una cuenta de mesa (para cobrarla completa). */
     List<Order> findByTableSessionId(java.util.UUID tableSessionId);
 

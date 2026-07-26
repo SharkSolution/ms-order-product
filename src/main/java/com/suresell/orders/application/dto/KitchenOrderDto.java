@@ -39,7 +39,9 @@ public record KitchenOrderDto(
             Integer quantity,
             BigDecimal unitPrice,
             String instructions,
-            Integer comboGroup
+            Integer comboGroup,
+            /** N3/#1 — `false` = recién agregado a la mesa; la cocina lo resalta. */
+            Boolean preparado
     ) {
     }
 

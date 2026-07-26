@@ -37,7 +37,8 @@ class KitchenQueryServiceTest {
     void setUp() {
         trackingRepository = mock(OrderDeliveryTrackingRepository.class);
         menuProductRepository = mock(MenuProductRepository.class);
-        service = new KitchenQueryService(trackingRepository, menuProductRepository);
+        service = new KitchenQueryService(trackingRepository, menuProductRepository,
+                mock(com.suresell.orders.infrastructure.persistence.OrderItemRepository.class));
     }
 
     private OrderDeliveryTracking tracking(UUID uuid, boolean delivered) {

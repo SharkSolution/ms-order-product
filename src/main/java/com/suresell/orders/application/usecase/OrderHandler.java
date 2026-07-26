@@ -250,15 +250,20 @@ public class OrderHandler implements OrderPort {
                 .map(OrderItem::getTotalPrice)
                 .filter(java.util.Objects::nonNull)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
-        abierta.setSubtotal(subtotal);
         BigDecimal descuento = abierta.getDiscountAmount() == null
                 ? BigDecimal.ZERO : abierta.getDiscountAmount();
-        abierta.setTotal(subtotal.subtract(descuento).max(BigDecimal.ZERO));
-        abierta.setItems(todos);
-        Order guardada = orderRepositoryPort.save(abierta);
+        BigDecimal total = subtotal.subtract(descuento).max(BigDecimal.ZERO);
+
+        // UPDATE dirigido: tocar la colección `items` de la entidad gestionada
+        // hace que Hibernate lance "A collection with orphan deletion was no
+        // longer referenced by the owning entity instance".
+        orderRepositoryPort.actualizarTotales(abierta.getIdOrder(), subtotal, total);
+        abierta.setSubtotal(subtotal);
+        abierta.setTotal(total);
+
         log.info("Mesa: ronda agregada a la orden {} (ahora {} ítems, total {})",
-                guardada.getIdOrder(), todos.size(), guardada.getTotal());
-        return guardada;
+                abierta.getIdOrder(), todos.size(), total);
+        return abierta;
     }
 
     // ------------------------------------------------------------------

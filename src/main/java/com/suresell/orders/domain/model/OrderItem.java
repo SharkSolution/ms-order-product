@@ -82,4 +82,12 @@ public class OrderItem implements org.springframework.data.domain.Persistable<ja
     private String instructions;
     @Column(name = "combo_group")
     private Integer comboGroup;
+
+    // N3/#1 — Cocina: distinguir lo ya preparado de lo recién agregado a la mesa.
+    @jakarta.persistence.Column(name = "created_at")
+    private java.time.LocalDateTime createdAt;
+
+    /** NULL = todavía no se preparó. Es lo que la cocina resalta como nuevo. */
+    @jakarta.persistence.Column(name = "prepared_at")
+    private java.time.LocalDateTime preparedAt;
 }

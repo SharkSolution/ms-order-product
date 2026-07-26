@@ -26,6 +26,10 @@ public class OrderRepositoryAdapter implements OrderRepositoryPort {
         return orderRepository.findByIdempotencyKey(idempotencyKey);
     }
     @Override
+    public int actualizarTotales(Long idOrder, java.math.BigDecimal subtotal, java.math.BigDecimal total) {
+        return orderRepository.actualizarTotales(idOrder, subtotal, total);
+    }
+    @Override
     public List<Order> findByTableSessionId(java.util.UUID tableSessionId) {
         return orderRepository.findByTableSessionId(tableSessionId);
     }

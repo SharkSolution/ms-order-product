@@ -33,11 +33,17 @@ import java.util.stream.Collectors;
 @Service
 public class KitchenQueryService {
 
+    private static final java.time.ZoneId BOGOTA_ZONE = java.time.ZoneId.of("America/Bogota");
+
     private final OrderDeliveryTrackingRepository trackingRepository;
     private final MenuProductRepository menuProductRepository;
+    // N3/#1: marcar ítems como preparados.
+    private final com.suresell.orders.infrastructure.persistence.OrderItemRepository orderItemRepository;
 
     public KitchenQueryService(OrderDeliveryTrackingRepository trackingRepository,
-                               MenuProductRepository menuProductRepository) {
+                               MenuProductRepository menuProductRepository,
+                               com.suresell.orders.infrastructure.persistence.OrderItemRepository orderItemRepository) {
+        this.orderItemRepository = orderItemRepository;
         this.trackingRepository = trackingRepository;
         this.menuProductRepository = menuProductRepository;
     }
@@ -121,7 +127,14 @@ public class KitchenQueryService {
                 item.getQuantity(),
                 item.getUnitPrice(),
                 item.getInstructions(),
-                item.getComboGroup()
+                item.getComboGroup(),
+                item.getPreparedAt() != null
         );
+    }
+
+    /** N3/#1 — Marca como preparado lo pendiente de la orden. */
+    @jakarta.transaction.Transactional
+    public int marcarItemsPreparados(Long idOrder) {
+        return orderItemRepository.marcarPreparados(idOrder, java.time.LocalDateTime.now(BOGOTA_ZONE));
     }
 }

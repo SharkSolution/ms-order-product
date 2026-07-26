@@ -9,6 +9,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
+import java.util.Map;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -51,4 +52,17 @@ public class KitchenController {
         service.markDelivered(orderUuid, request);
         return ResponseEntity.noContent().build();
     }
+
+    /**
+     * N3/#1 — Marca como preparado lo que está pendiente en la orden.
+     *
+     * El cocinero lo usa cuando despacha: lo que la mesa pida después llegará
+     * sin marcar y se resaltará como nuevo, sin repetir lo ya hecho.
+     */
+    @PatchMapping("/{idOrder}/items/prepared")
+    public ResponseEntity<Map<String, Object>> marcarPreparados(@PathVariable Long idOrder) {
+        int marcados = service.marcarItemsPreparados(idOrder);
+        return ResponseEntity.ok(Map.of("idOrder", idOrder, "marcados", marcados));
+    }
+
 }
