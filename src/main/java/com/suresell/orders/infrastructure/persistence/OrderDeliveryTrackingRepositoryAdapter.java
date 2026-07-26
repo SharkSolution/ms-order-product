@@ -11,4 +11,9 @@ public class OrderDeliveryTrackingRepositoryAdapter implements OrderDeliveryTrac
     public OrderDeliveryTracking save(OrderDeliveryTracking tracking) {
         return orderDeliveryTrackingRepository.save(tracking);
     }
+
+    @Override
+    public boolean reabrirParaCocina(java.util.UUID orderUuid) {
+        return orderDeliveryTrackingRepository.reabrirParaCocina(orderUuid) > 0;
+    }
 }

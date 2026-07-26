@@ -31,14 +31,18 @@ class KitchenQueryServiceTest {
 
     private OrderDeliveryTrackingRepository trackingRepository;
     private MenuProductRepository menuProductRepository;
+    private com.suresell.orders.infrastructure.persistence.OrderItemRepository orderItemRepository;
+    private com.suresell.orders.infrastructure.persistence.TableSessionRepository tableSessionRepository;
     private KitchenQueryService service;
 
     @BeforeEach
     void setUp() {
         trackingRepository = mock(OrderDeliveryTrackingRepository.class);
         menuProductRepository = mock(MenuProductRepository.class);
+        orderItemRepository = mock(com.suresell.orders.infrastructure.persistence.OrderItemRepository.class);
+        tableSessionRepository = mock(com.suresell.orders.infrastructure.persistence.TableSessionRepository.class);
         service = new KitchenQueryService(trackingRepository, menuProductRepository,
-                mock(com.suresell.orders.infrastructure.persistence.OrderItemRepository.class));
+                orderItemRepository, tableSessionRepository);
     }
 
     private OrderDeliveryTracking tracking(UUID uuid, boolean delivered) {
@@ -150,5 +154,63 @@ class KitchenQueryServiceTest {
         when(trackingRepository.findById(uuid)).thenReturn(Optional.empty());
 
         assertThrows(IllegalArgumentException.class, () -> service.markDelivered(uuid, new DeliverRequest(10)));
+    }
+
+    // ------------------------------------------------------------------
+    // N3/#1 — La comanda de MESA se titula con la mesa real
+    // ------------------------------------------------------------------
+
+    @Test
+    void comandaDeMesaLlevaElNumeroDeMesaReal() {
+        UUID uuid = UUID.randomUUID();
+        UUID cuenta = UUID.randomUUID();
+        OrderDeliveryTracking t = tracking(uuid, false);
+        t.getOrder().setStatus(OrderStatus.abierta);
+        t.getOrder().setTableSessionId(cuenta);
+
+        when(trackingRepository.findActiveKitchenOrders()).thenReturn(List.of(t));
+        when(menuProductRepository.findAllById(anyCollection()))
+                .thenReturn(List.of(product("prod-1", "Hamburguesa Shark")));
+        when(tableSessionRepository.findMesaPorSesion(anyCollection()))
+                .thenReturn(List.<Object[]>of(new Object[]{cuenta, 12, "Terraza"}));
+
+        KitchenOrderDto dto = service.getActiveOrdersFifo().get(0);
+
+        // El bug: la app titulaba con `pagerNumber`, que en Restaurante no lleva
+        // la mesa — TODAS las comandas salían como la misma mesa.
+        assertEquals(12, dto.tableNumber());
+        assertEquals("Terraza", dto.tableLabel());
+    }
+
+    @Test
+    void comandaDePlazoletaNoTraeMesaNiConsultaCuentas() {
+        when(trackingRepository.findActiveKitchenOrders())
+                .thenReturn(List.of(tracking(UUID.randomUUID(), false)));
+        when(menuProductRepository.findAllById(anyCollection()))
+                .thenReturn(List.of(product("prod-1", "Hamburguesa Shark")));
+
+        KitchenOrderDto dto = service.getActiveOrdersFifo().get(0);
+
+        assertNull(dto.tableNumber());
+        assertNull(dto.tableLabel());
+        verify(tableSessionRepository, never()).findMesaPorSesion(anyCollection());
+    }
+
+    // ------------------------------------------------------------------
+    // N3/#2 — Entregar deja TODO lo de la comanda como preparado
+    // ------------------------------------------------------------------
+
+    @Test
+    void entregarMarcaLosItemsComoPreparados() {
+        UUID uuid = UUID.randomUUID();
+        OrderDeliveryTracking t = tracking(uuid, false);
+        when(trackingRepository.findById(uuid)).thenReturn(Optional.of(t));
+
+        service.markDelivered(uuid, new DeliverRequest(120));
+
+        // Si no se marcan, al sumar una ronda la comanda vuelve a la cola y los
+        // platos VIEJOS reaparecen como "NUEVO" junto a los recién pedidos.
+        verify(orderItemRepository).marcarPreparados(eq(301858L), any(LocalDateTime.class));
+        assertTrue(t.getDelivered());
     }
 }

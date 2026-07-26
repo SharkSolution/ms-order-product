@@ -18,4 +18,18 @@ public interface TableSessionRepository extends JpaRepository<TableSession, UUID
     Optional<TableSession> findVivaPorMesa(Long tableId);
 
     long countByStatusNot(String status);
+
+    /**
+     * N3/#1 — Resuelve la MESA de un lote de cuentas, en una sola consulta.
+     * Lo usa cocina para titular la comanda; se hace por lote para no meter un
+     * N+1 en la cola, que se refresca cada pocos segundos.
+     * Devuelve filas [sessionId (UUID), number (Integer), label (String)].
+     */
+    @Query("""
+            SELECT s.id, t.number, t.label
+            FROM TableSession s
+            JOIN RestaurantTable t ON t.id = s.tableId
+            WHERE s.id IN :sessionIds
+            """)
+    List<Object[]> findMesaPorSesion(java.util.Collection<UUID> sessionIds);
 }

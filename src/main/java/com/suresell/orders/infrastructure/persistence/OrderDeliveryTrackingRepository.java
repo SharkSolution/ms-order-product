@@ -3,6 +3,7 @@ import com.suresell.orders.domain.model.OrderDeliveryTracking;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 
 import java.util.List;
@@ -39,4 +40,19 @@ public interface OrderDeliveryTrackingRepository extends JpaRepository<OrderDeli
             where t.delivered = true
             """)
     Page<OrderDeliveryTracking> findDeliveredKitchenOrders(Pageable pageable);
+
+    /**
+     * N3/#2 — Reabre la comanda para cocina. UPDATE dirigido: cargar la entidad
+     * y mutarla dentro del flujo de creación de orden arrastra la colección
+     * `items` y revienta con "orphan deletion".
+     */
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("""
+            update OrderDeliveryTracking t
+               set t.delivered = false,
+                   t.preparationDurationSeconds = null
+             where t.orderIdUuid = :orderUuid
+               and t.delivered = true
+            """)
+    int reabrirParaCocina(java.util.UUID orderUuid);
 }

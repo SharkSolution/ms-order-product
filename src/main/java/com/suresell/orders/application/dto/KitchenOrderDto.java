@@ -19,6 +19,14 @@ public record KitchenOrderDto(
         Boolean synced,
         BigDecimal total,
         String status,
+        /**
+         * N3/#1 — Número de MESA en modo Restaurante, `null` en Plazoleta.
+         * Antes la app lo deducía de `pagerNumber`, que en Restaurante no lleva
+         * la mesa: TODAS las comandas salían como "Mesa 1".
+         */
+        Integer tableNumber,
+        /** Etiqueta opcional de la mesa ("Terraza 2"); `null` si no tiene. */
+        String tableLabel,
         Long waiterId,
         String waiterName,
         KitchenTrackingDto tracking,

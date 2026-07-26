@@ -348,4 +348,43 @@ class OrderHandlerTest {
         assertEquals(Boolean.TRUE, created.getSynced());
         assertEquals("clave-nueva", created.getIdempotencyKey());
     }
+
+    // ------------------------------------------------------------------
+    // N3/#2 — Una ronda nueva devuelve la comanda a cocina
+    // ------------------------------------------------------------------
+
+    @Test
+    void rondaNuevaSobreMesaYaEntregadaReabreLaComandaEnCocina() {
+        java.util.UUID cuenta = java.util.UUID.randomUUID();
+        java.util.UUID uuidOrden = java.util.UUID.randomUUID();
+
+        Order abierta = new Order();
+        abierta.setIdOrder(555L);
+        abierta.setUuidId(uuidOrden);
+        abierta.setStatus(OrderStatus.abierta);
+        abierta.setTableSessionId(cuenta);
+        abierta.setSubtotal(BigDecimal.valueOf(5000));
+        abierta.setTotal(BigDecimal.valueOf(5000));
+
+        when(orderRepositoryPort.findByTableSessionId(cuenta)).thenReturn(List.of(abierta));
+        OrderItem yaHabia = new OrderItem();
+        yaHabia.setTotalPrice(BigDecimal.valueOf(5000));
+        OrderItem nuevo = new OrderItem();
+        nuevo.setTotalPrice(BigDecimal.valueOf(5000));
+        when(orderItemRepositoryPort.findByOrderIds(List.of(555L))).thenReturn(List.of(yaHabia, nuevo));
+
+        OrderRequestRecord request = new OrderRequestRecord(
+                "AMARILLO", "1",
+                List.of(new OrderItemRequestRecord("101", 1, BigDecimal.valueOf(5000), null, null)),
+                null, "CASH", null, null, null, cuenta.toString());
+
+        orderHandler.createOrUpdateOrder(request);
+
+        // Sin esto la orden queda `delivered=true` desde que cocina le dio
+        // "listo" y los platos de la ronda nueva no vuelven a aparecer nunca.
+        verify(orderDeliveryTrackingRepositoryPort).reabrirParaCocina(uuidOrden);
+        // Y NO se crea una orden aparte: la ronda se suma a la cuenta.
+        verify(orderRepositoryPort, never()).save(any(Order.class));
+        verify(orderRepositoryPort).actualizarTotales(555L, BigDecimal.valueOf(10000), BigDecimal.valueOf(10000));
+    }
 }

@@ -261,8 +261,15 @@ public class OrderHandler implements OrderPort {
         abierta.setSubtotal(subtotal);
         abierta.setTotal(total);
 
-        log.info("Mesa: ronda agregada a la orden {} (ahora {} ítems, total {})",
-                abierta.getIdOrder(), todos.size(), total);
+        // N3/#2 — Si la cocina ya había marcado esta comanda como lista, la orden
+        // quedó `delivered=true` y desapareció de la cola: los platos de la
+        // ronda nueva no llegaban a cocina. Se reabre para que vuelva a salir,
+        // ahora con los ítems viejos en `preparado` y los nuevos resaltados.
+        boolean reabierta = orderDeliveryTrackingRepositoryPort.reabrirParaCocina(abierta.getUuidId());
+
+        log.info("Mesa: ronda agregada a la orden {} (ahora {} ítems, total {}){}",
+                abierta.getIdOrder(), todos.size(), total,
+                reabierta ? " — comanda reabierta en cocina" : "");
         return abierta;
     }
 
