@@ -170,6 +170,38 @@ class OrderHandlerTest {
     }
 
     /**
+     * N2 — REGRESIÓN del bug que impedía enviar comandas desde la app de
+     * meseros: la app manda el medio de pago en español ("Efectivo",
+     * "Tarjeta"...) y el backend solo aceptaba los códigos canónicos, así que
+     * TODO pedido que no fuera QR moría con 400.
+     */
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.CsvSource({
+            "Efectivo, CASH", "EFECTIVO, CASH", "Tarjeta, CARD", "Datafono, CARD",
+            "Nequi, QR", "QR, QR", "CASH, CASH"})
+    void aceptaLasEtiquetasEnEspanolQueMandaLaAppDeMeseros(String enviado, String esperado) {
+        OrderRequestRecord request = new OrderRequestRecord(
+                "AZUL", "16",
+                List.of(new OrderItemRequestRecord("101", 1, BigDecimal.valueOf(5000), null, null)),
+                null, enviado, null, null);
+        when(orderRepositoryPort.findOccupiedPagerOrder("AZUL", "16", OrderStatus.pagado))
+                .thenReturn(Optional.empty());
+        when(orderRepositoryPort.save(any(Order.class))).thenAnswer(invocation -> {
+            Order toSave = invocation.getArgument(0);
+            toSave.setIdOrder(506L);
+            return toSave;
+        });
+        when(orderRepositoryPort.findNumericIdByUuid(any(java.util.UUID.class)))
+                .thenReturn(Optional.of(506L));
+        when(syncOutboxRepositoryPort.save(any(SyncOutbox.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        Order created = orderHandler.createOrUpdateOrder(request);
+
+        assertEquals(esperado, created.getPaymentMethod());
+    }
+
+    /**
      * N2/6.6 + multipago — un APK viejo puede mandar un split NEQUI. Debe
      * persistirse ya normalizado a QR: si quedara rotulado NEQUI, el cierre de
      * caja lo sumaría en una categoría que ya no existe y el cuadre saldría mal.

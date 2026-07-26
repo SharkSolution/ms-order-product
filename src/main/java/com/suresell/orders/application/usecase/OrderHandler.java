@@ -603,7 +603,29 @@ public class OrderHandler implements OrderPort {
      * clientes viejos, este mapeo se puede borrar.
      */
     static String normalizePaymentMethod(String paymentMethod) {
-        return "NEQUI".equals(paymentMethod) ? "QR" : paymentMethod;
+        if (paymentMethod == null) {
+            return null;
+        }
+        String v = paymentMethod.trim().toUpperCase();
+        switch (v) {
+            // Etiquetas EN ESPAÑOL que manda la app de meseros (y posiblemente
+            // otros clientes viejos). Sin esto, todo pedido que no fuera QR
+            // moría con 400 "método de pago inválido" — que es exactamente lo
+            // que impedía enviar comandas desde la app.
+            case "EFECTIVO":
+                return "CASH";
+            case "TARJETA":
+            case "DATAFONO":
+            case "DATÁFONO":
+                return "CARD";
+            // Nequi eliminado (N2/6.6): se contabiliza como transferencia QR.
+            case "NEQUI":
+                return "QR";
+            case "MIXTO":
+                return "MIXED";
+            default:
+                return v;
+        }
     }
 
     private void validatePaymentMethod(String paymentMethod) {
