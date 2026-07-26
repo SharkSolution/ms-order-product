@@ -16,6 +16,7 @@ public final class PlanCatalog {
 
     private PlanCatalog() {}
 
+    // --- Módulos del POS ---
     public static final String VENTAS = "ventas";
     public static final String HISTORIAL = "historial";
     public static final String CIERRE = "cierre";
@@ -23,16 +24,51 @@ public final class PlanCatalog {
     public static final String COCINA = "cocina";
     public static final String MESEROS = "meseros";
 
+    // --- Módulos del PANEL de administración (N2/6.8) ---
+    // El panel (web_panel, hoy en sharkburger.suresell.com.co) reutiliza sus
+    // módulos actuales, pero cuáles ve cada negocio lo decide el KAM: vienen por
+    // plan y se pueden regalar o quitar por tenant con los overrides que ya
+    // existen (`PUT /admin/tenants/{id}/modules`).
+    public static final String PANEL = "panel";
+    public static final String ANALITICA = "analitica";
+    public static final String NOMINA = "nomina";
+    public static final String EMPLEADOS = "empleados";
+    public static final String VALERAS = "valeras";
+    public static final String INSUMOS = "insumos";
+    public static final String COMPRAS = "compras";
+    public static final String GASTOS = "gastos";
+    public static final String CARTERA = "cartera";
+    public static final String MENU_ADMIN = "menu";
+
+    /** Módulos del panel que entran en el plan `pro`. */
+    private static final List<String> PANEL_PRO =
+            List.of(PANEL, ANALITICA, MENU_ADMIN, GASTOS);
+
     private static final Map<String, List<String>> PLAN_MODULES = Map.of(
             "basico", List.of(VENTAS, HISTORIAL, CIERRE, COCINA),
-            "pro", List.of(VENTAS, HISTORIAL, CIERRE, DESCUENTOS, COCINA, MESEROS));
+            "pro", concat(List.of(VENTAS, HISTORIAL, CIERRE, DESCUENTOS, COCINA, MESEROS), PANEL_PRO));
 
     private static final List<String> DEFAULT =
-            List.of(VENTAS, HISTORIAL, CIERRE, DESCUENTOS, COCINA, MESEROS);
+            concat(List.of(VENTAS, HISTORIAL, CIERRE, DESCUENTOS, COCINA, MESEROS), PANEL_PRO);
 
-    /** Todos los módulos conocidos (para validar overrides). */
-    public static final Set<String> KNOWN =
-            Set.of(VENTAS, HISTORIAL, CIERRE, DESCUENTOS, COCINA, MESEROS);
+    /**
+     * Todos los módulos conocidos (para validar overrides).
+     *
+     * Los que NO están en ningún plan (nómina, valeras, insumos, compras,
+     * cartera, empleados) existen a propósito: se venden aparte y el KAM los
+     * activa por tenant con un override. Si no estuvieran acá,
+     * `isKnownModule` los rechazaría y no se podrían regalar.
+     */
+    public static final Set<String> KNOWN = Set.of(
+            VENTAS, HISTORIAL, CIERRE, DESCUENTOS, COCINA, MESEROS,
+            PANEL, ANALITICA, NOMINA, EMPLEADOS, VALERAS, INSUMOS, COMPRAS,
+            GASTOS, CARTERA, MENU_ADMIN);
+
+    private static List<String> concat(List<String> a, List<String> b) {
+        List<String> out = new java.util.ArrayList<>(a);
+        out.addAll(b);
+        return List.copyOf(out);
+    }
 
     /** Módulos incluidos por el plan; si el plan es desconocido, cae a `pro` (todos). */
     public static List<String> modulesForPlan(String plan) {
