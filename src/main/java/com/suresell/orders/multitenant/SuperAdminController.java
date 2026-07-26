@@ -86,6 +86,38 @@ public class SuperAdminController {
         }
     }
 
+    /** Sedes de un negocio y su modo de POS (Inc. 1 del modo Restaurante). */
+    @GetMapping("/admin/tenants/{id}/sites")
+    public ResponseEntity<?> getSites(@PathVariable String id, HttpServletRequest http) {
+        ResponseEntity<?> guard = requireSuper(http);
+        if (guard != null) {
+            return guard;
+        }
+        try {
+            return ResponseEntity.ok(svc.getSites(id));
+        } catch (AuthException e) {
+            return err(e);
+        }
+    }
+
+    /** Cambiar el modo de una sede. SOLO el KAM: el modo se vende, no se elige. */
+    @PutMapping("/admin/tenants/{id}/sites/{siteId}/mode")
+    public ResponseEntity<?> setSiteMode(@PathVariable String id, @PathVariable Long siteId,
+                                         @RequestBody SiteModeRequest req, HttpServletRequest http) {
+        ResponseEntity<?> guard = requireSuper(http);
+        if (guard != null) {
+            return guard;
+        }
+        try {
+            return ResponseEntity.ok(svc.setSiteMode(id, siteId, req.posMode()));
+        } catch (AuthException e) {
+            return err(e);
+        }
+    }
+
+    public record SiteModeRequest(String posMode) {
+    }
+
     private ResponseEntity<?> requireSuper(HttpServletRequest http) {
         if (!resolver.isSuperAdmin(http.getHeader("Authorization"))) {
             return ResponseEntity.status(403).body(Map.of("error", "Requiere super-admin"));

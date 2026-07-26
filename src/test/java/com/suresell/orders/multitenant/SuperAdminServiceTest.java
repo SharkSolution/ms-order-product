@@ -21,7 +21,11 @@ class SuperAdminServiceTest {
     private final BCryptPasswordEncoder encoder = new BCryptPasswordEncoder();
 
     private SuperAdminService svc(SuperAdminRepository r, AuthService a) {
-        return new SuperAdminService(r, a, SECRET, 3600);
+        // El JdbcTemplate solo lo usan los endpoints de sedes (RLS cross-tenant);
+        // estos tests no los tocan, así que basta un mock.
+        return new SuperAdminService(r, a,
+                org.mockito.Mockito.mock(org.springframework.jdbc.core.JdbcTemplate.class),
+                SECRET, 3600);
     }
 
     private boolean superClaim(String jwt) {
