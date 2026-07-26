@@ -170,6 +170,65 @@ class OrderHandlerTest {
     }
 
     /**
+     * N2/6.6 + multipago — un APK viejo puede mandar un split NEQUI. Debe
+     * persistirse ya normalizado a QR: si quedara rotulado NEQUI, el cierre de
+     * caja lo sumaría en una categoría que ya no existe y el cuadre saldría mal.
+     */
+    @Test
+    void multipagoConSplitNequiSePersistenNormalizadosYSigueSiendoMixto() {
+        OrderRequestRecord request = new OrderRequestRecord(
+                "AZUL", "14",
+                List.of(new OrderItemRequestRecord("101", 1, BigDecimal.valueOf(10000), null, null)),
+                null, "MIXED",
+                List.of(new OrderRequestRecord.PaymentSplitRecord("CASH", BigDecimal.valueOf(4000)),
+                        new OrderRequestRecord.PaymentSplitRecord("NEQUI", BigDecimal.valueOf(6000))),
+                null);
+        when(orderRepositoryPort.findOccupiedPagerOrder("AZUL", "14", OrderStatus.pagado))
+                .thenReturn(Optional.empty());
+        when(orderRepositoryPort.save(any(Order.class))).thenAnswer(invocation -> {
+            Order toSave = invocation.getArgument(0);
+            toSave.setIdOrder(504L);
+            return toSave;
+        });
+        when(orderRepositoryPort.findNumericIdByUuid(any(java.util.UUID.class)))
+                .thenReturn(Optional.of(504L));
+        when(syncOutboxRepositoryPort.save(any(SyncOutbox.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        Order created = orderHandler.createOrUpdateOrder(request);
+
+        // Sigue siendo MIXTO: son dos medios distintos (efectivo + transferencia).
+        assertEquals("MIXED", created.getPaymentMethod());
+    }
+
+    /**
+     * El multipago que no cuadra debe RECHAZARSE. Es la defensa contra que una
+     * venta quede registrada por un monto distinto al que entró a la caja.
+     */
+    @Test
+    void multipagoQueNoSumaElTotalSeRechaza() {
+        OrderRequestRecord request = new OrderRequestRecord(
+                "AZUL", "15",
+                List.of(new OrderItemRequestRecord("101", 1, BigDecimal.valueOf(10000), null, null)),
+                null, "MIXED",
+                List.of(new OrderRequestRecord.PaymentSplitRecord("CASH", BigDecimal.valueOf(4000)),
+                        new OrderRequestRecord.PaymentSplitRecord("CARD", BigDecimal.valueOf(5000))),
+                null);
+        when(orderRepositoryPort.findOccupiedPagerOrder("AZUL", "15", OrderStatus.pagado))
+                .thenReturn(Optional.empty());
+        when(orderRepositoryPort.save(any(Order.class))).thenAnswer(invocation -> {
+            Order toSave = invocation.getArgument(0);
+            toSave.setIdOrder(505L);
+            return toSave;
+        });
+        when(orderRepositoryPort.findNumericIdByUuid(any(java.util.UUID.class)))
+                .thenReturn(Optional.of(505L));
+
+        org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException.class,
+                () -> orderHandler.createOrUpdateOrder(request));
+    }
+
+    /**
      * N2/6.6 — Nequi se eliminó, pero hay APKs viejos en campo que todavía lo
      * mandan. Rechazarlos con 400 tumbaría ventas en dispositivos que no
      * controlamos, así que se normaliza a QR en vez de fallar.
