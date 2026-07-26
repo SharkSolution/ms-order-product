@@ -25,10 +25,11 @@ import java.util.Set;
 @Profile("cloud")
 public class SuperAdminService {
 
-    private static final Set<String> VALID_PLANS = Set.of("basico", "pro");
-
     private final SuperAdminRepository saRepo;
     private final AuthService authService;
+    // N4 — el catálogo de planes vive en BD (V27) y lo edita el KAM.
+    private final PlanRepository planRepo;
+    private final PlanCatalogService planes;
     private final org.springframework.jdbc.core.JdbcTemplate jdbc;
     private final SecretKey key;
     private final long ttlSeconds;
@@ -37,11 +38,15 @@ public class SuperAdminService {
     public SuperAdminService(
             SuperAdminRepository saRepo,
             AuthService authService,
+            PlanRepository planRepo,
+            PlanCatalogService planes,
             org.springframework.jdbc.core.JdbcTemplate jdbc,
             @Value("${security.jwt.secret:cambia-esta-clave-en-produccion-min-32-bytes!}") String secret,
             @Value("${auth.token.ttl-seconds:43200}") long ttlSeconds) {
         this.saRepo = saRepo;
         this.authService = authService;
+        this.planRepo = planRepo;
+        this.planes = planes;
         this.jdbc = jdbc;
         this.key = Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
         this.ttlSeconds = ttlSeconds;
@@ -82,8 +87,14 @@ public class SuperAdminService {
 
     public void setPlan(String tenantId, String plan) {
         String p = plan == null ? "" : plan.trim().toLowerCase();
-        if (!VALID_PLANS.contains(p)) {
-            throw new AuthException(400, "Plan inválido (basico|pro)");
+        // Se valida contra el catálogo REAL: con un Set quemado, un plan creado
+        // desde el KAM era inasignable.
+        List<String> validos = planes.catalogo().stream()
+                .filter(PlanRepository.Plan::active)
+                .map(PlanRepository.Plan::id)
+                .toList();
+        if (!validos.contains(p)) {
+            throw new AuthException(400, "Plan inválido (válidos: " + String.join("|", validos) + ")");
         }
         if (saRepo.updateTenantPlan(tenantId, p) == 0) {
             throw new AuthException(404, "Negocio no encontrado");
@@ -92,6 +103,128 @@ public class SuperAdminService {
 
     public AuthService.ModuleConfig setModules(String tenantId, Map<String, Boolean> overrides) {
         return authService.setModuleOverrides(tenantId, overrides);
+    }
+
+    // ------------------------------------------------------------------
+    // N4 — Catálogo: módulos conocidos y planes.
+    // ------------------------------------------------------------------
+
+    /** Un módulo, con etiqueta legible y dónde aplica. */
+    public record ModuleInfo(String id, String label, String scope) {}
+
+    public record Catalog(List<ModuleInfo> modules, List<PlanRepository.Plan> plans) {}
+
+    /**
+     * Lo que el KAM necesita para pintarse. El panel tenía la lista de módulos
+     * QUEMADA con 4 de los 16 que conoce el backend, así que los demás no se
+     * podían tocar y cada módulo nuevo había que acordarse de copiarlo.
+     */
+    public Catalog catalog() {
+        List<ModuleInfo> mods = new java.util.ArrayList<>();
+        for (String m : ORDEN_MODULOS) {
+            mods.add(new ModuleInfo(m, ETIQUETAS.getOrDefault(m, m),
+                    MODULOS_POS.contains(m) ? "pos" : "panel"));
+        }
+        // Cualquier módulo que exista en el backend y no esté en el orden de
+        // arriba igual se muestra: mejor desordenado que invisible.
+        for (String m : PlanCatalog.KNOWN) {
+            if (!ORDEN_MODULOS.contains(m)) {
+                mods.add(new ModuleInfo(m, m, "otro"));
+            }
+        }
+        return new Catalog(mods, planes.catalogo());
+    }
+
+    private static final Set<String> MODULOS_POS = Set.of(
+            PlanCatalog.VENTAS, PlanCatalog.HISTORIAL, PlanCatalog.CIERRE,
+            PlanCatalog.DESCUENTOS, PlanCatalog.COCINA, PlanCatalog.MESEROS);
+
+    private static final List<String> ORDEN_MODULOS = List.of(
+            PlanCatalog.VENTAS, PlanCatalog.HISTORIAL, PlanCatalog.CIERRE,
+            PlanCatalog.DESCUENTOS, PlanCatalog.COCINA, PlanCatalog.MESEROS,
+            PlanCatalog.PANEL, PlanCatalog.ANALITICA, PlanCatalog.MENU_ADMIN,
+            PlanCatalog.GASTOS, PlanCatalog.NOMINA, PlanCatalog.EMPLEADOS,
+            PlanCatalog.VALERAS, PlanCatalog.INSUMOS, PlanCatalog.COMPRAS,
+            PlanCatalog.CARTERA);
+
+    private static final Map<String, String> ETIQUETAS = Map.ofEntries(
+            Map.entry(PlanCatalog.VENTAS, "Ventas (POS)"),
+            Map.entry(PlanCatalog.HISTORIAL, "Historial de órdenes"),
+            Map.entry(PlanCatalog.CIERRE, "Cierre de caja"),
+            Map.entry(PlanCatalog.DESCUENTOS, "Descuentos y cupones"),
+            Map.entry(PlanCatalog.COCINA, "App de cocina"),
+            Map.entry(PlanCatalog.MESEROS, "App de meseros"),
+            Map.entry(PlanCatalog.PANEL, "Panel de administración"),
+            Map.entry(PlanCatalog.ANALITICA, "Analítica"),
+            Map.entry(PlanCatalog.MENU_ADMIN, "Menú y productos"),
+            Map.entry(PlanCatalog.GASTOS, "Gastos"),
+            Map.entry(PlanCatalog.NOMINA, "Nómina"),
+            Map.entry(PlanCatalog.EMPLEADOS, "Empleados"),
+            Map.entry(PlanCatalog.VALERAS, "Valeras"),
+            Map.entry(PlanCatalog.INSUMOS, "Insumos"),
+            Map.entry(PlanCatalog.COMPRAS, "Compras"),
+            Map.entry(PlanCatalog.CARTERA, "Cartera"));
+
+    /** Crea un plan. El id es el slug con el que se guarda en `tenants.plan`. */
+    public PlanRepository.Plan createPlan(String id, String name, String description,
+                                          List<String> modules) {
+        String slug = id == null ? "" : id.trim().toLowerCase().replaceAll("[^a-z0-9_-]", "");
+        if (slug.isBlank()) {
+            throw new AuthException(400, "El id del plan es obligatorio (letras, números, - y _)");
+        }
+        if (planRepo.exists(slug)) {
+            throw new AuthException(409, "Ya existe un plan con id '" + slug + "'");
+        }
+        String nombre = name == null || name.isBlank() ? slug : name.trim();
+        planRepo.insert(slug, nombre, description == null ? null : description.trim());
+        planRepo.replaceModules(slug, validarModulos(modules));
+        planes.invalidar();
+        return buscarPlan(slug);
+    }
+
+    /** Edita nombre, descripción, estado y módulos de un plan. */
+    public PlanRepository.Plan updatePlan(String id, String name, String description,
+                                          Boolean active, List<String> modules) {
+        if (!planRepo.exists(id)) {
+            throw new AuthException(404, "Plan no encontrado: " + id);
+        }
+        boolean activo = active == null || active;
+        if (!activo && planRepo.countTenants(id) > 0) {
+            // Desactivar solo lo saca del selector; los negocios que ya lo tienen
+            // lo conservan. Avisar es mejor que sorprender.
+            throw new AuthException(409, "No se desactiva: hay " + planRepo.countTenants(id)
+                    + " negocio(s) en este plan. Muévelos primero.");
+        }
+        PlanRepository.Plan actual = buscarPlan(id);
+        planRepo.update(id,
+                name == null || name.isBlank() ? actual.name() : name.trim(),
+                description == null ? actual.description() : description.trim(),
+                activo);
+        if (modules != null) {
+            planRepo.replaceModules(id, validarModulos(modules));
+        }
+        planes.invalidar();
+        return buscarPlan(id);
+    }
+
+    private List<String> validarModulos(List<String> modules) {
+        if (modules == null) {
+            return List.of();
+        }
+        List<String> desconocidos = modules.stream()
+                .filter(m -> !PlanCatalog.isKnownModule(m))
+                .toList();
+        if (!desconocidos.isEmpty()) {
+            throw new AuthException(400, "Módulos desconocidos: " + String.join(", ", desconocidos));
+        }
+        return modules.stream().map(m -> m.trim().toLowerCase()).distinct().toList();
+    }
+
+    private PlanRepository.Plan buscarPlan(String id) {
+        return planRepo.findAll().stream()
+                .filter(p -> p.id().equals(id))
+                .findFirst()
+                .orElseThrow(() -> new AuthException(404, "Plan no encontrado: " + id));
     }
 
     /**

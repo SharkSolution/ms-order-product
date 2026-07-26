@@ -33,13 +33,24 @@ class AuthServiceTest {
     private static final String REG_KEY = "KAM-SECRET";
     private static final String BIZ_KEY = "FISCAL-KEY";
 
+    /**
+     * N4 — los planes salen de BD; en estos tests no hay tabla, así que el
+     * servicio cae a las constantes de {@link PlanCatalog}, que es exactamente
+     * el comportamiento que tenía antes.
+     */
+    private PlanCatalogService planesDePrueba() {
+        PlanRepository repo = org.mockito.Mockito.mock(PlanRepository.class);
+        org.mockito.Mockito.lenient().when(repo.findAll()).thenReturn(java.util.List.of());
+        return new PlanCatalogService(repo);
+    }
+
     private AuthService newService(AuthRepository repo) {
-        return new AuthService(repo, SECRET, 3600, REG_KEY, BIZ_KEY);
+        return new AuthService(repo, planesDePrueba(), SECRET, 3600, REG_KEY, BIZ_KEY);
     }
 
     /** Servicio con el registro DESHABILITADO (sin clave configurada). */
     private AuthService newServiceNoRegister(AuthRepository repo) {
-        return new AuthService(repo, SECRET, 3600, "", BIZ_KEY);
+        return new AuthService(repo, planesDePrueba(), SECRET, 3600, "", BIZ_KEY);
     }
 
     private String tenantOf(String jwt) {
@@ -340,7 +351,7 @@ class AuthServiceTest {
     void updateBusinessDisabledWhenNoEditKeyIs403() {
         AuthRepository repo = mock(AuthRepository.class);
         // Servicio sin clave de edición configurada.
-        AuthService svc = new AuthService(repo, SECRET, 3600, REG_KEY, "");
+        AuthService svc = new AuthService(repo, planesDePrueba(), SECRET, 3600, REG_KEY, "");
         AuthException ex = assertThrows(AuthException.class, () ->
                 svc.updateBusiness("shark-burger", "Nombre", "n", "a", "p", "f", "cualquiera"));
         assertEquals(403, ex.status());

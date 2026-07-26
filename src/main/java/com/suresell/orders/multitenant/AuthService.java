@@ -53,13 +53,18 @@ public class AuthService {
     @org.springframework.beans.factory.annotation.Value("${auth.reset.edge-key:}")
     private String resetEdgeKey;
 
+    /** N4 — el mapa plan → módulos ahora vive en BD (V27), no en constantes. */
+    private final PlanCatalogService planes;
+
     public AuthService(
             AuthRepository repo,
+            PlanCatalogService planes,
             @Value("${security.jwt.secret:cambia-esta-clave-en-produccion-min-32-bytes!}") String secret,
             @Value("${auth.token.ttl-seconds:43200}") long ttlSeconds,
             @Value("${auth.register.key:}") String registerKey,
             @Value("${business.edit.password:}") String businessEditKey) {
         this.repo = repo;
+        this.planes = planes;
         this.key = Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
         this.ttlSeconds = ttlSeconds;
         this.registerKey = registerKey;
@@ -133,7 +138,7 @@ public class AuthService {
                 trimOrNull(nit), trimOrNull(address), trimOrNull(phone));
         repo.insertUser(cleanEmail, encoder.encode(password), tenantId, ADMIN_ROLE);
 
-        List<String> modules = PlanCatalog.modulesForPlan(DEFAULT_PLAN);
+        List<String> modules = planes.modulesForPlan(DEFAULT_PLAN);
         String token = issueToken(tenantId, cleanEmail, ADMIN_ROLE, modules);
         return new AuthResponse(token, tenantId, businessName.trim(), DEFAULT_PLAN,
                 cleanEmail, ADMIN_ROLE,
@@ -201,7 +206,7 @@ public class AuthService {
         for (AuthRepository.ModuleOverride o : repo.getOverrides(tenantId)) {
             overrides.put(o.module(), o.enabled());
         }
-        return PlanCatalog.effectiveModules(plan, overrides);
+        return planes.effectiveModules(plan, overrides);
     }
 
     public record ModuleConfig(String plan, List<String> planModules,
@@ -215,8 +220,8 @@ public class AuthService {
         for (AuthRepository.ModuleOverride o : repo.getOverrides(tenantId)) {
             overrides.put(o.module(), o.enabled());
         }
-        return new ModuleConfig(tenant.plan(), PlanCatalog.modulesForPlan(tenant.plan()),
-                overrides, PlanCatalog.effectiveModules(tenant.plan(), overrides));
+        return new ModuleConfig(tenant.plan(), planes.modulesForPlan(tenant.plan()),
+                overrides, planes.effectiveModules(tenant.plan(), overrides));
     }
 
     /**

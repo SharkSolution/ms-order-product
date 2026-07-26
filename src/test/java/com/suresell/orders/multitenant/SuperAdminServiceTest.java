@@ -23,7 +23,9 @@ class SuperAdminServiceTest {
     private SuperAdminService svc(SuperAdminRepository r, AuthService a) {
         // El JdbcTemplate solo lo usan los endpoints de sedes (RLS cross-tenant);
         // estos tests no los tocan, así que basta un mock.
-        return new SuperAdminService(r, a,
+        PlanRepository planRepo = org.mockito.Mockito.mock(PlanRepository.class);
+        org.mockito.Mockito.lenient().when(planRepo.findAll()).thenReturn(java.util.List.of());
+        return new SuperAdminService(r, a, planRepo, new PlanCatalogService(planRepo),
                 org.mockito.Mockito.mock(org.springframework.jdbc.core.JdbcTemplate.class),
                 SECRET, 3600);
     }

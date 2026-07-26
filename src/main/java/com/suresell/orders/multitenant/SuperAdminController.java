@@ -118,6 +118,52 @@ public class SuperAdminController {
     public record SiteModeRequest(String posMode) {
     }
 
+    // ------------------------------------------------------------------
+    // N4 — Catálogo y planes (docs/investigacion/19).
+    // ------------------------------------------------------------------
+
+    /** Módulos conocidos + planes. El KAM los tenía QUEMADOS y mostraba 4 de 16. */
+    @GetMapping("/admin/catalog")
+    public ResponseEntity<?> catalog(HttpServletRequest http) {
+        ResponseEntity<?> guard = requireSuper(http);
+        if (guard != null) {
+            return guard;
+        }
+        return ResponseEntity.ok(svc.catalog());
+    }
+
+    @PostMapping("/admin/plans")
+    public ResponseEntity<?> createPlan(@RequestBody PlanUpsertRequest req, HttpServletRequest http) {
+        ResponseEntity<?> guard = requireSuper(http);
+        if (guard != null) {
+            return guard;
+        }
+        try {
+            return ResponseEntity.ok(svc.createPlan(req.id(), req.name(), req.description(), req.modules()));
+        } catch (AuthException e) {
+            return err(e);
+        }
+    }
+
+    @PutMapping("/admin/plans/{id}")
+    public ResponseEntity<?> updatePlan(@PathVariable String id, @RequestBody PlanUpsertRequest req,
+                                        HttpServletRequest http) {
+        ResponseEntity<?> guard = requireSuper(http);
+        if (guard != null) {
+            return guard;
+        }
+        try {
+            return ResponseEntity.ok(svc.updatePlan(id, req.name(), req.description(),
+                    req.active(), req.modules()));
+        } catch (AuthException e) {
+            return err(e);
+        }
+    }
+
+    public record PlanUpsertRequest(String id, String name, String description, Boolean active,
+                                    java.util.List<String> modules) {
+    }
+
     private ResponseEntity<?> requireSuper(HttpServletRequest http) {
         if (!resolver.isSuperAdmin(http.getHeader("Authorization"))) {
             return ResponseEntity.status(403).body(Map.of("error", "Requiere super-admin"));
