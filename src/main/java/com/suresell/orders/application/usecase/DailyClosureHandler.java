@@ -47,7 +47,6 @@ implements DailyClosurePort {
         Integer countOrders = this.orderRepositoryPort.countByStatus(OrderStatus.pagado, startOfDay, endOfDay);
         BigDecimal totalCash = BigDecimal.ZERO;
         BigDecimal totalCard = BigDecimal.ZERO;
-        BigDecimal totalNequi = BigDecimal.ZERO;
         BigDecimal totalQr = BigDecimal.ZERO;
         BigDecimal baseBalance = this.closureRepositoryPort.findLastClosure().map(DailyClosure::getBaseBalanceForNextDay).orElse(BigDecimal.ZERO);
         for (Object[] result : results) {
@@ -65,19 +64,20 @@ implements DailyClosurePort {
                     totalCard = sumTotal;
                     break;
                 }
-                case "NEQUI": {
-                    totalNequi = sumTotal;
-                    break;
-                }
+                // N2/6.6 — Nequi eliminado. V18 migró todo a QR, así que no
+                // debería quedar ninguna; si apareciera una (p.ej. un APK viejo
+                // que escribió antes del deploy), se SUMA a QR en vez de
+                // descartarse en silencio, que descuadraría el cierre.
+                case "NEQUI":
                 case "QR": {
-                    totalQr = sumTotal;
+                    totalQr = totalQr.add(sumTotal);
                     break;
                 }
                 default: {
                 }
             }
         }
-        BigDecimal totalExpected = totalCash.add(totalCard).add(totalNequi).add(totalQr);
+        BigDecimal totalExpected = totalCash.add(totalCard).add(totalQr);
         LocalDateTime currentTime = LocalDateTime.now(BOGOTA_ZONE);
         LocalDateTime openingTime = minCreatedAt.orElse(startOfDay);
         int totalOrders = countOrders != null ? countOrders : 0;
@@ -87,7 +87,6 @@ implements DailyClosurePort {
                 totalOrders,
                 totalCash,
                 totalCard,
-                totalNequi,
                 totalQr,
                 totalExpected,
                 baseBalance,
@@ -124,11 +123,9 @@ implements DailyClosurePort {
         closure.setClosingTime(closingTime);
         closure.setTotalExpectedCash(expectedCash);
         closure.setTotalExpectedCard(expectedCard);
-        closure.setTotalExpectedNequi(expectedNequi);
         closure.setTotalExpectedQr(expectedQr);
         closure.setTotalCountedCash(countedCash);
         closure.setTotalCountedCard(countedCard);
-        closure.setTotalCountedNequi(countedNequi);
         closure.setTotalCountedQr(countedQr);
         closure.setDifferenceAmount(difference);
         closure.setStatus(status);
@@ -136,7 +133,7 @@ implements DailyClosurePort {
         closure.setBaseBalanceForNextDay(request.baseBalanceForNextDay());
         DailyClosure savedClosure = this.closureRepositoryPort.save(closure);
         saveClosureToOutbox(savedClosure);
-        return new ClosureResponse(savedClosure.getId(), savedClosure.getUserName(), savedClosure.getOpeningTime(), savedClosure.getClosingTime(), expectedCash, expectedCard, expectedNequi, expectedQr, totalExpected, countedCash, countedCard, countedNequi, countedQr, totalCounted, difference, status, savedClosure.getNotes(), this.generateClosureMessage(status, difference), previousBaseBalance);
+        return new ClosureResponse(savedClosure.getId(), savedClosure.getUserName(), savedClosure.getOpeningTime(), savedClosure.getClosingTime(), expectedCash, expectedCard, expectedQr, totalExpected, countedCash, countedCard, countedQr, totalCounted, difference, status, savedClosure.getNotes(), this.generateClosureMessage(status, difference), previousBaseBalance);
     }
     private void saveClosureToOutbox(DailyClosure closure) {
         try {

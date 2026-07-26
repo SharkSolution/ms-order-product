@@ -17,8 +17,6 @@ public record ClosureResponse(
     BigDecimal totalExpectedCash, 
     @Schema(description = "Total esperado en tarjeta", example = "150000")
     BigDecimal totalExpectedCard, 
-    @Schema(description = "Total esperado en Nequi", example = "80000")
-    BigDecimal totalExpectedNequi,
     @Schema(description = "Total esperado en QR", example = "30000")
     BigDecimal totalExpectedQr, 
     @Schema(description = "Total total esperado sumando métodos", example = "710000")
@@ -27,8 +25,6 @@ public record ClosureResponse(
     BigDecimal totalCountedCash,
     @Schema(description = "Total contado en tarjeta", example = "150000")
     BigDecimal totalCountedCard, 
-    @Schema(description = "Total contado en Nequi", example = "80000")
-    BigDecimal totalCountedNequi, 
     @Schema(description = "Total contado en QR", example = "30000")
     BigDecimal totalCountedQr,
     @Schema(description = "Total total contado sumando métodos", example = "710000")

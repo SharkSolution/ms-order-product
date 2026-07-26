@@ -241,31 +241,24 @@ public class ExecuteDailyClosureUseCase {
 
         entity.setTotalCountedCash(calculatedTotalCash != null ? calculatedTotalCash : BigDecimal.ZERO);
         entity.setTotalCountedCard(request.countedCard() != null ? request.countedCard() : BigDecimal.ZERO);
-        // Columna en vías de eliminación (paso "contract" de la migración): se
-        // deja en 0 y su valor se contabiliza dentro de QR.
-        entity.setTotalCountedNequi(BigDecimal.ZERO);
         entity.setTotalCountedQr(countedQr != null ? countedQr : BigDecimal.ZERO);
 
         BigDecimal totalCounted = entity.getTotalCountedCash()
                 .add(entity.getTotalCountedCard())
-                .add(entity.getTotalCountedNequi())
                 .add(entity.getTotalCountedQr());
         entity.setTotalCounted(totalCounted);
 
         entity.setTotalExpectedCash(expected.getOrDefault("CASH", BigDecimal.ZERO));
         entity.setTotalExpectedCard(expected.getOrDefault("CARD", BigDecimal.ZERO));
-        entity.setTotalExpectedNequi(BigDecimal.ZERO);
         entity.setTotalExpectedQr(expected.getOrDefault("QR", BigDecimal.ZERO));
 
         BigDecimal totalExpected = entity.getTotalExpectedCash()
                 .add(entity.getTotalExpectedCard())
-                .add(entity.getTotalExpectedNequi())
                 .add(entity.getTotalExpectedQr());
         entity.setTotalExpected(totalExpected);
 
         entity.setDifferenceCash(diffCash);
         entity.setDifferenceCard(diffCard);
-        entity.setDifferenceNequi(diffNequi);
         entity.setDifferenceQr(diffQr);
 
         entity.setDifferenceAmount(totalDifference);
