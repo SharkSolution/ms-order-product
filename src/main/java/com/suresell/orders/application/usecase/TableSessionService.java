@@ -3,7 +3,11 @@ package com.suresell.orders.application.usecase;
 import com.suresell.orders.domain.model.RestaurantTable;
 import com.suresell.orders.domain.model.TableSession;
 import com.suresell.orders.infrastructure.persistence.RestaurantTableRepository;
+import com.suresell.orders.domain.model.Order;
+import com.suresell.orders.infrastructure.persistence.OrderRepository;
 import com.suresell.orders.infrastructure.persistence.TableSessionRepository;
+import java.math.BigDecimal;
+import java.util.Map;
 import jakarta.transaction.Transactional;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
@@ -28,6 +32,7 @@ public class TableSessionService {
 
     private final TableSessionRepository sessionRepository;
     private final RestaurantTableRepository tableRepository;
+    private final OrderRepository orderRepository;
 
     public List<TableSession> vivas() {
         return sessionRepository.findVivas();
@@ -82,6 +87,51 @@ public class TableSessionService {
         sesion.setStatus(TableSession.CERRADA);
         sesion.setClosedAt(LocalDateTime.now(BOGOTA));
         return sessionRepository.save(sesion);
+    }
+
+    /**
+     * COBRA LA MESA COMPLETA (Inc. 4).
+     *
+     * El cobro es de la SESIÓN, no de cada orden: se suma todo lo consumido y se
+     * cobra una sola vez. Todas las órdenes de la cuenta pasan de `abierta` a
+     * `pagado` en un mismo movimiento, así el cierre de caja las ve como una
+     * venta normal del día sin tocar su lógica.
+     *
+     * LIMITACIÓN CONSCIENTE: por ahora un solo medio de pago para toda la mesa.
+     * El multipago (V13) reparte por ORDEN, y repartir proporcionalmente entre
+     * varias órdenes genera descuadres de redondeo — con plata de por medio eso
+     * se diseña, no se improvisa. La división de cuenta va por el mismo camino.
+     */
+    @Transactional
+    public Map<String, Object> cobrar(UUID sesionId, String metodoPago) {
+        String metodo = OrderHandler.normalizePaymentMethod(metodoPago);
+        if (metodo == null || !List.of("CASH", "CARD", "QR").contains(metodo)) {
+            throw new IllegalArgumentException("Método de pago inválido. Use CASH, CARD o QR");
+        }
+        TableSession sesion = obtenerViva(sesionId);
+
+        List<Order> ordenes = orderRepository.findByTableSessionId(sesionId);
+        if (ordenes.isEmpty()) {
+            throw new IllegalStateException(
+                    "La mesa no tiene consumo registrado; no hay nada que cobrar");
+        }
+        BigDecimal total = ordenes.stream()
+                .map(Order::getTotal)
+                .filter(java.util.Objects::nonNull)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        int cobradas = orderRepository.cobrarOrdenesDeLaMesa(sesionId, metodo);
+
+        sesion.setStatus(TableSession.CERRADA);
+        sesion.setClosedAt(LocalDateTime.now(BOGOTA));
+        sessionRepository.save(sesion);
+
+        return Map.of(
+                "sessionId", sesionId.toString(),
+                "tableId", sesion.getTableId(),
+                "ordenesCobradas", cobradas,
+                "total", total,
+                "paymentMethod", metodo);
     }
 
     private TableSession obtenerViva(UUID sesionId) {

@@ -118,7 +118,7 @@ class OrderHandlerTest {
                         new OrderItemRequestRecord("101", 1, BigDecimal.valueOf(5000), null, null),
                         new OrderItemRequestRecord("102", 2, BigDecimal.valueOf(2000), null, null)),
                 null,
-                "CASH", null, null, null);
+                "CASH", null, null, null, null);
         when(orderRepositoryPort.findOccupiedPagerOrder(
                 "AZUL", "10", OrderStatus.pagado)).thenReturn(Optional.empty());
         when(orderRepositoryPort.save(any(Order.class))).thenAnswer(invocation -> {
@@ -157,7 +157,7 @@ class OrderHandlerTest {
         OrderRequestRecord request = new OrderRequestRecord(
                 "AZUL", "10",
                 List.of(new OrderItemRequestRecord("101", 1, BigDecimal.valueOf(5000), null, null)),
-                null, "CASH", null, "clave-repetida", null);
+                null, "CASH", null, "clave-repetida", null, null);
 
         Order resultado = orderHandler.createOrUpdateOrder(request);
 
@@ -182,7 +182,7 @@ class OrderHandlerTest {
         OrderRequestRecord request = new OrderRequestRecord(
                 "Azul", "1",
                 List.of(new OrderItemRequestRecord("101", 1, BigDecimal.valueOf(5000), null, null)),
-                null, "CASH", null, null, true);
+                null, "CASH", null, null, true, null);
         when(orderRepositoryPort.save(any(Order.class))).thenAnswer(invocation -> {
             Order toSave = invocation.getArgument(0);
             toSave.setIdOrder(507L);
@@ -213,7 +213,7 @@ class OrderHandlerTest {
         OrderRequestRecord request = new OrderRequestRecord(
                 "AZUL", "16",
                 List.of(new OrderItemRequestRecord("101", 1, BigDecimal.valueOf(5000), null, null)),
-                null, enviado, null, null, null);
+                null, enviado, null, null, null, null);
         when(orderRepositoryPort.findOccupiedPagerOrder("AZUL", "16", OrderStatus.pagado))
                 .thenReturn(Optional.empty());
         when(orderRepositoryPort.save(any(Order.class))).thenAnswer(invocation -> {
@@ -244,7 +244,7 @@ class OrderHandlerTest {
                 null, "MIXED",
                 List.of(new OrderRequestRecord.PaymentSplitRecord("CASH", BigDecimal.valueOf(4000)),
                         new OrderRequestRecord.PaymentSplitRecord("NEQUI", BigDecimal.valueOf(6000))),
-                null, null);
+                null, null, null);
         when(orderRepositoryPort.findOccupiedPagerOrder("AZUL", "14", OrderStatus.pagado))
                 .thenReturn(Optional.empty());
         when(orderRepositoryPort.save(any(Order.class))).thenAnswer(invocation -> {
@@ -275,7 +275,7 @@ class OrderHandlerTest {
                 null, "MIXED",
                 List.of(new OrderRequestRecord.PaymentSplitRecord("CASH", BigDecimal.valueOf(4000)),
                         new OrderRequestRecord.PaymentSplitRecord("CARD", BigDecimal.valueOf(5000))),
-                null, null);
+                null, null, null);
         when(orderRepositoryPort.findOccupiedPagerOrder("AZUL", "15", OrderStatus.pagado))
                 .thenReturn(Optional.empty());
         when(orderRepositoryPort.save(any(Order.class))).thenAnswer(invocation -> {
@@ -300,7 +300,7 @@ class OrderHandlerTest {
         OrderRequestRecord request = new OrderRequestRecord(
                 "AZUL", "12",
                 List.of(new OrderItemRequestRecord("101", 1, BigDecimal.valueOf(5000), null, null)),
-                null, "NEQUI", null, null, null);
+                null, "NEQUI", null, null, null, null);
         when(orderRepositoryPort.findOccupiedPagerOrder("AZUL", "12", OrderStatus.pagado))
                 .thenReturn(Optional.empty());
         when(orderRepositoryPort.save(any(Order.class))).thenAnswer(invocation -> {
@@ -329,7 +329,7 @@ class OrderHandlerTest {
         OrderRequestRecord request = new OrderRequestRecord(
                 "AZUL", "11",
                 List.of(new OrderItemRequestRecord("101", 1, BigDecimal.valueOf(5000), null, null)),
-                null, "CASH", null, "clave-nueva", null);
+                null, "CASH", null, "clave-nueva", null, null);
         when(orderRepositoryPort.findByIdempotencyKey("clave-nueva")).thenReturn(Optional.empty());
         when(orderRepositoryPort.findOccupiedPagerOrder("AZUL", "11", OrderStatus.pagado))
                 .thenReturn(Optional.empty());

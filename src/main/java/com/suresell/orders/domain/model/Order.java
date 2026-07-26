@@ -124,6 +124,11 @@ public class Order implements org.springframework.data.domain.Persistable<java.u
     @Column(name = "waiter_session_id")
     private java.util.UUID waiterSessionId;
 
+    // N3 — Modo Restaurante: cuenta de mesa a la que pertenece la orden.
+    // NULL en plazoleta y en todo el histórico.
+    @Column(name = "table_session_id")
+    private java.util.UUID tableSessionId;
+
     @OneToMany(mappedBy = "order", orphanRemoval = true)
     private List<OrderItem> items;
     @OneToOne(mappedBy = "order", orphanRemoval = true, fetch = FetchType.EAGER)

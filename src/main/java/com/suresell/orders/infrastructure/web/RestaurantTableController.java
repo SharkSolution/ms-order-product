@@ -132,6 +132,21 @@ public class RestaurantTableController {
         }
     }
 
+    public record CobrarMesaRequest(String paymentMethod) {
+    }
+
+    @PostMapping("/sessions/{id}/charge")
+    @Operation(summary = "Cobrar la mesa completa: suma el consumo, marca las órdenes pagadas y cierra la cuenta")
+    public ResponseEntity<?> cobrar(@PathVariable UUID id, @RequestBody CobrarMesaRequest req) {
+        try {
+            return ResponseEntity.ok(sessionService.cobrar(id, req == null ? null : req.paymentMethod()));
+        } catch (IllegalStateException e) {
+            return ResponseEntity.status(409).body(Map.of("error", e.getMessage()));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
     @GetMapping("/sessions/open")
     @Operation(summary = "Cuentas de mesa sin cobrar (las que bloquean el cierre de caja)")
     public ResponseEntity<List<TableSession>> abiertas() {

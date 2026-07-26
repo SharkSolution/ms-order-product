@@ -135,13 +135,31 @@ public class OrderHandler implements OrderPort {
         // pedido a la mesa. Antes se validaba igual y, como la app manda siempre
         // el mismo pager, la SEGUNDA orden del turno moría con 409 "ya está en
         // uso". El POS de plazoleta no manda la bandera y sigue validando.
-        if (!Boolean.TRUE.equals(dto.skipPagerCheck())) {
+        // Las órdenes de MESA tampoco ocupan rastreador: el mesero/cajero lleva el
+        // pedido a la mesa. Misma razón que el camino de meseros.
+        boolean omitirPager = Boolean.TRUE.equals(dto.skipPagerCheck())
+                || (dto.tableSessionId() != null && !dto.tableSessionId().isBlank());
+        if (!omitirPager) {
             validatePagerAvailability(dto.pagerColor(), dto.pagerNumber(), null);
         }
+        // N3 — Modo Restaurante: una orden que pertenece a una cuenta de mesa nace
+        // `abierta` (consumo en curso, TODAVÍA NO COBRADO). El cobro llega después
+        // sobre la sesión completa. El cierre de caja excluye este estado, así que
+        // una mesa abierta no se cuenta como venta del día.
+        java.util.UUID cuentaDeMesa = null;
+        if (dto.tableSessionId() != null && !dto.tableSessionId().isBlank()) {
+            try {
+                cuentaDeMesa = java.util.UUID.fromString(dto.tableSessionId().trim());
+            } catch (IllegalArgumentException e) {
+                throw new IllegalArgumentException("La cuenta de mesa no es válida: " + dto.tableSessionId());
+            }
+        }
+
         Order order = new Order();
         order.setPagerColor(dto.pagerColor());
         order.setPagerNumber(dto.pagerNumber());
-        order.setStatus(OrderStatus.pagado);
+        order.setTableSessionId(cuentaDeMesa);
+        order.setStatus(cuentaDeMesa != null ? OrderStatus.abierta : OrderStatus.pagado);
         order.setPaymentMethod(multipago ? derivePaymentMethod(dto.payments())
                 : normalizePaymentMethod(dto.paymentMethod()));
         order.setCreatedAt(LocalDateTime.now(BOGOTA_ZONE));

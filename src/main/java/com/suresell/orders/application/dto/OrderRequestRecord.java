@@ -29,7 +29,12 @@ public record OrderRequestRecord(
             + "Lo usa la app de MESEROS: el mesero lleva el pedido a la mesa, no entrega con "
             + "rastreador, así que varias órdenes suyas pueden convivir sin ocupar uno. "
             + "El POS de plazoleta NO lo envía y sigue validando.", example = "false")
-    Boolean skipPagerCheck
+    Boolean skipPagerCheck,
+    @Schema(description = "N3 — Cuenta de mesa (modo Restaurante). Si viene, la orden nace en "
+            + "estado `abierta` (consumo sin cobrar) y no ocupa rastreador. El cobro se hace "
+            + "después sobre la SESIÓN completa, no sobre cada orden.",
+            example = "3f2b8c4e-2f1a-4e2a-9d3b-6d5f1c9a7e10")
+    String tableSessionId
 ) {
     /** Split de multipago: método + monto. */
     public record PaymentSplitRecord(String method, java.math.BigDecimal amount) {

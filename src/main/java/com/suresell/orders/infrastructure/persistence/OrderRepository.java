@@ -51,6 +51,22 @@ public interface OrderRepository extends JpaRepository<Order, java.util.UUID> {
 
     List<Order> findByWaiterSessionId(java.util.UUID waiterSessionId);
 
+    /** N3 — Órdenes de una cuenta de mesa (para cobrarla completa). */
+    List<Order> findByTableSessionId(java.util.UUID tableSessionId);
+
+    /**
+     * N3 — Cobra TODAS las órdenes de la cuenta de una sola vez: pasan de
+     * `abierta` a `pagado` con el medio elegido. UPDATE dirigido y no merge de
+     * entidades, por lo mismo que tagWaiterOrder: Order carga colecciones que
+     * Hibernate no puede reemplazar en un merge.
+     */
+    @Modifying
+    @Query("UPDATE Order o SET o.status = com.suresell.orders.domain.model.OrderStatus.pagado, "
+            + "o.paymentMethod = :metodo "
+            + "WHERE o.tableSessionId = :sesion "
+            + "AND o.status = com.suresell.orders.domain.model.OrderStatus.abierta")
+    int cobrarOrdenesDeLaMesa(@Param("sesion") java.util.UUID sesion, @Param("metodo") String metodo);
+
     @Query("""
             SELECT o FROM Order o
             WHERE o.createdAt BETWEEN :start AND :end

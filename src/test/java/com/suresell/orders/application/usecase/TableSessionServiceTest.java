@@ -23,12 +23,13 @@ class TableSessionServiceTest {
 
     @Mock private TableSessionRepository sessionRepository;
     @Mock private RestaurantTableRepository tableRepository;
+    @Mock private com.suresell.orders.infrastructure.persistence.OrderRepository orderRepository;
 
     private TableSessionService service;
 
     @BeforeEach
     void setUp() {
-        service = new TableSessionService(sessionRepository, tableRepository);
+        service = new TableSessionService(sessionRepository, tableRepository, orderRepository);
     }
 
     private RestaurantTable mesa(int numero, boolean activa) {
@@ -84,6 +85,48 @@ class TableSessionServiceTest {
 
         assertThrows(IllegalStateException.class,
                 () -> service.cerrar(java.util.UUID.randomUUID()));
+    }
+
+    /**
+     * El cobro es de la SESIÓN: una sola operación pasa TODAS las órdenes de la
+     * mesa de `abierta` a `pagado` y cierra la cuenta. Así el cierre de caja las
+     * ve como venta normal del día sin tocar su lógica.
+     */
+    @Test
+    void cobrarLaMesaSumaTodoElConsumoYCierraLaCuenta() {
+        java.util.UUID id = java.util.UUID.randomUUID();
+        TableSession viva = new TableSession();
+        viva.setId(id);
+        viva.setTableId(7L);
+        viva.setStatus(TableSession.ABIERTA);
+        when(sessionRepository.findById(id)).thenReturn(Optional.of(viva));
+
+        com.suresell.orders.domain.model.Order o1 = new com.suresell.orders.domain.model.Order();
+        o1.setTotal(new java.math.BigDecimal("12000"));
+        com.suresell.orders.domain.model.Order o2 = new com.suresell.orders.domain.model.Order();
+        o2.setTotal(new java.math.BigDecimal("8500"));
+        when(orderRepository.findByTableSessionId(id)).thenReturn(List.of(o1, o2));
+        when(orderRepository.cobrarOrdenesDeLaMesa(id, "CASH")).thenReturn(2);
+        when(sessionRepository.save(any(TableSession.class))).thenAnswer(i -> i.getArgument(0));
+
+        var r = service.cobrar(id, "Efectivo");   // etiqueta en español: se normaliza
+
+        assertEquals(new java.math.BigDecimal("20500"), r.get("total"));
+        assertEquals(2, r.get("ordenesCobradas"));
+        assertEquals("CASH", r.get("paymentMethod"));
+        assertEquals(TableSession.CERRADA, viva.getStatus());
+    }
+
+    @Test
+    void noSePuedeCobrarUnaMesaSinConsumo() {
+        java.util.UUID id = java.util.UUID.randomUUID();
+        TableSession viva = new TableSession();
+        viva.setId(id);
+        viva.setStatus(TableSession.ABIERTA);
+        when(sessionRepository.findById(id)).thenReturn(Optional.of(viva));
+        when(orderRepository.findByTableSessionId(id)).thenReturn(List.of());
+
+        assertThrows(IllegalStateException.class, () -> service.cobrar(id, "CASH"));
     }
 
     /** Lo que consulta el cierre de caja para bloquearse. */
