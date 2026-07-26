@@ -44,3 +44,10 @@ sync:
 security:
   jwt:
     secret: ${JWT_SECRET:cambia-esta-clave-en-produccion-min-32-bytes!}
+
+# N2/6.5 — clave de autorización para borrar órdenes desde el POS.
+# Vacía = se conserva el comportamiento anterior (rol admin + motivo obligatorio
+# + auditoría). Al fijarla (env ORDER_DELETE_PASSWORD) se exige además la clave.
+order:
+  delete:
+    password: ${ORDER_DELETE_PASSWORD:}

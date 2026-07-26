@@ -47,8 +47,24 @@ public class OrderDeletionController {
         this.resolver = resolver;
     }
 
-    public record DeleteOrderRequest(String reason) {
+    public record DeleteOrderRequest(String reason, String authorizationPassword) {
     }
+
+    /**
+     * N2/6.5 — segundo factor para borrar desde el POS.
+     *
+     * El rol admin + motivo obligatorio + auditoría ya existían, pero en el POS
+     * la sesión de admin suele quedar abierta en el mostrador: quien pase por el
+     * equipo puede borrar una venta. Con esto hace falta además una clave que el
+     * dueño no deja pegada en la caja.
+     *
+     * Semántica: si `order.delete.password` NO está configurada, se conserva el
+     * comportamiento anterior (admin + motivo). Es deliberado — hacerlo
+     * fail-closed dejaría a los despliegues actuales sin poder borrar de un día
+     * para otro. Al configurarla, la protección queda activa.
+     */
+    @org.springframework.beans.factory.annotation.Value("${order.delete.password:}")
+    private String deletePassword;
 
     @DeleteMapping("/{idOrder}")
     @Transactional
@@ -59,6 +75,14 @@ public class OrderDeletionController {
         if (!"admin".equals(role)) {
             return ResponseEntity.status(403)
                     .body(Map.of("error", "Solo un administrador puede borrar órdenes"));
+        }
+        if (deletePassword != null && !deletePassword.isBlank()) {
+            String enviada = request != null && request.authorizationPassword() != null
+                    ? request.authorizationPassword().trim() : "";
+            if (!deletePassword.equals(enviada)) {
+                return ResponseEntity.status(403)
+                        .body(Map.of("error", "Clave de autorización incorrecta"));
+            }
         }
         String reason = request != null && request.reason() != null ? request.reason().trim() : "";
         if (reason.isEmpty()) {
