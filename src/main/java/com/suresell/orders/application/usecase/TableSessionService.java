@@ -89,6 +89,22 @@ public class TableSessionService {
         return sessionRepository.save(sesion);
     }
 
+    /** Resumen de lo consumido en la mesa, para mostrarlo ANTES de cobrar. */
+    public Map<String, Object> resumen(UUID sesionId) {
+        TableSession sesion = sessionRepository.findById(sesionId)
+                .orElseThrow(() -> new IllegalArgumentException("No existe la cuenta de mesa"));
+        List<Order> ordenes = orderRepository.findByTableSessionId(sesionId);
+        BigDecimal total = ordenes.stream()
+                .map(Order::getTotal).filter(java.util.Objects::nonNull)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        return Map.of(
+                "sessionId", sesionId.toString(),
+                "tableId", sesion.getTableId(),
+                "status", sesion.getStatus(),
+                "ordenes", ordenes.size(),
+                "total", total);
+    }
+
     /**
      * COBRA LA MESA COMPLETA (Inc. 4).
      *

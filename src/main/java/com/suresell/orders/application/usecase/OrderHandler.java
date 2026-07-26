@@ -155,6 +155,19 @@ public class OrderHandler implements OrderPort {
             }
         }
 
+        // N3/#8 — RONDAS SIGUIENTES: si la mesa ya tiene una orden abierta, los
+        // productos se SUMAN a ella en vez de crear otra. Así el historial
+        // muestra UNA entrada por mesa con su total actualizado, que es como el
+        // negocio piensa la cuenta.
+        if (cuentaDeMesa != null) {
+            List<Order> abiertas = orderRepositoryPort.findByTableSessionId(cuentaDeMesa).stream()
+                    .filter(o -> OrderStatus.abierta.equals(o.getStatus()))
+                    .toList();
+            if (!abiertas.isEmpty()) {
+                return agregarAOrdenAbierta(abiertas.get(0), dto);
+            }
+        }
+
         Order order = new Order();
         order.setPagerColor(dto.pagerColor());
         order.setPagerNumber(dto.pagerNumber());
@@ -218,6 +231,34 @@ public class OrderHandler implements OrderPort {
         saveOrderCreatedOutbox(savedOrder, tracking);
         linkCouponIfPresent(savedOrder);
         return savedOrder;
+    }
+
+    /**
+     * Agrega una ronda a la orden abierta de la mesa (N3/#8).
+     *
+     * Se recalculan subtotal y total con TODO lo consumido, no solo lo nuevo:
+     * la cuenta de la mesa es acumulativa y el historial debe mostrar el total
+     * vigente.
+     */
+    private Order agregarAOrdenAbierta(Order abierta, OrderRequestRecord dto) {
+        List<OrderItem> nuevos = createOrderItems(abierta, dto.items());
+        for (OrderItem item : nuevos) {
+            orderItemRepositoryPort.save(item);
+        }
+        List<OrderItem> todos = orderItemRepositoryPort.findByOrderIds(List.of(abierta.getIdOrder()));
+        BigDecimal subtotal = todos.stream()
+                .map(OrderItem::getTotalPrice)
+                .filter(java.util.Objects::nonNull)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        abierta.setSubtotal(subtotal);
+        BigDecimal descuento = abierta.getDiscountAmount() == null
+                ? BigDecimal.ZERO : abierta.getDiscountAmount();
+        abierta.setTotal(subtotal.subtract(descuento).max(BigDecimal.ZERO));
+        abierta.setItems(todos);
+        Order guardada = orderRepositoryPort.save(abierta);
+        log.info("Mesa: ronda agregada a la orden {} (ahora {} ítems, total {})",
+                guardada.getIdOrder(), todos.size(), guardada.getTotal());
+        return guardada;
     }
 
     // ------------------------------------------------------------------

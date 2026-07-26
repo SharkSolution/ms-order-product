@@ -132,6 +132,16 @@ public class RestaurantTableController {
         }
     }
 
+    @GetMapping("/sessions/{id}/summary")
+    @Operation(summary = "Consumo acumulado de la mesa (para mostrarlo antes de cobrar)")
+    public ResponseEntity<?> resumen(@PathVariable UUID id) {
+        try {
+            return ResponseEntity.ok(sessionService.resumen(id));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
     public record CobrarMesaRequest(String paymentMethod) {
     }
 
