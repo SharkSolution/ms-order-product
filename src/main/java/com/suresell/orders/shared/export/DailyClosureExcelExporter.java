@@ -19,7 +19,7 @@ import org.springframework.stereotype.Service;
 @Service
 public class DailyClosureExcelExporter {
     public ByteArrayInputStream export(List<ClosureResponse> closures) throws IOException {
-        String[] columns = { "ID", "Cajero", "Hora de Apertura", "Hora de Cierre", "Efectivo Esperado", "Tarjeta Esperada", "Nequi Esperado", "QR Esperado", "Total Esperado", "Efectivo Contado", "Tarjeta Contada", "Nequi Contado", "QR Contado", "Total Contado", "Diferencia", "Estado", "Notas" };
+        String[] columns = { "ID", "Cajero", "Hora de Apertura", "Hora de Cierre", "Efectivo Esperado", "Tarjeta Esperada", "QR Esperado", "Total Esperado", "Efectivo Contado", "Tarjeta Contada", "QR Contado", "Total Contado", "Diferencia", "Estado", "Notas" };
         try (XSSFWorkbook workbook = new XSSFWorkbook(); ByteArrayOutputStream out = new ByteArrayOutputStream();) {
             Sheet sheet = workbook.createSheet("Historial de Cierres");
             CellStyle headerStyle = workbook.createCellStyle();
@@ -61,34 +61,28 @@ public class DailyClosureExcelExporter {
                 Cell expectedCardCell = row.createCell(5);
                 expectedCardCell.setCellValue(closure.totalExpectedCard().doubleValue());
                 expectedCardCell.setCellStyle(currencyStyle);
-                Cell expectedNequiCell = row.createCell(6);
-                expectedNequiCell.setCellValue(closure.totalExpectedNequi().doubleValue());
-                expectedNequiCell.setCellStyle(currencyStyle);
-                Cell expectedQrCell = row.createCell(7);
+                Cell expectedQrCell = row.createCell(6);
                 expectedQrCell.setCellValue(closure.totalExpectedQr().doubleValue());
                 expectedQrCell.setCellStyle(currencyStyle);
-                Cell totalExpectedCell = row.createCell(8);
+                Cell totalExpectedCell = row.createCell(7);
                 totalExpectedCell.setCellValue(closure.totalExpected().doubleValue());
                 totalExpectedCell.setCellStyle(currencyStyle);
-                Cell countedCashCell = row.createCell(9);
+                Cell countedCashCell = row.createCell(8);
                 countedCashCell.setCellValue(closure.totalCountedCash().doubleValue());
                 countedCashCell.setCellStyle(currencyStyle);
-                Cell countedCardCell = row.createCell(10);
+                Cell countedCardCell = row.createCell(9);
                 countedCardCell.setCellValue(closure.totalCountedCard().doubleValue());
                 countedCardCell.setCellStyle(currencyStyle);
-                Cell countedNequiCell = row.createCell(11);
-                countedNequiCell.setCellValue(closure.totalCountedNequi().doubleValue());
-                countedNequiCell.setCellStyle(currencyStyle);
-                Cell countedQrCell = row.createCell(12);
+                Cell countedQrCell = row.createCell(10);
                 countedQrCell.setCellValue(closure.totalCountedQr().doubleValue());
                 countedQrCell.setCellStyle(currencyStyle);
-                Cell totalCountedCell = row.createCell(13);
+                Cell totalCountedCell = row.createCell(11);
                 totalCountedCell.setCellValue(closure.totalCounted().doubleValue());
                 totalCountedCell.setCellStyle(currencyStyle);
-                Cell differenceCell = row.createCell(14);
+                Cell differenceCell = row.createCell(12);
                 differenceCell.setCellValue(closure.differenceAmount().doubleValue());
                 differenceCell.setCellStyle(currencyStyle);
-                Cell statusCell = row.createCell(15);
+                Cell statusCell = row.createCell(13);
                 statusCell.setCellValue(closure.status());
                 if (closure.differenceAmount().compareTo(BigDecimal.ZERO) == 0) {
                     statusCell.setCellStyle(statusBalancedStyle);
@@ -97,7 +91,7 @@ public class DailyClosureExcelExporter {
                 } else {
                     statusCell.setCellStyle(statusNegativeDiffStyle);
                 }
-                row.createCell(16).setCellValue(closure.notes());
+                row.createCell(14).setCellValue(closure.notes());
             }
             for (int i = 0; i < columns.length; i++) {
                 sheet.autoSizeColumn(i);
