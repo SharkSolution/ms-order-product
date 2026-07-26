@@ -52,11 +52,26 @@ public class DailyClosureController {
     }
     @PostMapping
     @Operation(summary = "Ejecutar cierre de caja físico")
-    public ResponseEntity<CashierClosureResponse> executeClosure(
+    public ResponseEntity<?> executeClosure(
             @Valid @RequestBody ExecuteClosureRequest request,
             @RequestHeader(value = "X-User-Name", defaultValue = "System") String userName) {
-        CashierClosureResponse response = executeDailyClosureUseCase.execute(request, userName);
-        return ResponseEntity.ok(response);
+        try {
+            CashierClosureResponse response = executeDailyClosureUseCase.execute(request, userName);
+            return ResponseEntity.ok(response);
+        } catch (org.springframework.dao.DataIntegrityViolationException e) {
+            // N2 — La caja de hoy YA está cerrada (índice único por tenant+fecha).
+            // Antes esto salía como 500 "Internal Server Error" y el cajero no
+            // sabía si el cierre había quedado bien o no; en realidad el primero
+            // sí se guardó y este era un segundo intento.
+            String detalle = String.valueOf(e.getMostSpecificCause().getMessage());
+            if (detalle.contains("uq_daily_closures_tenant_date")) {
+                return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of(
+                        "error", "La caja de hoy ya fue cerrada. El cierre anterior quedó "
+                               + "guardado; revísalo en el historial de cierres.",
+                        "alreadyClosed", true));
+            }
+            throw e;
+        }
     }
     @ExceptionHandler(value = {MethodArgumentNotValidException.class})
     public ResponseEntity<Map<String, Object>> handleValidationExceptions(MethodArgumentNotValidException ex) {
