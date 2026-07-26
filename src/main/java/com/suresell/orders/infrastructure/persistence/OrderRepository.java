@@ -24,6 +24,16 @@ public interface OrderRepository extends JpaRepository<Order, java.util.UUID> {
                    @Param("by") String by);
 
     /**
+     * Deshace un soft-delete. Va por idOrder y NO por la entidad porque el
+     * @SQLRestriction("deleted_at IS NULL") esconde las borradas: cualquier
+     * find las devolvería vacías. Idempotente (solo si sigue borrada).
+     */
+    @Modifying
+    @Query(value = "UPDATE orders SET deleted_at = NULL, deleted_by = NULL "
+            + "WHERE id_order = :idOrder AND deleted_at IS NOT NULL", nativeQuery = true)
+    int restoreDeleted(@Param("idOrder") Long idOrder);
+
+    /**
      * Marca la orden recién creada con idempotencia + autoría del mesero.
      * UPDATE dirigido (no merge): la entidad Order carga colecciones inmutables
      * que Hibernate no puede reemplazar en un merge.
