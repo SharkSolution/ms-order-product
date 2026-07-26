@@ -40,12 +40,15 @@ public class ExecuteDailyClosureUseCase {
     private final DailyPaymentRecordService dailyPaymentRecordService;
     // F5 multipago: splits de órdenes MIXED para el esperado por método.
     private final com.suresell.orders.infrastructure.persistence.OrderPaymentRepository orderPaymentRepository;
+    // N3/Inc.4: el cierre se bloquea si quedan mesas sin cobrar.
+    private final TableSessionService tableSessionService;
 
     public ExecuteDailyClosureUseCase(OrderRepository orderRepository, DailyClosureRepository closureRepository,
                                     CashflowCalculator cashflowCalculator, ObjectMapper objectMapper,
                                     SyncOutboxRepositoryPort syncOutboxRepositoryPort,
                                     DailyPaymentRecordService dailyPaymentRecordService,
-                                    com.suresell.orders.infrastructure.persistence.OrderPaymentRepository orderPaymentRepository) {
+                                    com.suresell.orders.infrastructure.persistence.OrderPaymentRepository orderPaymentRepository,
+                                    TableSessionService tableSessionService) {
         this.orderRepository = orderRepository;
         this.closureRepository = closureRepository;
         this.cashflowCalculator = cashflowCalculator;
@@ -53,6 +56,7 @@ public class ExecuteDailyClosureUseCase {
         this.syncOutboxRepositoryPort = syncOutboxRepositoryPort;
         this.dailyPaymentRecordService = dailyPaymentRecordService;
         this.orderPaymentRepository = orderPaymentRepository;
+        this.tableSessionService = tableSessionService;
     }
 
     @Value("${sync.cloud.core-url:http://localhost:8083/api/core}")
@@ -62,6 +66,18 @@ public class ExecuteDailyClosureUseCase {
 
     @Transactional
     public CashierClosureResponse execute(ExecuteClosureRequest request, String userName) {
+        // N3/Inc.4 — NO se puede cerrar caja con mesas sin cobrar: ese consumo
+        // quedaría fuera del cuadre y aparecería como venta al día siguiente.
+        // Se bloquea y se dice CUÁLES, para que el cajero sepa qué hacer.
+        var mesasAbiertas = tableSessionService.pendientesDeCobro();
+        if (!mesasAbiertas.isEmpty()) {
+            String detalle = mesasAbiertas.stream()
+                    .map(m -> "mesa " + m.getTableId())
+                    .collect(java.util.stream.Collectors.joining(", "));
+            throw new IllegalStateException(String.format(
+                    "Hay %d mesa(s) abiertas sin cobrar (%s). Ciérralas antes de cerrar la caja.",
+                    mesasAbiertas.size(), detalle));
+        }
         BigDecimal calculatedTotalCash = cashflowCalculator.calculateTotalCash(request.cashDetail());
         BigDecimal calculatedBase = cashflowCalculator.calculateBaseForNextDay(request.cashDetail());
 

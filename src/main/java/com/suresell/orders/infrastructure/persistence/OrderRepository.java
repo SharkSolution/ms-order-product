@@ -143,9 +143,13 @@ public interface OrderRepository extends JpaRepository<Order, java.util.UUID> {
     void markOrderAsSynced(@Param("orderId") Long orderId);
   // F5 multipago: las órdenes MIXED no suman aquí — sus montos por método
   // salen de order_payments (OrderPaymentRepository.sumSplitsByMethod).
+  // N3/A1 — Esta consulta NO filtraba por estado. Al aparecer el estado
+  // `abierta` (mesas consumiendo sin cobrar), el cierre las habría sumado como
+  // venta del día. Se excluyen explícitamente.
   @Query("SELECT o.paymentMethod, SUM(o.total) FROM Order o " +
           "WHERE o.createdAt BETWEEN :startTime AND :endTime " +
           "AND o.paymentMethod <> 'MIXED' " +
+          "AND o.status <> com.suresell.orders.domain.model.OrderStatus.abierta " +
           "GROUP BY o.paymentMethod")
   List<Object[]> sumTotalsByPaymentMethodAndSeller(
           @Param("startTime") LocalDateTime startTime,

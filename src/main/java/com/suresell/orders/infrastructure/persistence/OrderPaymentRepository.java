@@ -17,6 +17,7 @@ public interface OrderPaymentRepository extends JpaRepository<OrderPayment, Long
             SELECT p.method, SUM(p.amount) FROM OrderPayment p, Order o
             WHERE o.uuidId = p.orderUuidId
             AND o.paymentMethod = 'MIXED'
+            AND o.status <> com.suresell.orders.domain.model.OrderStatus.abierta
             AND o.createdAt BETWEEN :startTime AND :endTime
             GROUP BY p.method
             """)
