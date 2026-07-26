@@ -52,9 +52,16 @@ class OrderHandlerTest {
     private OrderEditHistoryRepositoryPort orderEditHistoryRepositoryPort;
     private ObjectMapper objectMapper;
     private OrderHandler orderHandler;
+    /** N2/6.7: la disponibilidad de rastreadores sale de la config del negocio. */
+    private com.suresell.orders.application.usecase.PagerConfigService pagerConfigService;
     @BeforeEach
     void setUp() {
         objectMapper = JsonMapper.builder().findAndAddModules().build();
+        pagerConfigService = org.mockito.Mockito.mock(
+                com.suresell.orders.application.usecase.PagerConfigService.class);
+        org.mockito.Mockito.lenient().when(pagerConfigService.getGroups()).thenReturn(List.of(
+                new com.suresell.orders.application.dto.PagerGroupDto("AMARILLO", "Amarillo", "#eab308", 16),
+                new com.suresell.orders.application.dto.PagerGroupDto("AZUL", "Azul", "#3b82f6", 16)));
         orderHandler = new OrderHandler(
                 orderRepositoryPort,
                 orderDeliveryTrackingRepositoryPort,
@@ -65,7 +72,8 @@ class OrderHandlerTest {
                 orderEditHistoryRepositoryPort,
                 objectMapper,
                 org.mockito.Mockito.mock(com.suresell.orders.infrastructure.persistence.WaiterRepository.class),
-                org.mockito.Mockito.mock(com.suresell.orders.infrastructure.persistence.OrderPaymentRepository.class));
+                org.mockito.Mockito.mock(com.suresell.orders.infrastructure.persistence.OrderPaymentRepository.class),
+                pagerConfigService);
     }
     @Test
     void getAllOrdersCallsProductServiceOncePerDistinctProductId() {
@@ -159,6 +167,34 @@ class OrderHandlerTest {
         // está ocupado por la primera orden y si no, respondería 400.
         verify(orderRepositoryPort, never())
                 .findOccupiedPagerOrder(any(), any(), any());
+    }
+
+    /**
+     * N2/6.6 — Nequi se eliminó, pero hay APKs viejos en campo que todavía lo
+     * mandan. Rechazarlos con 400 tumbaría ventas en dispositivos que no
+     * controlamos, así que se normaliza a QR en vez de fallar.
+     */
+    @Test
+    void createOrUpdateOrderNormalizaNequiAQrEnVezDeRechazar() {
+        OrderRequestRecord request = new OrderRequestRecord(
+                "AZUL", "12",
+                List.of(new OrderItemRequestRecord("101", 1, BigDecimal.valueOf(5000), null, null)),
+                null, "NEQUI", null, null);
+        when(orderRepositoryPort.findOccupiedPagerOrder("AZUL", "12", OrderStatus.pagado))
+                .thenReturn(Optional.empty());
+        when(orderRepositoryPort.save(any(Order.class))).thenAnswer(invocation -> {
+            Order toSave = invocation.getArgument(0);
+            toSave.setIdOrder(503L);
+            return toSave;
+        });
+        when(orderRepositoryPort.findNumericIdByUuid(any(java.util.UUID.class)))
+                .thenReturn(Optional.of(503L));
+        when(syncOutboxRepositoryPort.save(any(SyncOutbox.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        Order created = orderHandler.createOrUpdateOrder(request);
+
+        assertEquals("QR", created.getPaymentMethod());
     }
 
     /**
