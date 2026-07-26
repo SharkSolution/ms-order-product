@@ -42,7 +42,7 @@ class TableSessionServiceTest {
     @Test
     void abrirUnaMesaCreaLaCuentaEnEstadoAbierta() {
         when(tableRepository.findByNumber(5)).thenReturn(Optional.of(mesa(5, true)));
-        when(sessionRepository.save(any(TableSession.class))).thenAnswer(i -> i.getArgument(0));
+        when(sessionRepository.saveAndFlush(any(TableSession.class))).thenAnswer(i -> i.getArgument(0));
 
         TableSession s = service.abrir(5, "cajero1");
 
@@ -59,7 +59,9 @@ class TableSessionServiceTest {
     @Test
     void dosCajasAbriendoLaMismaMesaChocanContraLaBaseYSeExplicaBien() {
         when(tableRepository.findByNumber(5)).thenReturn(Optional.of(mesa(5, true)));
-        when(sessionRepository.save(any(TableSession.class)))
+        // Se usa saveAndFlush para que la violación salte DENTRO del try/catch:
+        // con save() a secas se postergaría al commit y saldría como 500.
+        when(sessionRepository.saveAndFlush(any(TableSession.class)))
                 .thenThrow(new DataIntegrityViolationException("ux_table_session_abierta"));
 
         IllegalStateException e =

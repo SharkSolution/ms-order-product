@@ -56,7 +56,10 @@ public class TableSessionService {
         sesion.setOpenedAt(LocalDateTime.now(BOGOTA));
         sesion.setOpenedBy(usuario);
         try {
-            return sessionRepository.save(sesion);
+            // saveAndFlush, NO save: con @Transactional el INSERT se posterga al
+            // commit y la violación del índice único saltaría DESPUÉS de este
+            // try/catch, saliendo como 500 en vez del 409 con mensaje claro.
+            return sessionRepository.saveAndFlush(sesion);
         } catch (DataIntegrityViolationException e) {
             throw new IllegalStateException(
                     "La mesa " + numeroMesa + " ya tiene una cuenta abierta");
