@@ -118,7 +118,7 @@ class OrderHandlerTest {
                         new OrderItemRequestRecord("101", 1, BigDecimal.valueOf(5000), null, null),
                         new OrderItemRequestRecord("102", 2, BigDecimal.valueOf(2000), null, null)),
                 null,
-                "CASH", null, null);
+                "CASH", null, null, null);
         when(orderRepositoryPort.findOccupiedPagerOrder(
                 "AZUL", "10", OrderStatus.pagado)).thenReturn(Optional.empty());
         when(orderRepositoryPort.save(any(Order.class))).thenAnswer(invocation -> {
@@ -157,7 +157,7 @@ class OrderHandlerTest {
         OrderRequestRecord request = new OrderRequestRecord(
                 "AZUL", "10",
                 List.of(new OrderItemRequestRecord("101", 1, BigDecimal.valueOf(5000), null, null)),
-                null, "CASH", null, "clave-repetida");
+                null, "CASH", null, "clave-repetida", null);
 
         Order resultado = orderHandler.createOrUpdateOrder(request);
 
@@ -167,6 +167,36 @@ class OrderHandlerTest {
         // está ocupado por la primera orden y si no, respondería 400.
         verify(orderRepositoryPort, never())
                 .findOccupiedPagerOrder(any(), any(), any());
+    }
+
+    /**
+     * N2 — REGRESIÓN del 409 en cadena de la app de meseros.
+     *
+     * La app manda SIEMPRE el mismo rastreador (lo trae quemado), así que la
+     * primera orden lo ocupaba y TODAS las siguientes morían con 409 "ya está
+     * en uso". Un mesero lleva el pedido a la mesa: no entrega con rastreador,
+     * así que su camino no valida disponibilidad.
+     */
+    @Test
+    void lasOrdenesDeMeseroNoValidanDisponibilidadDelRastreador() {
+        OrderRequestRecord request = new OrderRequestRecord(
+                "Azul", "1",
+                List.of(new OrderItemRequestRecord("101", 1, BigDecimal.valueOf(5000), null, null)),
+                null, "CASH", null, null, true);
+        when(orderRepositoryPort.save(any(Order.class))).thenAnswer(invocation -> {
+            Order toSave = invocation.getArgument(0);
+            toSave.setIdOrder(507L);
+            return toSave;
+        });
+        when(orderRepositoryPort.findNumericIdByUuid(any(java.util.UUID.class)))
+                .thenReturn(Optional.of(507L));
+        when(syncOutboxRepositoryPort.save(any(SyncOutbox.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        orderHandler.createOrUpdateOrder(request);
+
+        // Ni siquiera se consulta si el rastreador está ocupado.
+        verify(orderRepositoryPort, never()).findOccupiedPagerOrder(any(), any(), any());
     }
 
     /**
@@ -183,7 +213,7 @@ class OrderHandlerTest {
         OrderRequestRecord request = new OrderRequestRecord(
                 "AZUL", "16",
                 List.of(new OrderItemRequestRecord("101", 1, BigDecimal.valueOf(5000), null, null)),
-                null, enviado, null, null);
+                null, enviado, null, null, null);
         when(orderRepositoryPort.findOccupiedPagerOrder("AZUL", "16", OrderStatus.pagado))
                 .thenReturn(Optional.empty());
         when(orderRepositoryPort.save(any(Order.class))).thenAnswer(invocation -> {
@@ -214,7 +244,7 @@ class OrderHandlerTest {
                 null, "MIXED",
                 List.of(new OrderRequestRecord.PaymentSplitRecord("CASH", BigDecimal.valueOf(4000)),
                         new OrderRequestRecord.PaymentSplitRecord("NEQUI", BigDecimal.valueOf(6000))),
-                null);
+                null, null);
         when(orderRepositoryPort.findOccupiedPagerOrder("AZUL", "14", OrderStatus.pagado))
                 .thenReturn(Optional.empty());
         when(orderRepositoryPort.save(any(Order.class))).thenAnswer(invocation -> {
@@ -245,7 +275,7 @@ class OrderHandlerTest {
                 null, "MIXED",
                 List.of(new OrderRequestRecord.PaymentSplitRecord("CASH", BigDecimal.valueOf(4000)),
                         new OrderRequestRecord.PaymentSplitRecord("CARD", BigDecimal.valueOf(5000))),
-                null);
+                null, null);
         when(orderRepositoryPort.findOccupiedPagerOrder("AZUL", "15", OrderStatus.pagado))
                 .thenReturn(Optional.empty());
         when(orderRepositoryPort.save(any(Order.class))).thenAnswer(invocation -> {
@@ -270,7 +300,7 @@ class OrderHandlerTest {
         OrderRequestRecord request = new OrderRequestRecord(
                 "AZUL", "12",
                 List.of(new OrderItemRequestRecord("101", 1, BigDecimal.valueOf(5000), null, null)),
-                null, "NEQUI", null, null);
+                null, "NEQUI", null, null, null);
         when(orderRepositoryPort.findOccupiedPagerOrder("AZUL", "12", OrderStatus.pagado))
                 .thenReturn(Optional.empty());
         when(orderRepositoryPort.save(any(Order.class))).thenAnswer(invocation -> {
@@ -299,7 +329,7 @@ class OrderHandlerTest {
         OrderRequestRecord request = new OrderRequestRecord(
                 "AZUL", "11",
                 List.of(new OrderItemRequestRecord("101", 1, BigDecimal.valueOf(5000), null, null)),
-                null, "CASH", null, "clave-nueva");
+                null, "CASH", null, "clave-nueva", null);
         when(orderRepositoryPort.findByIdempotencyKey("clave-nueva")).thenReturn(Optional.empty());
         when(orderRepositoryPort.findOccupiedPagerOrder("AZUL", "11", OrderStatus.pagado))
                 .thenReturn(Optional.empty());
