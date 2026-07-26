@@ -9,7 +9,7 @@
 -- Nequi se PLIEGAN dentro de QR en vez de perderse — el cuadre histórico se
 -- mantiene al centavo.
 --
--- Rollback en docs/migraciones/V18-V19-retirar-nequi.md.
+-- Rollback en docs/migraciones/V18-V21-retirar-nequi.md.
 
 -- 1) Órdenes: NEQUI -> QR. (En prod eran 9 órdenes por $309.000.)
 UPDATE orders
