@@ -71,6 +71,8 @@ public class OrderHandler implements OrderPort {
     // N2/6.7: los grupos y la cantidad de rastreadores salen de la config del
     // negocio, ya no del enum PagerColor ni de un 16 quemado.
     private final PagerConfigService pagerConfigService;
+    // N3/#1: resolver la MESA de las órdenes para el historial.
+    private final com.suresell.orders.infrastructure.persistence.TableSessionRepository tableSessionRepository;
     // N2/D2: en el perfil cloud este servicio ES la nube (no hay outbox saliente),
     // así que las órdenes nacen ya sincronizadas. Ver createOrUpdateOrder.
     @org.springframework.beans.factory.annotation.Value("${sync.cloud.enabled:false}")
@@ -330,7 +332,8 @@ public class OrderHandler implements OrderPort {
     public List<OrderResponseRecord> getAllOrders() {
         List<Order> orders = orderRepositoryPort.findAllWithItems();
         Map<String, String> productNames = buildProductNameCacheFromOrders(orders);
-        return orders.stream().map(order -> toOrderResponseRecord(order, productNames)).toList();
+        Map<java.util.UUID, Mesa> mesas = mesasDe(orders);
+        return orders.stream().map(order -> toOrderResponseRecord(order, productNames, Map.of(), mesas)).toList();
     }
 
     @Override
@@ -350,7 +353,8 @@ public class OrderHandler implements OrderPort {
         });
         Map<String, String> productNames = buildProductNameCacheFromOrders(ordersPage.getContent());
         Map<Long, String> waiterNames = buildWaiterNameCache(ordersPage.getContent());
-        return ordersPage.map(order -> toOrderResponseRecord(order, productNames, waiterNames));
+        Map<java.util.UUID, Mesa> mesas = mesasDe(ordersPage.getContent());
+        return ordersPage.map(order -> toOrderResponseRecord(order, productNames, waiterNames, mesas));
     }
 
     @Override
@@ -370,7 +374,8 @@ public class OrderHandler implements OrderPort {
         });
         Map<String, String> productNames = buildProductNameCacheFromOrders(orders);
         Map<Long, String> waiterNames = buildWaiterNameCache(orders);
-        return orders.stream().map(order -> toOrderResponseRecord(order, productNames, waiterNames)).toList();
+        Map<java.util.UUID, Mesa> mesas = mesasDe(orders);
+        return orders.stream().map(order -> toOrderResponseRecord(order, productNames, waiterNames, mesas)).toList();
     }
 
     @Override
@@ -881,12 +886,41 @@ public class OrderHandler implements OrderPort {
         return names;
     }
 
+    /** N3/#1 — Mesa resuelta para una cuenta. */
+    private record Mesa(Integer numero, String etiqueta) {
+    }
+
+    /**
+     * Resuelve en UNA consulta la mesa de todas las órdenes que vengan de una
+     * cuenta. En Plazoleta el mapa sale vacío y no se consulta nada.
+     */
+    private Map<java.util.UUID, Mesa> mesasDe(List<Order> orders) {
+        Set<java.util.UUID> sesiones = orders.stream()
+                .map(Order::getTableSessionId)
+                .filter(java.util.Objects::nonNull)
+                .collect(Collectors.toSet());
+        if (sesiones.isEmpty()) {
+            return Map.of();
+        }
+        Map<java.util.UUID, Mesa> resultado = new java.util.HashMap<>();
+        for (Object[] fila : tableSessionRepository.findMesaPorSesion(sesiones)) {
+            resultado.put((java.util.UUID) fila[0], new Mesa((Integer) fila[1], (String) fila[2]));
+        }
+        return resultado;
+    }
+
     private OrderResponseRecord toOrderResponseRecord(Order order, Map<String, String> productNames) {
-        return toOrderResponseRecord(order, productNames, Map.of());
+        return toOrderResponseRecord(order, productNames, Map.of(), mesasDe(List.of(order)));
     }
 
     private OrderResponseRecord toOrderResponseRecord(Order order, Map<String, String> productNames,
                                                       Map<Long, String> waiterNames) {
+        return toOrderResponseRecord(order, productNames, waiterNames, mesasDe(List.of(order)));
+    }
+
+    private OrderResponseRecord toOrderResponseRecord(Order order, Map<String, String> productNames,
+                                                      Map<Long, String> waiterNames,
+                                                      Map<java.util.UUID, Mesa> mesas) {
         List<OrderItemResponseRecord> items = order.getItems() == null
                 ? List.of()
                 : order.getItems().stream().map(item -> toOrderItemResponseRecord(item, productNames)).toList();
@@ -895,6 +929,7 @@ public class OrderHandler implements OrderPort {
         Integer preparationDurationSeconds = deliveryTracking != null
                 ? deliveryTracking.getPreparationDurationSeconds()
                 : null;
+        Mesa mesa = order.getTableSessionId() == null ? null : mesas.get(order.getTableSessionId());
         return new OrderResponseRecord(
                 order.getIdOrder(),
                 order.getPagerColor(),
@@ -913,7 +948,9 @@ public class OrderHandler implements OrderPort {
                 preparationDurationSeconds,
                 items,
                 order.getWaiterId(),
-                order.getWaiterId() == null ? null : waiterNames.get(order.getWaiterId()));
+                order.getWaiterId() == null ? null : waiterNames.get(order.getWaiterId()),
+                mesa == null ? null : mesa.numero(),
+                mesa == null ? null : mesa.etiqueta());
     }
 
     private OrderItemResponseRecord toOrderItemResponseRecord(OrderItem item, Map<String, String> productNames) {

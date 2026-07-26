@@ -41,6 +41,11 @@ public record OrderResponseRecord(
     @Schema(description = "Id del mesero que tomó la orden (null si fue caja)", example = "3")
     Long waiterId,
     @Schema(description = "Nombre del mesero que tomó la orden (null si fue caja)", example = "Angie")
-    String waiterName
+    String waiterName,
+    @Schema(description = "N3/#1 — Número de MESA en modo Restaurante; null en Plazoleta. "
+            + "El historial NO debe deducirlo de pagerNumber: ahí no viaja la mesa.", example = "12")
+    Integer tableNumber,
+    @Schema(description = "Etiqueta opcional de la mesa", example = "Terraza")
+    String tableLabel
 ) {
 }
