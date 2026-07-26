@@ -131,7 +131,13 @@ public class OrderHandler implements OrderPort {
         } else {
             validatePaymentMethod(dto.paymentMethod());
         }
-        validatePagerAvailability(dto.pagerColor(), dto.pagerNumber(), null);
+        // N2 — Las órdenes de MESEROS no ocupan rastreador: el mesero lleva el
+        // pedido a la mesa. Antes se validaba igual y, como la app manda siempre
+        // el mismo pager, la SEGUNDA orden del turno moría con 409 "ya está en
+        // uso". El POS de plazoleta no manda la bandera y sigue validando.
+        if (!Boolean.TRUE.equals(dto.skipPagerCheck())) {
+            validatePagerAvailability(dto.pagerColor(), dto.pagerNumber(), null);
+        }
         Order order = new Order();
         order.setPagerColor(dto.pagerColor());
         order.setPagerNumber(dto.pagerNumber());

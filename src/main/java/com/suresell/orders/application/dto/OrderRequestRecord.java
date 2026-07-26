@@ -24,7 +24,12 @@ public record OrderRequestRecord(
             + "orden con una clave ya registrada, se devuelve la existente en vez de crear otra. "
             + "Protege contra el doble POST del outbox del POS y contra reintentos por timeout.",
             example = "0f2b8c4e-2f1a-4e2a-9d3b-6d5f1c9a7e10")
-    String idempotencyKey
+    String idempotencyKey,
+    @Schema(description = "N2 — omite la validación de disponibilidad del rastreador. "
+            + "Lo usa la app de MESEROS: el mesero lleva el pedido a la mesa, no entrega con "
+            + "rastreador, así que varias órdenes suyas pueden convivir sin ocupar uno. "
+            + "El POS de plazoleta NO lo envía y sigue validando.", example = "false")
+    Boolean skipPagerCheck
 ) {
     /** Split de multipago: método + monto. */
     public record PaymentSplitRecord(String method, java.math.BigDecimal amount) {
