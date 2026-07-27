@@ -65,6 +65,18 @@ public final class WaiterDtos {
             BigDecimal unitPrice,
             BigDecimal totalPrice
     ) {
+        /**
+         * Alias de `productName`.
+         *
+         * La app lee `product.name` o `name`, no `productName`, así que en el
+         * detalle del historial salía la cantidad ("2x") con el nombre VACÍO.
+         * Se agrega el alias en el backend en vez de cambiar solo la app para
+         * que los APK ya instalados en el local se arreglen sin reinstalar.
+         */
+        @com.fasterxml.jackson.annotation.JsonProperty("name")
+        public String name() {
+            return productName;
+        }
     }
 
     /** Menú anidado con los MISMOS nombres de campo del legacy (id/name/products). */
