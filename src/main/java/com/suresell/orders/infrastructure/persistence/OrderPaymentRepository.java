@@ -22,4 +22,22 @@ public interface OrderPaymentRepository extends JpaRepository<OrderPayment, Long
             """)
     List<Object[]> sumSplitsByMethod(@Param("startTime") LocalDateTime startTime,
                                      @Param("endTime") LocalDateTime endTime);
+
+    /**
+     * Splits de las ordenes MIXED, por MESERO y metodo.
+     *
+     * Sin esto una venta mixta entera caeria bajo la etiqueta "MIXED" y la
+     * cajera no veria su parte en efectivo, que es justo el numero que usa para
+     * saber cuanto recibir de cada mesero.
+     */
+    @Query("""
+            SELECT o.waiterId, p.method, SUM(p.amount)
+            FROM OrderPayment p, Order o
+            WHERE o.uuidId = p.orderUuidId
+            AND o.paymentMethod = 'MIXED'
+            AND o.createdAt BETWEEN :startTime AND :endTime
+            GROUP BY o.waiterId, p.method
+            """)
+    List<Object[]> sumSplitsByWaiterAndMethod(@Param("startTime") LocalDateTime startTime,
+                                              @Param("endTime") LocalDateTime endTime);
 }

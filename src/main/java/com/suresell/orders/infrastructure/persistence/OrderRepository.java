@@ -151,4 +151,35 @@ public interface OrderRepository extends JpaRepository<Order, java.util.UUID> {
           @Param("startTime") LocalDateTime startTime,
           @Param("endTime") LocalDateTime endTime
   );
+
+  // ---------------------------------------------------------------------
+  // Ventas por MESERO del dia (cierre de caja del POS).
+  //
+  // Antes el POS pedia esto a ms-core-app, que lee la base LEGACY: tras el
+  // cutover mostraba solo las ventas previas al corte y nunca se actualizaba.
+  // Estas consultas lo calculan sobre la base de V2.
+  //
+  // El @SQLRestriction("deleted_at IS NULL") de Order ya excluye las borradas.
+  // ---------------------------------------------------------------------
+
+  /** Ordenes por mesero (para ordersCount, sin duplicar por metodo de pago). */
+  @Query("""
+          SELECT o.waiterId, w.name, COUNT(o)
+          FROM Order o LEFT JOIN Waiter w ON w.id = o.waiterId
+          WHERE o.createdAt BETWEEN :start AND :end
+          GROUP BY o.waiterId, w.name
+          """)
+  List<Object[]> contarOrdenesPorMesero(@Param("start") LocalDateTime start,
+                                        @Param("end") LocalDateTime end);
+
+  /** Montos por mesero y metodo. Las MIXED se excluyen: sus montos salen de los splits. */
+  @Query("""
+          SELECT o.waiterId, COALESCE(o.paymentMethod, 'UNKNOWN'), COALESCE(SUM(o.total), 0)
+          FROM Order o
+          WHERE o.createdAt BETWEEN :start AND :end
+          AND (o.paymentMethod IS NULL OR o.paymentMethod <> 'MIXED')
+          GROUP BY o.waiterId, o.paymentMethod
+          """)
+  List<Object[]> sumarPorMeseroYMetodo(@Param("start") LocalDateTime start,
+                                       @Param("end") LocalDateTime end);
 }
