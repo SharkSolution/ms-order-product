@@ -33,6 +33,7 @@ class KitchenQueryServiceTest {
     private MenuProductRepository menuProductRepository;
     private com.suresell.orders.infrastructure.persistence.OrderItemRepository orderItemRepository;
     private com.suresell.orders.infrastructure.persistence.TableSessionRepository tableSessionRepository;
+    private com.suresell.orders.infrastructure.persistence.WaiterRepository waiterRepository;
     private KitchenQueryService service;
 
     @BeforeEach
@@ -41,8 +42,9 @@ class KitchenQueryServiceTest {
         menuProductRepository = mock(MenuProductRepository.class);
         orderItemRepository = mock(com.suresell.orders.infrastructure.persistence.OrderItemRepository.class);
         tableSessionRepository = mock(com.suresell.orders.infrastructure.persistence.TableSessionRepository.class);
+        waiterRepository = mock(com.suresell.orders.infrastructure.persistence.WaiterRepository.class);
         service = new KitchenQueryService(trackingRepository, menuProductRepository,
-                orderItemRepository, tableSessionRepository);
+                orderItemRepository, tableSessionRepository, waiterRepository);
     }
 
     private OrderDeliveryTracking tracking(UUID uuid, boolean delivered) {
@@ -212,5 +214,48 @@ class KitchenQueryServiceTest {
         // platos VIEJOS reaparecen como "NUEVO" junto a los recién pedidos.
         verify(orderItemRepository).marcarPreparados(eq(301858L), any(LocalDateTime.class));
         assertTrue(t.getDelivered());
+    }
+
+    /**
+     * La comanda de un mesero debe decir QUIÉN la mandó.
+     *
+     * `waiterId`/`waiterName` viajaban en `null` desde que se creó el módulo, y
+     * como la app de meseros manda el MISMO rastreador quemado en todos los
+     * pedidos, en la cocina TODAS salían como "Rastreador #1".
+     */
+    @Test
+    void laComandaDeUnMeseroTraeSuNombre() {
+        UUID uuid = UUID.randomUUID();
+        OrderDeliveryTracking t = tracking(uuid, false);
+        t.getOrder().setWaiterId(7L);
+
+        com.suresell.orders.domain.model.Waiter mesero = new com.suresell.orders.domain.model.Waiter();
+        mesero.setId(7L);
+        mesero.setName("Gabriela");
+
+        when(trackingRepository.findActiveKitchenOrders()).thenReturn(List.of(t));
+        when(menuProductRepository.findAllById(anyCollection()))
+                .thenReturn(List.of(product("prod-1", "Hamburguesa Shark")));
+        when(waiterRepository.findAllById(anyCollection())).thenReturn(List.of(mesero));
+
+        KitchenOrderDto dto = service.getActiveOrdersFifo().get(0);
+
+        assertEquals(7L, dto.waiterId());
+        assertEquals("Gabriela", dto.waiterName());
+    }
+
+    /** Una orden de caja no trae mesero y NO debe consultar la tabla. */
+    @Test
+    void laOrdenDeCajaNoTraeMeseroNiConsulta() {
+        when(trackingRepository.findActiveKitchenOrders())
+                .thenReturn(List.of(tracking(UUID.randomUUID(), false)));
+        when(menuProductRepository.findAllById(anyCollection()))
+                .thenReturn(List.of(product("prod-1", "Hamburguesa Shark")));
+
+        KitchenOrderDto dto = service.getActiveOrdersFifo().get(0);
+
+        assertNull(dto.waiterId());
+        assertNull(dto.waiterName());
+        verify(waiterRepository, never()).findAllById(anyCollection());
     }
 }

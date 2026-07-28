@@ -41,13 +41,17 @@ public class KitchenQueryService {
     private final com.suresell.orders.infrastructure.persistence.OrderItemRepository orderItemRepository;
     // N3/#1: resolver el número de mesa de las comandas de Restaurante.
     private final com.suresell.orders.infrastructure.persistence.TableSessionRepository tableSessionRepository;
+    // La comanda debe decir QUIÉN la mandó cuando viene de un mesero.
+    private final com.suresell.orders.infrastructure.persistence.WaiterRepository waiterRepository;
 
     public KitchenQueryService(OrderDeliveryTrackingRepository trackingRepository,
                                MenuProductRepository menuProductRepository,
                                com.suresell.orders.infrastructure.persistence.OrderItemRepository orderItemRepository,
-                               com.suresell.orders.infrastructure.persistence.TableSessionRepository tableSessionRepository) {
+                               com.suresell.orders.infrastructure.persistence.TableSessionRepository tableSessionRepository,
+                               com.suresell.orders.infrastructure.persistence.WaiterRepository waiterRepository) {
         this.orderItemRepository = orderItemRepository;
         this.tableSessionRepository = tableSessionRepository;
+        this.waiterRepository = waiterRepository;
         this.trackingRepository = trackingRepository;
         this.menuProductRepository = menuProductRepository;
     }
@@ -57,7 +61,8 @@ public class KitchenQueryService {
         List<OrderDeliveryTracking> active = trackingRepository.findActiveKitchenOrders();
         Map<String, String> names = productNames(active);
         Map<UUID, Mesa> mesas = mesasDe(active);
-        return active.stream().map(t -> toDto(t, names, mesas)).toList();
+        Map<Long, String> meseros = nombresDeMesero(active);
+        return active.stream().map(t -> toDto(t, names, mesas, meseros)).toList();
     }
 
     @Transactional(readOnly = true)
@@ -66,8 +71,9 @@ public class KitchenQueryService {
                 trackingRepository.findDeliveredKitchenOrders(PageRequest.of(page, size));
         Map<String, String> names = productNames(result.getContent());
         Map<UUID, Mesa> mesas = mesasDe(result.getContent());
+        Map<Long, String> meseros = nombresDeMesero(result.getContent());
         List<KitchenOrderDto> content = result.getContent().stream()
-                .map(t -> toDto(t, names, mesas))
+                .map(t -> toDto(t, names, mesas, meseros))
                 .toList();
         return new KitchenPageDto(content, result.getTotalElements(), result.getTotalPages(),
                 result.getSize(), result.getNumber(), result.isLast());
@@ -110,7 +116,8 @@ public class KitchenQueryService {
     }
 
     private KitchenOrderDto toDto(OrderDeliveryTracking tracking, Map<String, String> productNames,
-                                  Map<UUID, Mesa> mesas) {
+                                  Map<UUID, Mesa> mesas,
+                                  Map<Long, String> nombresMesero) {
         Order order = tracking.getOrder();
         List<KitchenOrderItemDto> items = order.getItems() == null ? List.of()
                 : order.getItems().stream().map(i -> toItemDto(i, productNames)).toList();
@@ -126,8 +133,8 @@ public class KitchenQueryService {
                 order.getStatus() == null ? null : order.getStatus().name(),
                 mesa == null ? null : mesa.numero(),
                 mesa == null ? null : mesa.etiqueta(),
-                null,
-                null,
+                order.getWaiterId(),
+                order.getWaiterId() == null ? null : nombresMesero.get(order.getWaiterId()),
                 new KitchenTrackingDto(
                         tracking.getOrderId(),
                         Boolean.TRUE.equals(tracking.getDelivered()),
@@ -160,6 +167,29 @@ public class KitchenQueryService {
             resultado.put((UUID) fila[0], new Mesa((Integer) fila[1], (String) fila[2]));
         }
         return resultado;
+    }
+
+    /**
+     * Nombres de los meseros del lote, en UNA consulta.
+     *
+     * Estos campos viajaban en `null` desde que se creó el módulo de cocina, así
+     * que la comanda de un mesero salía rotulada solo con el rastreador — y la
+     * app de meseros manda el mismo rastreador quemado para todos, por eso
+     * TODAS se veían como "Rastreador #1".
+     */
+    private Map<Long, String> nombresDeMesero(List<OrderDeliveryTracking> trackings) {
+        Set<Long> ids = trackings.stream()
+                .map(OrderDeliveryTracking::getOrder)
+                .filter(Objects::nonNull)
+                .map(Order::getWaiterId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+        if (ids.isEmpty()) {
+            return Map.of();
+        }
+        Map<Long, String> nombres = new java.util.HashMap<>();
+        waiterRepository.findAllById(ids).forEach(w -> nombres.put(w.getId(), w.getName()));
+        return nombres;
     }
 
     private KitchenOrderItemDto toItemDto(OrderItem item, Map<String, String> productNames) {

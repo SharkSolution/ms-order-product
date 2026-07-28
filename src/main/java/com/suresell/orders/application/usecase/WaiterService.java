@@ -364,7 +364,8 @@ public class WaiterService {
                 : order.getItems().stream().map(i -> new WaiterOrderItem(
                         i.getProductId(),
                         i.getProductId() == null ? null : names.getOrDefault(i.getProductId(), i.getProductId()),
-                        i.getQuantity(), i.getUnitPrice(), i.getTotalPrice()))
+                        i.getQuantity(), i.getUnitPrice(), i.getTotalPrice(),
+                        i.getInstructions()))
                 .toList();
         return new WaiterOrderResponse(
                 order.getIdOrder(),

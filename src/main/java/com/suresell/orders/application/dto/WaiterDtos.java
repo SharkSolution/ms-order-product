@@ -63,8 +63,27 @@ public final class WaiterDtos {
             String productName,
             Integer quantity,
             BigDecimal unitPrice,
-            BigDecimal totalPrice
+            BigDecimal totalPrice,
+            /**
+             * Nota del item ("sin cebolla"). Se persistia bien desde siempre
+             * -37 de 321 items la tenian- pero NO viajaba en la respuesta, asi
+             * que el historial de la app la mostraba vacia. Era un problema de
+             * presentacion, no de guardado.
+             */
+            String instructions
     ) {
+        /**
+         * Alias de `productName`.
+         *
+         * La app lee `product.name` o `name`, no `productName`, así que en el
+         * detalle del historial salía la cantidad ("2x") con el nombre VACÍO.
+         * Se agrega el alias en el backend en vez de cambiar solo la app para
+         * que los APK ya instalados en el local se arreglen sin reinstalar.
+         */
+        @com.fasterxml.jackson.annotation.JsonProperty("name")
+        public String name() {
+            return productName;
+        }
     }
 
     /** Menú anidado con los MISMOS nombres de campo del legacy (id/name/products). */
