@@ -48,6 +48,17 @@ public class JwtTenantResolver {
     }
 
     /**
+     * Email del super-admin del token, para dejar rastro de QUIÉN hizo un cambio
+     * de alto impacto. Sale del JWT y no del cuerpo del request: así no se puede
+     * falsear desde el cliente.
+     */
+    public String superAdminEmail(String authorizationHeader) {
+        return parse(authorizationHeader)
+                .map(c -> c.getSubject() != null ? c.getSubject() : c.get("email", String.class))
+                .orElse("desconocido");
+    }
+
+    /**
      * Módulos del tenant (claim `modules`) para enforcement por módulo (F3). Vacío
      * si el token no lo trae (tokens viejos) — el {@link ModuleAccessFilter} lo trata
      * como "desconocido" y no bloquea, hasta que todos re-loguean.

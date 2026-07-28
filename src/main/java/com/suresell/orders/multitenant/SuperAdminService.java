@@ -242,15 +242,52 @@ public class SuperAdminService {
 
     /** Cambia el modo de una sede. Es potestad EXCLUSIVA del KAM: se vende, no se elige. */
     @org.springframework.transaction.annotation.Transactional
-    public java.util.List<Map<String, Object>> setSiteMode(String tenantId, Long siteId, String mode) {
+    public java.util.List<Map<String, Object>> setSiteMode(String tenantId, Long siteId, String mode,
+                                                          String quienCambia) {
         String normalizado = mode == null ? "" : mode.trim().toUpperCase();
         if (!"PLAZOLETA".equals(normalizado) && !"RESTAURANTE".equals(normalizado)) {
             throw new AuthException(400, "Modo inválido. Use PLAZOLETA o RESTAURANTE");
         }
         jdbc.queryForObject("SELECT set_config('app.tenant_id', ?, true)", String.class, tenantId);
+
+        String modoActual = jdbc.query(
+                "SELECT pos_mode FROM sites WHERE id = ?",
+                rs -> rs.next() ? rs.getString(1) : null, siteId);
+        if (modoActual == null) {
+            throw new AuthException(404, "No existe la sede " + siteId + " en el negocio " + tenantId);
+        }
+
+        // Cambiar de modo con consumo abierto dejaría cuentas huérfanas: en
+        // Plazoleta el POS ni siquiera dibuja el plano de mesas, así que nadie
+        // podría cobrarlas. Se bloquea del lado seguro.
+        //
+        // OJO: solo bloquea si el modo CAMBIA de verdad y si hay cuentas VIVAS.
+        // Activar el modo en un negocio nuevo -que no tiene mesas abiertas
+        // porque no ha vendido nada- no se ve afectado.
+        if (!normalizado.equals(modoActual)) {
+            List<Map<String, Object>> vivas = jdbc.queryForList(
+                    "SELECT s.id, t.number AS mesa, s.status "
+                            + "FROM table_sessions s JOIN restaurant_tables t ON t.id = s.table_id "
+                            + "WHERE s.status <> 'CERRADA' ORDER BY t.number");
+            if (!vivas.isEmpty()) {
+                String mesas = vivas.stream()
+                        .map(m -> String.valueOf(m.get("mesa")))
+                        .collect(java.util.stream.Collectors.joining(", "));
+                throw new AuthException(409,
+                        "No se puede cambiar el modo con cuentas abiertas. "
+                                + "Cobra o cierra primero la(s) mesa(s): " + mesas);
+            }
+        }
+
         int filas = jdbc.update("UPDATE sites SET pos_mode = ? WHERE id = ?", normalizado, siteId);
         if (filas == 0) {
             throw new AuthException(404, "No existe la sede " + siteId + " en el negocio " + tenantId);
+        }
+
+        // Quién y cuándo: cambiar el modo es una acción de alto impacto operativo.
+        if (!normalizado.equals(modoActual)) {
+            jdbc.update("INSERT INTO site_mode_audit (tenant_id, site_id, modo_antes, modo_despues, hecho_por) "
+                    + "VALUES (?, ?, ?, ?, ?)", tenantId, siteId, modoActual, normalizado, quienCambia);
         }
         return jdbc.queryForList(
                 "SELECT id, name, code, pos_mode, active, is_default FROM sites ORDER BY id");

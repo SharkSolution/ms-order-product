@@ -109,7 +109,10 @@ public class SuperAdminController {
             return guard;
         }
         try {
-            return ResponseEntity.ok(svc.setSiteMode(id, siteId, req.posMode()));
+            // Quién hace el cambio sale del JWT de super-admin, no del cuerpo:
+            // así no se puede falsear desde el cliente.
+            String quien = resolver.superAdminEmail(http.getHeader("Authorization"));
+            return ResponseEntity.ok(svc.setSiteMode(id, siteId, req.posMode(), quien));
         } catch (AuthException e) {
             return err(e);
         }
