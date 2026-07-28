@@ -63,7 +63,14 @@ public final class WaiterDtos {
             String productName,
             Integer quantity,
             BigDecimal unitPrice,
-            BigDecimal totalPrice
+            BigDecimal totalPrice,
+            /**
+             * Nota del item ("sin cebolla"). Se persistia bien desde siempre
+             * -37 de 321 items la tenian- pero NO viajaba en la respuesta, asi
+             * que el historial de la app la mostraba vacia. Era un problema de
+             * presentacion, no de guardado.
+             */
+            String instructions
     ) {
         /**
          * Alias de `productName`.

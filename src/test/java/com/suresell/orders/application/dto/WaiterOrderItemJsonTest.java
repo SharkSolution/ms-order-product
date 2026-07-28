@@ -31,7 +31,7 @@ class WaiterOrderItemJsonTest {
     void elItemViajaConNombreBajoLaClaveName() throws Exception {
         WaiterOrderItem item = new WaiterOrderItem(
                 "P-01", "Hamburguesa Shark", 2,
-                new BigDecimal("18000"), new BigDecimal("36000"));
+                new BigDecimal("18000"), new BigDecimal("36000"), "sin cebolla");
 
         Map<String, Object> json = mapper.readValue(mapper.writeValueAsString(item), Map.class);
 
@@ -40,5 +40,24 @@ class WaiterOrderItemJsonTest {
         // Se conserva la clave original: otros clientes ya la consumen.
         assertEquals("Hamburguesa Shark", json.get("productName"));
         assertEquals(2, json.get("quantity"));
+    }
+
+    /**
+     * La nota del item debe viajar en la respuesta.
+     *
+     * Se persistia bien desde siempre (37 de 321 items la tenian en Prod) pero
+     * el DTO no la incluia, asi que el historial de la app la mostraba vacia.
+     * Era presentacion, no guardado.
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    void elItemViajaConSuNota() throws Exception {
+        WaiterOrderItem item = new WaiterOrderItem(
+                "P-01", "Hamburguesa", 1,
+                new BigDecimal("18000"), new BigDecimal("18000"), "sin cebolla");
+
+        Map<String, Object> json = mapper.readValue(mapper.writeValueAsString(item), Map.class);
+
+        assertEquals("sin cebolla", json.get("instructions"));
     }
 }
