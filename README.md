@@ -1,5 +1,9 @@
 # ms-order-product
 
+> **Antes de agregar o quitar un campo de una respuesta, leé el [contrato de API](../../docs/CONTRATO-API.md).**
+> Las apps moviles se distribuyen por APK: no hay forma de garantizar que el local actualizo.
+
+
 Microservicio Spring Boot para gestionar órdenes de restaurante, catálogo local, descuentos y cierre diario de caja.
 
 ## Qué hace actualmente
