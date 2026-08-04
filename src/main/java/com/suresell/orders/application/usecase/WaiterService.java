@@ -52,6 +52,8 @@ public class WaiterService {
 
     private final WaiterRepository waiterRepository;
     private final WaiterSessionRepository sessionRepository;
+    private final SiteService siteService;
+    private final TableSessionService tableSessionService;
     private final OrderRepository orderRepository;
     private final MenuCategoryRepository menuCategoryRepository;
     private final MenuProductRepository menuProductRepository;
@@ -62,13 +64,34 @@ public class WaiterService {
                          OrderRepository orderRepository,
                          MenuCategoryRepository menuCategoryRepository,
                          MenuProductRepository menuProductRepository,
-                         OrderPort orderPort) {
+                         OrderPort orderPort,
+                         SiteService siteService,
+                         TableSessionService tableSessionService) {
         this.waiterRepository = waiterRepository;
         this.sessionRepository = sessionRepository;
         this.orderRepository = orderRepository;
         this.menuCategoryRepository = menuCategoryRepository;
         this.menuProductRepository = menuProductRepository;
         this.orderPort = orderPort;
+        this.siteService = siteService;
+        this.tableSessionService = tableSessionService;
+    }
+
+    /**
+     * Traduce el número de mesa a la cuenta viva de esa mesa.
+     *
+     * <p>Si la mesa no tiene cuenta abierta, se abre. El mesero no debería tener
+     * que acordarse de "abrir la mesa" antes de tomar el pedido: en la práctica
+     * el pedido ES la apertura.
+     *
+     * <p>Devuelve {@code null} cuando no hay que ligar a ninguna mesa: sin número,
+     * o en modo Plazoleta —donde no hay mesas y el pedido va con rastreador—.
+     */
+    private String resolverCuentaDeMesa(Integer numeroMesa) {
+        if (numeroMesa == null || !siteService.enModoRestaurante()) {
+            return null;
+        }
+        return tableSessionService.abrirOReusar(numeroMesa, "meseros").getId().toString();
     }
 
     // ------------------------------------------------------------------
@@ -282,12 +305,19 @@ public class WaiterService {
         // dos envíos simultáneos del móvil podían pasar ambos la verificación
         // previa y el segundo insert chocaba contra el índice único.
         String key = hasText(request.idempotencyKey()) ? request.idempotencyKey().trim() : null;
-        // El último parámetro (`preparadoEnComanda`) va en false: el pedido del
-        // mesero SÍ tiene que entrar a la cola de cocina, que es justamente para
-        // lo que lo manda.
+
+        // Mesa real (modo Restaurante). Antes la app mandaba siempre el mismo
+        // rastreador quemado y la cocina veía todas las comandas iguales; con el
+        // número de mesa el pedido se liga a la cuenta de esa mesa y se acumula
+        // con las rondas anteriores.
+        String cuentaDeMesa = resolverCuentaDeMesa(request.mesaNumero());
+
+        // `preparadoEnComanda` va en false: el pedido del mesero SÍ tiene que
+        // entrar a la cola de cocina, que es justamente para lo que lo manda.
         Order created = orderPort.createOrUpdateOrder(new OrderRequestRecord(
                 request.pagerColor(), request.pagerNumber(), request.items(),
-                request.discountCode(), request.paymentMethod(), null, key, true, null, false));
+                request.discountCode(), request.paymentMethod(), request.payments(),
+                key, true, cuentaDeMesa, false));
         created.setIdempotencyKey(key);
         created.setWaiterId(waiterId);
         created.setWaiterSessionId(sessionUuid);

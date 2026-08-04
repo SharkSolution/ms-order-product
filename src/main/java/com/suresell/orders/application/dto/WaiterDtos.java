@@ -23,7 +23,27 @@ public final class WaiterDtos {
             List<OrderItemRequestRecord> items,
             String discountCode,
             String idempotencyKey,
-            String waiterSessionId
+            String waiterSessionId,
+            /**
+             * Mesa REAL del pedido (modo Restaurante).
+             *
+             * <p>Hasta ahora la app mandaba siempre el mismo rastreador quemado y
+             * la cocina veía todas las comandas iguales. Con el número de mesa el
+             * pedido se liga a la cuenta de esa mesa: se acumula con las rondas
+             * anteriores y se cobra todo junto al final.
+             *
+             * <p>Si la mesa no tiene cuenta abierta, se abre. El mesero no debería
+             * tener que acordarse de "abrir la mesa" antes de tomar el pedido.
+             *
+             * <p>Ausente = comportamiento anterior (rastreador). En Plazoleta se
+             * ignora: ahí no hay mesas.
+             */
+            Integer mesaNumero,
+            /**
+             * Multipago: porciones por medio de pago. La suma debe dar el total.
+             * Null o vacío = pago simple con {@code paymentMethod}.
+             */
+            List<OrderRequestRecord.PaymentSplitRecord> payments
     ) {
     }
 

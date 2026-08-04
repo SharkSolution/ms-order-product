@@ -30,12 +30,20 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
 /** Módulo meseros (F4 Inc.3): sesiones, turnos con matemática de caja, idempotencia. */
+import org.mockito.ArgumentCaptor;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.mockito.Mockito.times;
+import com.suresell.orders.application.dto.OrderRequestRecord;
 class WaiterServiceTest {
 
     private WaiterRepository waiterRepository;
     private WaiterSessionRepository sessionRepository;
     private OrderRepository orderRepository;
     private OrderPort orderPort;
+    private SiteService siteService;
+    private TableSessionService tableSessionService;
     private WaiterService service;
 
     @BeforeEach
@@ -44,8 +52,11 @@ class WaiterServiceTest {
         sessionRepository = mock(WaiterSessionRepository.class);
         orderRepository = mock(OrderRepository.class);
         orderPort = mock(OrderPort.class);
+        siteService = mock(SiteService.class);
+        tableSessionService = mock(TableSessionService.class);
         service = new WaiterService(waiterRepository, sessionRepository, orderRepository,
-                mock(MenuCategoryRepository.class), mock(MenuProductRepository.class), orderPort);
+                mock(MenuCategoryRepository.class), mock(MenuProductRepository.class), orderPort,
+                siteService, tableSessionService);
         when(sessionRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
         when(waiterRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
     }
@@ -166,7 +177,7 @@ class WaiterServiceTest {
         WaiterOrderResponse resp = service.createOrder(new WaiterOrderRequest(
                 "AMARILLO", "5", "CASH",
                 List.of(new OrderItemRequestRecord("p1", 1, new BigDecimal("10000"), null, null)),
-                null, "k-1", null));
+                null, "k-1", null, null, null));
 
         assertEquals(301900L, resp.idOrder());
         verify(orderPort, never()).createOrUpdateOrder(any());
@@ -184,7 +195,7 @@ class WaiterServiceTest {
         WaiterOrderResponse resp = service.createOrder(new WaiterOrderRequest(
                 "AMARILLO", "5", "CASH",
                 List.of(new OrderItemRequestRecord("p1", 1, new BigDecimal("10000"), null, null)),
-                null, "k-2", session.getId().toString()));
+                null, "k-2", session.getId().toString(), null, null));
 
         assertEquals("k-2", creada.getIdempotencyKey());
         assertEquals(3L, creada.getWaiterId());
@@ -205,7 +216,7 @@ class WaiterServiceTest {
         WaiterOrderResponse resp = service.createOrder(new WaiterOrderRequest(
                 "AMARILLO", "5", "CASH",
                 List.of(new OrderItemRequestRecord("p1", 1, new BigDecimal("10000"), null, null)),
-                null, null, fantasma.toString()));
+                null, null, fantasma.toString(), null, null));
 
         assertEquals(301902L, resp.idOrder());
         assertNull(creada.getWaiterId());
@@ -227,7 +238,7 @@ class WaiterServiceTest {
         WaiterOrderResponse resp = service.createOrder(new WaiterOrderRequest(
                 "AMARILLO", "5", "CASH",
                 List.of(new OrderItemRequestRecord("p1", 1, new BigDecimal("10000"), null, null)),
-                null, null, cerrada.getId().toString()));
+                null, null, cerrada.getId().toString(), null, null));
 
         assertEquals(301903L, resp.idOrder());
         assertEquals(3L, creada.getWaiterId());
@@ -243,9 +254,121 @@ class WaiterServiceTest {
         WaiterOrderResponse resp = service.createOrder(new WaiterOrderRequest(
                 "AMARILLO", "5", "CASH",
                 List.of(new OrderItemRequestRecord("p1", 1, new BigDecimal("10000"), null, null)),
-                null, null, "no-es-un-uuid"));
+                null, null, "no-es-un-uuid", null, null));
 
         assertEquals(301904L, resp.idOrder());
         assertNull(creada.getWaiterId());
     }
+
+    // --- Mesa exacta y multipago desde la app de meseros ---------------------
+
+    /**
+     * Antes la app mandaba siempre el MISMO rastreador quemado y la cocina veía
+     * todas las comandas iguales: no había forma de saber a qué mesa iba cada
+     * plato. Ahora el número de mesa liga el pedido a la cuenta de esa mesa.
+     */
+    @Test
+    void elPedidoSeLigaALaMesaIndicada() {
+        when(siteService.enModoRestaurante()).thenReturn(true);
+        java.util.UUID cuenta = java.util.UUID.randomUUID();
+        com.suresell.orders.domain.model.TableSession sesion =
+                new com.suresell.orders.domain.model.TableSession();
+        sesion.setId(cuenta);
+        when(tableSessionService.abrirOReusar(eq(23), anyString())).thenReturn(sesion);
+        prepararCreacion();
+
+        service.createOrder(new WaiterOrderRequest(
+                "AMARILLO", "1", "CASH",
+                List.of(new OrderItemRequestRecord("p1", 1, new BigDecimal("10000"), null, null)),
+                null, "k-mesa", null, 23, null));
+
+        ArgumentCaptor<OrderRequestRecord> captor = ArgumentCaptor.forClass(OrderRequestRecord.class);
+        verify(orderPort).createOrUpdateOrder(captor.capture());
+        assertEquals(cuenta.toString(), captor.getValue().tableSessionId());
+    }
+
+    /** Las rondas siguientes caen en la MISMA cuenta, no abren otra. */
+    @Test
+    void lasRondasSiguientesReusanLaCuentaDeLaMesa() {
+        when(siteService.enModoRestaurante()).thenReturn(true);
+        java.util.UUID cuenta = java.util.UUID.randomUUID();
+        com.suresell.orders.domain.model.TableSession sesion =
+                new com.suresell.orders.domain.model.TableSession();
+        sesion.setId(cuenta);
+        when(tableSessionService.abrirOReusar(eq(23), anyString())).thenReturn(sesion);
+        prepararCreacion();
+
+        service.createOrder(new WaiterOrderRequest("AMARILLO", "1", "CASH",
+                List.of(new OrderItemRequestRecord("p1", 1, new BigDecimal("10000"), null, null)),
+                null, "k-1", null, 23, null));
+        service.createOrder(new WaiterOrderRequest("AMARILLO", "1", "CASH",
+                List.of(new OrderItemRequestRecord("p2", 1, new BigDecimal("5000"), null, null)),
+                null, "k-2", null, 23, null));
+
+        ArgumentCaptor<OrderRequestRecord> captor = ArgumentCaptor.forClass(OrderRequestRecord.class);
+        verify(orderPort, times(2)).createOrUpdateOrder(captor.capture());
+        assertEquals(captor.getAllValues().get(0).tableSessionId(),
+                captor.getAllValues().get(1).tableSessionId());
+    }
+
+    /** En Plazoleta no hay mesas: el número se ignora y el pedido va con rastreador. */
+    @Test
+    void enPlazoletaSeIgnoraLaMesa() {
+        when(siteService.enModoRestaurante()).thenReturn(false);
+        prepararCreacion();
+
+        service.createOrder(new WaiterOrderRequest("AMARILLO", "5", "CASH",
+                List.of(new OrderItemRequestRecord("p1", 1, new BigDecimal("10000"), null, null)),
+                null, "k-plaz", null, 23, null));
+
+        ArgumentCaptor<OrderRequestRecord> captor = ArgumentCaptor.forClass(OrderRequestRecord.class);
+        verify(orderPort).createOrUpdateOrder(captor.capture());
+        assertNull(captor.getValue().tableSessionId());
+        verify(tableSessionService, never()).abrirOReusar(any(), anyString());
+    }
+
+    /** Sin número de mesa se comporta como antes: rastreador. */
+    @Test
+    void sinMesaSigueSiendoUnPedidoConRastreador() {
+        when(siteService.enModoRestaurante()).thenReturn(true);
+        prepararCreacion();
+
+        service.createOrder(new WaiterOrderRequest("AMARILLO", "5", "CASH",
+                List.of(new OrderItemRequestRecord("p1", 1, new BigDecimal("10000"), null, null)),
+                null, "k-sinmesa", null, null, null));
+
+        ArgumentCaptor<OrderRequestRecord> captor = ArgumentCaptor.forClass(OrderRequestRecord.class);
+        verify(orderPort).createOrUpdateOrder(captor.capture());
+        assertNull(captor.getValue().tableSessionId());
+    }
+
+    /** Multipago: las porciones llegan al flujo del POS, que ya sabe repartirlas. */
+    @Test
+    void elMultipagoLlegaAlFlujoDelPos() {
+        when(siteService.enModoRestaurante()).thenReturn(false);
+        prepararCreacion();
+        var splits = List.of(
+                new OrderRequestRecord.PaymentSplitRecord("CASH", new BigDecimal("4000")),
+                new OrderRequestRecord.PaymentSplitRecord("QR", new BigDecimal("6000")));
+
+        service.createOrder(new WaiterOrderRequest("AMARILLO", "5", "MIXED",
+                List.of(new OrderItemRequestRecord("p1", 1, new BigDecimal("10000"), null, null)),
+                null, "k-mixto", null, null, splits));
+
+        ArgumentCaptor<OrderRequestRecord> captor = ArgumentCaptor.forClass(OrderRequestRecord.class);
+        verify(orderPort).createOrUpdateOrder(captor.capture());
+        assertEquals(2, captor.getValue().payments().size());
+        assertEquals("MIXED", captor.getValue().paymentMethod());
+    }
+
+    private void prepararCreacion() {
+        when(orderPort.createOrUpdateOrder(any())).thenAnswer(inv -> {
+            Order o = new Order();
+            o.setUuidId(java.util.UUID.randomUUID());
+            o.setIdOrder(500L);
+            o.setItems(List.of());
+            return o;
+        });
+    }
+
 }

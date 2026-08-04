@@ -39,6 +39,24 @@ public class TableSessionService {
     }
 
     /**
+     * Cuenta viva de una mesa; si no tiene, la abre.
+     *
+     * <p>Lo usa la app de meseros: el mesero toma el pedido en la mesa y no
+     * debería tener que acordarse de "abrir la mesa" antes. En la práctica el
+     * primer pedido ES la apertura, y las rondas siguientes se acumulan en la
+     * misma cuenta para cobrarlas todas juntas al final.
+     */
+    @Transactional
+    public TableSession abrirOReusar(Integer numeroMesa, String usuario) {
+        RestaurantTable mesa = tableRepository.findByNumber(numeroMesa)
+                .orElseThrow(() -> new IllegalArgumentException("No existe la mesa " + numeroMesa));
+        return sessionRepository.findVivas().stream()
+                .filter(s -> mesa.getId().equals(s.getTableId()))
+                .findFirst()
+                .orElseGet(() -> abrir(numeroMesa, usuario));
+    }
+
+    /**
      * Abre la cuenta de una mesa.
      *
      * La unicidad la garantiza el ÍNDICE ÚNICO PARCIAL de V25, no este código:
