@@ -314,10 +314,20 @@ public class WaiterService {
 
         // `preparadoEnComanda` va en false: el pedido del mesero SÍ tiene que
         // entrar a la cola de cocina, que es justamente para lo que lo manda.
+        // El chequeo del rastreador lo decide LA APP, no una constante acá.
+        //
+        // Estaba en `true` fijo porque el cliente mandaba siempre el mismo
+        // rastreador quemado y validarlo mataba la segunda orden del turno con
+        // un 409. Una app que elige un rastreador real puede —y debe— pedir que
+        // se valide: es lo único que impide que la tablet y el POS de PC le
+        // entreguen el mismo rastreador a dos clientes distintos.
+        //
+        // Sin el campo se conserva el comportamiento anterior, así que los APK
+        // ya instalados no se enteran.
         Order created = orderPort.createOrUpdateOrder(new OrderRequestRecord(
                 request.pagerColor(), request.pagerNumber(), request.items(),
                 request.discountCode(), request.paymentMethod(), request.payments(),
-                key, true, cuentaDeMesa, false));
+                key, request.omitirChequeoDeRastreador(), cuentaDeMesa, false));
         created.setIdempotencyKey(key);
         created.setWaiterId(waiterId);
         created.setWaiterSessionId(sessionUuid);

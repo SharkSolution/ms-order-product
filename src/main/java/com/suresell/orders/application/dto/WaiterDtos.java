@@ -43,8 +43,40 @@ public final class WaiterDtos {
              * Multipago: porciones por medio de pago. La suma debe dar el total.
              * Null o vacío = pago simple con {@code paymentMethod}.
              */
-            List<OrderRequestRecord.PaymentSplitRecord> payments
+            List<OrderRequestRecord.PaymentSplitRecord> payments,
+            /**
+             * Si el rastreador enviado debe darse por bueno SIN comprobar que
+             * esté libre.
+             *
+             * <p>Existía como constante {@code true} adentro del servicio: la app
+             * mandaba siempre el mismo rastreador quemado (`Azul #1`) y, si se
+             * validaba, la SEGUNDA orden del turno moría con 409 "ya está en
+             * uso". Se parcheó el backend para tolerar al cliente.
+             *
+             * <p>Ahora la app puede elegir un rastreador REAL, y pedir que se
+             * valide —que es lo que hace que la tablet y el POS de PC no puedan
+             * entregarle el mismo rastreador a dos clientes—.
+             *
+             * <p><b>Ausente = {@code true}</b>, el comportamiento de siempre. Un
+             * APK viejo, que no conoce este campo, sigue funcionando igual: es la
+             * regla 1 del contrato de compatibilidad —los campos nuevos son
+             * opcionales y su ausencia conserva la conducta anterior—.
+             *
+             * <p>En modo Restaurante da lo mismo lo que llegue: una orden con
+             * cuenta de mesa nunca ocupa rastreador.
+             */
+            Boolean skipPagerCheck
     ) {
+
+        /**
+         * Qué hacer cuando el campo no viene: no validar, como siempre.
+         *
+         * <p>Está acá y no en el servicio para que la regla se lea una sola vez
+         * y no se pueda invertir por descuido en un solo lugar.
+         */
+        public boolean omitirChequeoDeRastreador() {
+            return skipPagerCheck == null || skipPagerCheck;
+        }
     }
 
     /** Respuesta compacta de la orden creada (o la ya existente por idempotencia). */

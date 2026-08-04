@@ -177,7 +177,7 @@ class WaiterServiceTest {
         WaiterOrderResponse resp = service.createOrder(new WaiterOrderRequest(
                 "AMARILLO", "5", "CASH",
                 List.of(new OrderItemRequestRecord("p1", 1, new BigDecimal("10000"), null, null)),
-                null, "k-1", null, null, null));
+                null, "k-1", null, null, null, null));
 
         assertEquals(301900L, resp.idOrder());
         verify(orderPort, never()).createOrUpdateOrder(any());
@@ -195,7 +195,7 @@ class WaiterServiceTest {
         WaiterOrderResponse resp = service.createOrder(new WaiterOrderRequest(
                 "AMARILLO", "5", "CASH",
                 List.of(new OrderItemRequestRecord("p1", 1, new BigDecimal("10000"), null, null)),
-                null, "k-2", session.getId().toString(), null, null));
+                null, "k-2", session.getId().toString(), null, null, null));
 
         assertEquals("k-2", creada.getIdempotencyKey());
         assertEquals(3L, creada.getWaiterId());
@@ -216,7 +216,7 @@ class WaiterServiceTest {
         WaiterOrderResponse resp = service.createOrder(new WaiterOrderRequest(
                 "AMARILLO", "5", "CASH",
                 List.of(new OrderItemRequestRecord("p1", 1, new BigDecimal("10000"), null, null)),
-                null, null, fantasma.toString(), null, null));
+                null, null, fantasma.toString(), null, null, null));
 
         assertEquals(301902L, resp.idOrder());
         assertNull(creada.getWaiterId());
@@ -238,7 +238,7 @@ class WaiterServiceTest {
         WaiterOrderResponse resp = service.createOrder(new WaiterOrderRequest(
                 "AMARILLO", "5", "CASH",
                 List.of(new OrderItemRequestRecord("p1", 1, new BigDecimal("10000"), null, null)),
-                null, null, cerrada.getId().toString(), null, null));
+                null, null, cerrada.getId().toString(), null, null, null));
 
         assertEquals(301903L, resp.idOrder());
         assertEquals(3L, creada.getWaiterId());
@@ -254,7 +254,7 @@ class WaiterServiceTest {
         WaiterOrderResponse resp = service.createOrder(new WaiterOrderRequest(
                 "AMARILLO", "5", "CASH",
                 List.of(new OrderItemRequestRecord("p1", 1, new BigDecimal("10000"), null, null)),
-                null, null, "no-es-un-uuid", null, null));
+                null, null, "no-es-un-uuid", null, null, null));
 
         assertEquals(301904L, resp.idOrder());
         assertNull(creada.getWaiterId());
@@ -280,7 +280,7 @@ class WaiterServiceTest {
         service.createOrder(new WaiterOrderRequest(
                 "AMARILLO", "1", "CASH",
                 List.of(new OrderItemRequestRecord("p1", 1, new BigDecimal("10000"), null, null)),
-                null, "k-mesa", null, 23, null));
+                null, "k-mesa", null, 23, null, null));
 
         ArgumentCaptor<OrderRequestRecord> captor = ArgumentCaptor.forClass(OrderRequestRecord.class);
         verify(orderPort).createOrUpdateOrder(captor.capture());
@@ -300,10 +300,10 @@ class WaiterServiceTest {
 
         service.createOrder(new WaiterOrderRequest("AMARILLO", "1", "CASH",
                 List.of(new OrderItemRequestRecord("p1", 1, new BigDecimal("10000"), null, null)),
-                null, "k-1", null, 23, null));
+                null, "k-1", null, 23, null, null));
         service.createOrder(new WaiterOrderRequest("AMARILLO", "1", "CASH",
                 List.of(new OrderItemRequestRecord("p2", 1, new BigDecimal("5000"), null, null)),
-                null, "k-2", null, 23, null));
+                null, "k-2", null, 23, null, null));
 
         ArgumentCaptor<OrderRequestRecord> captor = ArgumentCaptor.forClass(OrderRequestRecord.class);
         verify(orderPort, times(2)).createOrUpdateOrder(captor.capture());
@@ -319,7 +319,7 @@ class WaiterServiceTest {
 
         service.createOrder(new WaiterOrderRequest("AMARILLO", "5", "CASH",
                 List.of(new OrderItemRequestRecord("p1", 1, new BigDecimal("10000"), null, null)),
-                null, "k-plaz", null, 23, null));
+                null, "k-plaz", null, 23, null, null));
 
         ArgumentCaptor<OrderRequestRecord> captor = ArgumentCaptor.forClass(OrderRequestRecord.class);
         verify(orderPort).createOrUpdateOrder(captor.capture());
@@ -335,7 +335,7 @@ class WaiterServiceTest {
 
         service.createOrder(new WaiterOrderRequest("AMARILLO", "5", "CASH",
                 List.of(new OrderItemRequestRecord("p1", 1, new BigDecimal("10000"), null, null)),
-                null, "k-sinmesa", null, null, null));
+                null, "k-sinmesa", null, null, null, null));
 
         ArgumentCaptor<OrderRequestRecord> captor = ArgumentCaptor.forClass(OrderRequestRecord.class);
         verify(orderPort).createOrUpdateOrder(captor.capture());
@@ -353,7 +353,7 @@ class WaiterServiceTest {
 
         service.createOrder(new WaiterOrderRequest("AMARILLO", "5", "MIXED",
                 List.of(new OrderItemRequestRecord("p1", 1, new BigDecimal("10000"), null, null)),
-                null, "k-mixto", null, null, splits));
+                null, "k-mixto", null, null, splits, null));
 
         ArgumentCaptor<OrderRequestRecord> captor = ArgumentCaptor.forClass(OrderRequestRecord.class);
         verify(orderPort).createOrUpdateOrder(captor.capture());
@@ -371,4 +371,64 @@ class WaiterServiceTest {
         });
     }
 
+
+    // ------------------------------------------------------------------
+    // RASTREADOR REAL (PLAN-UX-MESEROS #4).
+    //
+    // El chequeo del rastreador estaba en `true` FIJO dentro del servicio: la
+    // app mandaba siempre el mismo rastreador quemado y validarlo mataba la
+    // segunda orden del turno con un 409. Ahora lo decide el cliente, y la
+    // ausencia del campo conserva la conducta anterior.
+    // ------------------------------------------------------------------
+
+    /** Captura el DTO que el servicio le pasa al núcleo de órdenes. */
+    private OrderRequestRecord dtoEnviadoAlCrear(WaiterOrderRequest peticion) {
+        Order creada = new Order();
+        creada.setIdOrder(1L);
+        creada.setUuidId(UUID.randomUUID());
+        when(orderPort.createOrUpdateOrder(any())).thenReturn(creada);
+
+        service.createOrder(peticion);
+
+        ArgumentCaptor<OrderRequestRecord> captor =
+                ArgumentCaptor.forClass(OrderRequestRecord.class);
+        verify(orderPort).createOrUpdateOrder(captor.capture());
+        return captor.getValue();
+    }
+
+    private WaiterOrderRequest pedido(Boolean skipPagerCheck) {
+        return new WaiterOrderRequest("AMARILLO", "5", "CASH",
+                List.of(new OrderItemRequestRecord("p1", 1, new BigDecimal("10000"), null, null)),
+                null, "k-pager", null, null, null, skipPagerCheck);
+    }
+
+    @Test
+    @org.junit.jupiter.api.DisplayName("un APK VIEJO (sin el campo) sigue sin validar el rastreador")
+    void sinElCampoSeConservaLaConductaAnterior() {
+        assertTrue(dtoEnviadoAlCrear(pedido(null)).skipPagerCheck(),
+                "Quitarle la tolerancia a un APK ya instalado le mataria la segunda "
+                + "orden de cada turno con un 409");
+    }
+
+    @Test
+    @org.junit.jupiter.api.DisplayName("una app que elige un rastreador real PIDE que se valide")
+    void conElCampoEnFalsoSeValidaElRastreador() {
+        assertFalse(dtoEnviadoAlCrear(pedido(false)).skipPagerCheck(),
+                "Es lo unico que impide que la tablet y el POS de PC le entreguen "
+                + "el mismo rastreador a dos clientes");
+    }
+
+    @Test
+    @org.junit.jupiter.api.DisplayName("pedir explicitamente que NO se valide tambien se respeta")
+    void conElCampoEnVerdaderoNoSeValida() {
+        assertTrue(dtoEnviadoAlCrear(pedido(true)).skipPagerCheck());
+    }
+
+    @Test
+    @org.junit.jupiter.api.DisplayName("la regla de la ausencia vive en el DTO, en un solo lugar")
+    void laReglaDeLaAusenciaEsUnaSola() {
+        assertTrue(pedido(null).omitirChequeoDeRastreador());
+        assertTrue(pedido(true).omitirChequeoDeRastreador());
+        assertFalse(pedido(false).omitirChequeoDeRastreador());
+    }
 }
