@@ -64,6 +64,14 @@ public class WaiterController {
         return service.updateWaiter(id, request);
     }
 
+    /**
+     * Marca que el 401/429 es por la CLAVE DEL MESERO y no porque se haya
+     * vencido el JWT del negocio. El cliente necesita distinguirlos: uno se
+     * resuelve escribiendo bien la clave, el otro sacando al usuario del
+     * negocio entero.
+     */
+    static final String CODIGO_PIN = "PIN_MESERO";
+
     /** Clave del mesero al entrar (#20). Cuerpo opcional: `{"pin":"1234"}`. */
     public record LoginRequest(String pin) {
     }
@@ -74,10 +82,16 @@ public class WaiterController {
         try {
             return ResponseEntity.ok(service.login(waiterId, req == null ? null : req.pin()));
         } catch (PinDeMeseroService.DemasiadosIntentosException e) {
-            return ResponseEntity.status(429).body(Map.of("error", e.getMessage()));
+            return ResponseEntity.status(429)
+                    .body(Map.of("error", e.getMessage(), "codigo", CODIGO_PIN));
         } catch (PinDeMeseroService.PinIncorrectoException e) {
             // 401 y no 403: la clave está mal, no es que le falten permisos.
-            return ResponseEntity.status(401).body(Map.of("error", e.getMessage()));
+            //
+            // Con el CÓDIGO, porque el cliente ya trata cualquier 401 como
+            // "se venció la sesión del negocio" y sacaría al mesero de todo.
+            // Son dos 401 con significados muy distintos.
+            return ResponseEntity.status(401)
+                    .body(Map.of("error", e.getMessage(), "codigo", CODIGO_PIN));
         }
     }
 
@@ -98,9 +112,11 @@ public class WaiterController {
                     req == null ? null : req.pinNuevo());
             return ResponseEntity.ok(Map.of("message", "Clave actualizada"));
         } catch (PinDeMeseroService.DemasiadosIntentosException e) {
-            return ResponseEntity.status(429).body(Map.of("error", e.getMessage()));
+            return ResponseEntity.status(429)
+                    .body(Map.of("error", e.getMessage(), "codigo", CODIGO_PIN));
         } catch (PinDeMeseroService.PinIncorrectoException e) {
-            return ResponseEntity.status(401).body(Map.of("error", e.getMessage()));
+            return ResponseEntity.status(401)
+                    .body(Map.of("error", e.getMessage(), "codigo", CODIGO_PIN));
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }
