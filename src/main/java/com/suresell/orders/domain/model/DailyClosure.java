@@ -108,16 +108,11 @@ public class DailyClosure implements Persistable<UUID>, com.suresell.orders.mult
     @Column(name = "sales_of_day", precision = 15, scale = 2)
     private BigDecimal totalSales;
 
-    /**
-     * Ajuste por redondeo asumido por el negocio al dividir cuentas de mesa.
-     *
-     * <p>Es la diferencia entre lo que consumieron las mesas divididas y lo que
-     * de verdad se les cobró. Queda GUARDADO en el cierre —y no solo calculado
-     * al vuelo— porque el cierre es el documento que se audita: tiene que
-     * poder explicarse por sí solo dentro de un año.
-     */
-    @Column(name = "rounding_adjustment", precision = 15, scale = 2)
-    private BigDecimal roundingAdjustment = BigDecimal.ZERO;
+    // El ajuste por redondeo de las cuentas divididas NO se guarda acá: el
+    // cierre lo SUMA AL VUELO desde `table_session_splits`, que es su única
+    // fuente de verdad. Es determinista —una división ya cobrada no cambia—,
+    // así que reabrir un cierre viejo da siempre el mismo número, y no hay un
+    // total copiado que pueda quedar desincronizado del detalle que lo explica.
 
     //Campos para manter guardado offline
 

@@ -15,7 +15,7 @@ import org.junit.jupiter.params.provider.ValueSource;
  * cuenta, o que le cobre de más a un cliente.
  *
  * <p>El test que importa es {@link #invarianteFiscal}: para TODO total y TODO
- * N entre 2 y 20, {@code suma(pagos) + ajuste == total}. Cero excepciones.
+ * N entre 2 y 10, {@code suma(pagos) + ajuste == total}. Cero excepciones.
  */
 class DivisionDeCuentaTest {
 
@@ -30,11 +30,11 @@ class DivisionDeCuentaTest {
     /**
      * INVARIANTE FISCAL, barrido exhaustivo.
      *
-     * <p>Para cada N ∈ [2,20] se recorren 2.000 totales consecutivos: se cubren
+     * <p>Para cada N ∈ [2,10] se recorren 2.000 totales consecutivos: se cubren
      * TODOS los restos posibles de esa división, no una muestra con suerte.
      */
     @ParameterizedTest(name = "dividido entre {0} personas siempre cuadra")
-    @ValueSource(ints = {2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20})
+    @ValueSource(ints = {2, 3, 4, 5, 6, 7, 8, 9, 10})
     @DisplayName("suma(pagos) + ajuste_redondeo_negocio == total, para todo T y todo N")
     void invarianteFiscal(int personas) {
         for (int t = 0; t < 2_000; t++) {
@@ -60,7 +60,7 @@ class DivisionDeCuentaTest {
                 pesos("10000.50"), pesos("0.01"), pesos("999999.99"),
                 pesos("1234567.89"), pesos("7"), pesos("0"));
         for (BigDecimal total : totales) {
-            for (int n = 2; n <= 20; n++) {
+            for (int n = 2; n <= DivisionDeCuenta.MAX_PERSONAS; n++) {
                 DivisionDeCuenta.Reparto r = DivisionDeCuenta.repartir(total, n);
                 assertEquals(0, r.cobrado().add(r.residuo()).compareTo(total),
                         "No cuadra con total=" + total + " y N=" + n);
@@ -86,7 +86,7 @@ class DivisionDeCuentaTest {
     @Test
     @DisplayName("nunca se redondea hacia arriba: base <= total/N, siempre")
     void nuncaCobraDeMas() {
-        for (int n = 2; n <= 20; n++) {
+        for (int n = 2; n <= DivisionDeCuenta.MAX_PERSONAS; n++) {
             for (int t = 1; t < 500; t++) {
                 DivisionDeCuenta.Reparto r = DivisionDeCuenta.repartir(BigDecimal.valueOf(t), n);
                 assertTrue(
@@ -117,9 +117,13 @@ class DivisionDeCuentaTest {
     }
 
     @Test
-    void unaMesaDeMasDeCincuentaEsUnErrorDeDigitacion() {
+    @DisplayName("el tope de negocio son 10 comensales: 11 se rechaza")
+    void masDelTopeEsUnErrorDeDigitacion() {
+        assertEquals(10, DivisionDeCuenta.MAX_PERSONAS,
+                "Si el tope cambia, tiene que ser una decisión consciente y no un descuido");
+        assertDoesNotThrow(() -> DivisionDeCuenta.repartir(pesos("1000"), 10));
         assertThrows(IllegalArgumentException.class,
-                () -> DivisionDeCuenta.repartir(pesos("1000"), 51));
+                () -> DivisionDeCuenta.repartir(pesos("1000"), 11));
     }
 
     @Test
@@ -212,7 +216,7 @@ class DivisionDeCuentaTest {
         List<BigDecimal> ordenes = List.of(pesos("12500"), pesos("8300"), pesos("4200"));
         BigDecimal total = ordenes.stream().reduce(BigDecimal.ZERO, BigDecimal::add); // 25.000
 
-        for (int n = 2; n <= 20; n++) {
+        for (int n = 2; n <= DivisionDeCuenta.MAX_PERSONAS; n++) {
             DivisionDeCuenta.Reparto r = DivisionDeCuenta.repartir(total, n);
             // Se alternan los medios para que la agrupación no sea trivial.
             List<String> metodos = new java.util.ArrayList<>();

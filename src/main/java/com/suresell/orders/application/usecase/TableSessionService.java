@@ -2,7 +2,9 @@ package com.suresell.orders.application.usecase;
 
 import com.suresell.orders.domain.model.RestaurantTable;
 import com.suresell.orders.domain.model.TableSession;
+import com.suresell.orders.domain.model.TableSessionSplit;
 import com.suresell.orders.domain.service.DivisionDeCuenta;
+import com.suresell.orders.infrastructure.persistence.TableSessionSplitRepository;
 import com.suresell.orders.infrastructure.persistence.RestaurantTableRepository;
 import com.suresell.orders.domain.model.Order;
 import com.suresell.orders.domain.model.OrderPayment;
@@ -38,6 +40,8 @@ public class TableSessionService {
     private final OrderRepository orderRepository;
     /** Splits de la división de cuenta: es de donde el cierre lee lo cobrado. */
     private final OrderPaymentRepository orderPaymentRepository;
+    /** Auditoría de las divisiones: única fuente de verdad del ajuste. */
+    private final TableSessionSplitRepository splitRepository;
 
     public List<TableSession> vivas() {
         return sessionRepository.findVivas();
@@ -195,7 +199,8 @@ public class TableSessionService {
      * @param metodosPorPersona un medio de pago por comensal, en orden
      */
     @Transactional
-    public Map<String, Object> cobrarDividido(UUID sesionId, int personas, List<String> metodosPorPersona) {
+    public Map<String, Object> cobrarDividido(UUID sesionId, int personas, List<String> metodosPorPersona,
+                                              String usuario) {
         List<String> metodos = normalizarMetodos(metodosPorPersona);
         if (metodos.size() != personas) {
             throw new IllegalArgumentException(String.format(
@@ -233,8 +238,7 @@ public class TableSessionService {
 
         int cobradas = orderRepository.cobrarOrdenesDeLaMesa(sesionId, "MIXED");
 
-        sesion.setRoundingAdjustment(reparto.residuo());
-        sesion.setSplitPersons(personas);
+        guardarAuditoriaDeLaDivision(sesionId, reparto, metodos, ahora, usuario);
         cerrarSesion(sesion);
 
         Map<String, Object> salida = new java.util.LinkedHashMap<>();
@@ -252,14 +256,69 @@ public class TableSessionService {
     }
 
     /**
-     * Lo que el negocio dejó de cobrar por redondeo en la ventana del turno.
+     * DEJA EL RASTRO DE LA DIVISIÓN.
      *
-     * Lo usa el cierre de caja para mostrarlo como línea propia. Devuelve cero
-     * —nunca nulo— para que un turno sin mesas divididas no rompa el cierre.
+     * <p>Es la única fuente de verdad del ajuste por redondeo: no se guarda una
+     * copia del monto en la mesa ni en el cierre. Un mismo número en dos tablas
+     * es un número que algún día discrepa, y en dinero eso es un incidente.
+     *
+     * <p>Guarda además CON QUÉ PAGÓ CADA COMENSAL, porque la pregunta que hace
+     * un auditor no es "cuánto se absorbió" sino <b>por qué</b>.
+     */
+    private void guardarAuditoriaDeLaDivision(UUID sesionId, DivisionDeCuenta.Reparto reparto,
+                                              List<String> metodos, LocalDateTime cuando, String usuario) {
+        TableSessionSplit auditoria = new TableSessionSplit();
+        auditoria.setTableSessionId(sesionId);
+        auditoria.setPersonas(reparto.personas());
+        auditoria.setTotal(reparto.total());
+        auditoria.setPorPersona(reparto.base());
+        auditoria.setCobrado(reparto.cobrado());
+        auditoria.setAjusteRedondeo(reparto.residuo());
+        auditoria.setDetallePorPersona(detalleEnJson(reparto, metodos));
+        auditoria.setCreatedAt(cuando);
+        auditoria.setCreatedBy(usuario);
+        splitRepository.save(auditoria);
+    }
+
+    /**
+     * {@code [{"persona":1,"metodo":"CASH","monto":3333}, ...]}.
+     *
+     * <p>Se arma a mano en vez de con Jackson porque son tres campos de tipos
+     * conocidos y controlados por el servidor —el método ya viene normalizado a
+     * CASH/CARD/QR y el monto es un entero—, así que no hay nada que escapar ni
+     * una dependencia que justificar.
+     */
+    private String detalleEnJson(DivisionDeCuenta.Reparto reparto, List<String> metodos) {
+        StringBuilder json = new StringBuilder("[");
+        for (int i = 0; i < metodos.size(); i++) {
+            if (i > 0) {
+                json.append(',');
+            }
+            json.append("{\"persona\":").append(i + 1)
+                .append(",\"metodo\":\"").append(metodos.get(i))
+                .append("\",\"monto\":").append(reparto.base().toPlainString())
+                .append('}');
+        }
+        return json.append(']').toString();
+    }
+
+    /**
+     * Lo que el negocio dejó de cobrar por redondeo en la ventana del turno,
+     * SUMADO AL VUELO desde la auditoría de divisiones.
+     *
+     * <p>Lo usa el cierre de caja para mostrarlo como línea propia. Es
+     * determinista —una división ya cobrada no cambia— así que reabrir un cierre
+     * viejo da siempre el mismo número. Devuelve cero, nunca nulo, para que un
+     * turno sin mesas divididas no rompa el cierre.
      */
     public BigDecimal ajustePorRedondeoEntre(LocalDateTime desde, LocalDateTime hasta) {
-        BigDecimal suma = sessionRepository.sumaAjustePorRedondeo(desde, hasta);
+        BigDecimal suma = splitRepository.sumaAjustePorRedondeo(desde, hasta);
         return suma == null ? BigDecimal.ZERO : suma;
+    }
+
+    /** El detalle de las divisiones del turno, para explicar el ajuste del cierre. */
+    public List<TableSessionSplit> divisionesEntre(LocalDateTime desde, LocalDateTime hasta) {
+        return splitRepository.entre(desde, hasta);
     }
 
     /**

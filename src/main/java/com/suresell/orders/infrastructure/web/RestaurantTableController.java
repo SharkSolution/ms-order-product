@@ -161,12 +161,13 @@ public class RestaurantTableController {
 
     @PostMapping("/sessions/{id}/charge")
     @Operation(summary = "Cobrar la mesa completa: suma el consumo, marca las órdenes pagadas y cierra la cuenta")
-    public ResponseEntity<?> cobrar(@PathVariable UUID id, @RequestBody CobrarMesaRequest req) {
+    public ResponseEntity<?> cobrar(@PathVariable UUID id, @RequestBody CobrarMesaRequest req,
+                                    HttpServletRequest http) {
         try {
             Integer personas = req == null ? null : req.personas();
             if (personas != null && personas > 1) {
-                return ResponseEntity.ok(
-                        sessionService.cobrarDividido(id, personas, req.metodosPorPersona()));
+                return ResponseEntity.ok(sessionService.cobrarDividido(
+                        id, personas, req.metodosPorPersona(), usuario(http)));
             }
             return ResponseEntity.ok(sessionService.cobrar(id, req == null ? null : req.paymentMethod()));
         } catch (IllegalStateException e) {

@@ -57,22 +57,10 @@ public class TableSession implements com.suresell.orders.multitenant.TenantOwned
     @Column(name = "claimed_at")
     private LocalDateTime claimedAt;
 
-    /**
-     * AJUSTE POR REDONDEO ASUMIDO POR EL NEGOCIO (división de cuenta).
-     *
-     * <p>Al dividir la cuenta entre N comensales sobran pesos que no se le
-     * cobran a nadie. Ese residuo NO puede desaparecer en silencio: el cierre
-     * de caja promete cuadrar al peso. Queda aquí, por mesa, y el cierre lo
-     * suma y lo muestra como una línea propia.
-     *
-     * <p>Cero en el cobro normal (un solo medio para toda la mesa).
-     */
-    @Column(name = "rounding_adjustment", precision = 15, scale = 2)
-    private java.math.BigDecimal roundingAdjustment = java.math.BigDecimal.ZERO;
-
-    /** Entre cuántas personas se dividió la cuenta. Nulo = no se dividió. */
-    @Column(name = "split_persons")
-    private Integer splitPersons;
+    // El ajuste por redondeo de una cuenta dividida NO vive aquí: vive en
+    // `table_session_splits`, junto con el resto del detalle de la división.
+    // Una copia del monto en esta tabla sería un segundo lugar donde el mismo
+    // número puede quedar desincronizado, y en dinero eso es un incidente.
 
     public boolean estaViva() {
         return !CERRADA.equals(status);

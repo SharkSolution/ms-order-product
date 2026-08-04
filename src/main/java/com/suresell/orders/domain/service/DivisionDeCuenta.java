@@ -31,7 +31,7 @@ import java.util.Map;
  *       {@code ajuste_redondeo_negocio}.
  * </ol>
  *
- * <p>El invariante, verificado por test para todo T y todo N ∈ [2,20]:
+ * <p>El invariante, verificado por test para todo T y todo N ∈ [2,10]:
  * <pre>suma(pagos) + ajuste_redondeo_negocio == total</pre>
  *
  * <p>Clase pura, sin Spring y sin base de datos: es la parte que tiene que ser
@@ -42,8 +42,16 @@ public final class DivisionDeCuenta {
     /** El peso colombiano es la unidad mínima de cobro: no hay centavos en caja. */
     private static final int ESCALA_PESO = 0;
 
-    /** Tope defensivo. Una mesa de más de 50 comensales es un error de digitación. */
-    public static final int MAX_PERSONAS = 50;
+    /**
+     * Tope de comensales por cuenta.
+     *
+     * <p>Fijado en 10 por decisión de negocio (2026-08-04). Una mesa que se
+     * divide entre más de 10 es un error de digitación mucho más veces que un
+     * caso real, y sin tope un {@code personas} enorme generaría miles de filas
+     * de pagos. La aritmética funciona igual para cualquier N: esto es una
+     * regla de negocio, no un límite del algoritmo.
+     */
+    public static final int MAX_PERSONAS = 10;
 
     private DivisionDeCuenta() {
     }
@@ -129,9 +137,13 @@ public final class DivisionDeCuenta {
      * órdenes con mayor parte fraccionaria. La suma de las partes es
      * <b>idéntica</b> al monto de entrada, siempre.
      *
-     * <p>Se reparte proporcional al total de cada orden —y no todo a la
-     * primera— para que el efectivo se siga atribuyendo al mesero que tomó cada
-     * ronda, igual que hacía el cobro de mesa con un solo medio.
+     * <p><b>Cuándo aplica de verdad:</b> {@code OrderHandler} (N3/#8) FUSIONA las
+     * rondas siguientes dentro de la orden que ya está abierta, así que una
+     * cuenta de mesa normalmente tiene UNA sola orden y esto opera sobre una
+     * lista de un elemento. Sigue haciendo falta para el caso en que dos cajas
+     * manden la primera ronda a la vez: las dos ven la lista vacía y crean dos
+     * órdenes abiertas. Es código defensivo para un caso raro — no la pieza
+     * central, como se documentó en un principio.
      *
      * @param monto  monto a repartir (pesos enteros)
      * @param pesos  peso de cada orden, en el mismo orden que la salida

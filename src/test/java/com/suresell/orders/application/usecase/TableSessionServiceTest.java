@@ -25,13 +25,15 @@ class TableSessionServiceTest {
     @Mock private RestaurantTableRepository tableRepository;
     @Mock private com.suresell.orders.infrastructure.persistence.OrderRepository orderRepository;
     @Mock private com.suresell.orders.infrastructure.persistence.OrderPaymentRepository orderPaymentRepository;
+    @Mock private com.suresell.orders.infrastructure.persistence.TableSessionSplitRepository splitRepository;
 
     private TableSessionService service;
 
     @BeforeEach
     void setUp() {
         service = new TableSessionService(
-                sessionRepository, tableRepository, orderRepository, orderPaymentRepository);
+                sessionRepository, tableRepository, orderRepository, orderPaymentRepository,
+                splitRepository);
     }
 
     private RestaurantTable mesa(int numero, boolean activa) {
@@ -176,7 +178,7 @@ class TableSessionServiceTest {
         java.util.UUID id = mesaConConsumoDe10000();
         when(orderRepository.cobrarOrdenesDeLaMesa(id, "MIXED")).thenReturn(2);
 
-        var r = service.cobrarDividido(id, 3, List.of("CASH", "CASH", "CARD"));
+        var r = service.cobrarDividido(id, 3, List.of("CASH", "CASH", "CARD"), "cajero1");
 
         assertEquals(new java.math.BigDecimal("10000"), r.get("total"));
         assertEquals(new java.math.BigDecimal("3333"), r.get("porPersona"));
@@ -194,7 +196,7 @@ class TableSessionServiceTest {
         java.util.UUID id = mesaConConsumoDe10000();
         when(orderRepository.cobrarOrdenesDeLaMesa(id, "MIXED")).thenReturn(2);
 
-        var r = service.cobrarDividido(id, 3, List.of("CASH", "CASH", "CARD"));
+        var r = service.cobrarDividido(id, 3, List.of("CASH", "CASH", "CARD"), "cajero1");
 
         var captor = org.mockito.ArgumentCaptor.forClass(
                 com.suresell.orders.domain.model.OrderPayment.class);
@@ -230,25 +232,52 @@ class TableSessionServiceTest {
         when(sessionRepository.save(any(TableSession.class))).thenAnswer(i -> i.getArgument(0));
         when(orderRepository.cobrarOrdenesDeLaMesa(id, "MIXED")).thenReturn(1);
 
-        service.cobrarDividido(id, 3, List.of("CASH", "CASH", "CASH"));
+        service.cobrarDividido(id, 3, List.of("CASH", "CASH", "CASH"), "cajero1");
 
         assertEquals(new java.math.BigDecimal("7000"), o1.getTotal());
     }
 
-    /** El residuo queda en la mesa que lo generó, para poder auditarlo. */
+    /**
+     * EL RASTRO DE LA DIVISIÓN, que es la única fuente de verdad del ajuste.
+     *
+     * No hay copia del monto en la mesa ni en el cierre: el cierre lo suma al
+     * vuelo de acá. Se verifica también que quede CON QUÉ pagó cada comensal,
+     * que es lo que un auditor necesita para entender el porqué.
+     */
     @Test
-    void elResiduoQuedaRegistradoEnLaCuentaDeLaMesa() {
+    void laDivisionDejaSuRastroDeAuditoriaCompleto() {
         java.util.UUID id = mesaConConsumoDe10000();
         when(orderRepository.cobrarOrdenesDeLaMesa(id, "MIXED")).thenReturn(2);
 
-        service.cobrarDividido(id, 3, List.of("CASH", "CASH", "CARD"));
+        service.cobrarDividido(id, 3, List.of("CASH", "CASH", "CARD"), "cajero1");
 
-        var captor = org.mockito.ArgumentCaptor.forClass(TableSession.class);
-        org.mockito.Mockito.verify(sessionRepository).save(captor.capture());
-        assertEquals(0, new java.math.BigDecimal("1")
-                .compareTo(captor.getValue().getRoundingAdjustment()));
-        assertEquals(3, captor.getValue().getSplitPersons());
-        assertEquals(TableSession.CERRADA, captor.getValue().getStatus());
+        var captor = org.mockito.ArgumentCaptor.forClass(
+                com.suresell.orders.domain.model.TableSessionSplit.class);
+        org.mockito.Mockito.verify(splitRepository).save(captor.capture());
+        var a = captor.getValue();
+
+        assertEquals(id, a.getTableSessionId());
+        assertEquals(3, a.getPersonas());
+        assertEquals(0, new java.math.BigDecimal("10000").compareTo(a.getTotal()));
+        assertEquals(0, new java.math.BigDecimal("3333").compareTo(a.getPorPersona()));
+        assertEquals(0, new java.math.BigDecimal("9999").compareTo(a.getCobrado()));
+        assertEquals(0, new java.math.BigDecimal("1").compareTo(a.getAjusteRedondeo()));
+        assertEquals("cajero1", a.getCreatedBy());
+        assertNotNull(a.getCreatedAt());
+
+        // El invariante, sostenido también por la fila de auditoría.
+        assertEquals(0, a.getCobrado().add(a.getAjusteRedondeo()).compareTo(a.getTotal()));
+
+        assertEquals("[{\"persona\":1,\"metodo\":\"CASH\",\"monto\":3333},"
+                   + "{\"persona\":2,\"metodo\":\"CASH\",\"monto\":3333},"
+                   + "{\"persona\":3,\"metodo\":\"CARD\",\"monto\":3333}]",
+                a.getDetallePorPersona(),
+                "El detalle por persona es lo que responde POR QUÉ, no solo cuánto");
+
+        // Y la mesa queda cerrada, sin llevar copia del monto.
+        var mesa = org.mockito.ArgumentCaptor.forClass(TableSession.class);
+        org.mockito.Mockito.verify(sessionRepository).save(mesa.capture());
+        assertEquals(TableSession.CERRADA, mesa.getValue().getStatus());
     }
 
     /**
@@ -261,7 +290,7 @@ class TableSessionServiceTest {
         java.util.UUID id = mesaConConsumoDe10000();
         when(orderRepository.cobrarOrdenesDeLaMesa(id, "MIXED")).thenReturn(2);
 
-        var r = service.cobrarDividido(id, 3, List.of("CASH", "CASH", "CASH"));
+        var r = service.cobrarDividido(id, 3, List.of("CASH", "CASH", "CASH"), "cajero1");
 
         assertEquals("MIXED", r.get("paymentMethod"));
         org.mockito.Mockito.verify(orderRepository).cobrarOrdenesDeLaMesa(id, "MIXED");
@@ -275,7 +304,7 @@ class TableSessionServiceTest {
         viva.setStatus(TableSession.ABIERTA);
 
         assertThrows(IllegalArgumentException.class,
-                () -> service.cobrarDividido(id, 2, List.of("CASH", "BITCOIN")));
+                () -> service.cobrarDividido(id, 2, List.of("CASH", "BITCOIN"), "cajero1"));
     }
 
     @Test
@@ -283,8 +312,8 @@ class TableSessionServiceTest {
         java.util.UUID id = java.util.UUID.randomUUID();
 
         assertThrows(IllegalArgumentException.class,
-                () -> service.cobrarDividido(id, 3, List.of("CASH", "CARD")));
-        org.mockito.Mockito.verifyNoInteractions(orderPaymentRepository);
+                () -> service.cobrarDividido(id, 3, List.of("CASH", "CARD"), "cajero1"));
+        org.mockito.Mockito.verifyNoInteractions(orderPaymentRepository, splitRepository);
     }
 
     /** La previsualización dice la cifra SIN cobrar: no cierra la cuenta. */
@@ -296,7 +325,7 @@ class TableSessionServiceTest {
 
         assertEquals(new java.math.BigDecimal("3333"), r.get("porPersona"));
         assertEquals(new java.math.BigDecimal("1"), r.get("ajusteRedondeoNegocio"));
-        org.mockito.Mockito.verifyNoInteractions(orderPaymentRepository);
+        org.mockito.Mockito.verifyNoInteractions(orderPaymentRepository, splitRepository);
         org.mockito.Mockito.verify(orderRepository, org.mockito.Mockito.never())
                 .cobrarOrdenesDeLaMesa(any(), any());
     }
@@ -332,7 +361,7 @@ class TableSessionServiceTest {
         when(sessionRepository.save(any(TableSession.class))).thenAnswer(i -> i.getArgument(0));
         when(orderRepository.cobrarOrdenesDeLaMesa(id, "MIXED")).thenReturn(1);
 
-        var r = service.cobrarDividido(id, 3, List.of("CASH", "CASH", "CARD"));
+        var r = service.cobrarDividido(id, 3, List.of("CASH", "CASH", "CARD"), "cajero1");
 
         assertEquals(new java.math.BigDecimal("10000"), r.get("total"),
                 "La orden que el UPDATE no toca no puede sumar al total cobrado");

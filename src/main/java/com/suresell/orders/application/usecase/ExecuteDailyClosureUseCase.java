@@ -152,15 +152,18 @@ public class ExecuteDailyClosureUseCase {
         }
 
         // División de cuenta: lo que el negocio DEJÓ DE COBRAR por redondeo al
-        // repartir mesas entre comensales. No es un faltante de caja ni una
-        // diferencia del cajero, así que NO entra en `totalDifference`: se
-        // reporta aparte, como línea propia. Meterlo en la diferencia haría que
-        // un cierre correcto apareciera con novedades.
+        // repartir mesas entre comensales. Se SUMA AL VUELO desde la auditoría
+        // de divisiones; no hay un total guardado que pueda discrepar del
+        // detalle que lo explica.
+        //
+        // No es un faltante de caja ni una diferencia del cajero, así que NO
+        // entra en `totalDifference`: se reporta aparte, como línea propia.
+        // Meterlo en la diferencia haría que un cierre correcto apareciera con
+        // novedades y acusaría al cajero de algo que decidió el negocio.
         BigDecimal roundingAdjustment = tableSessionService.ajustePorRedondeoEntre(openingTime, closingTime);
 
         DailyClosure savedClosure = saveClosureAudit(request, expected, totalDifference, openingTime, closingTime,
-                userName, calculatedTotalCash, calculatedBase, diffCash, diffCard, diffNequi, diffQr, previousBase, pureSales, countedQr, totalPettyCashExpenses,
-                roundingAdjustment);
+                userName, calculatedTotalCash, calculatedBase, diffCash, diffCard, diffNequi, diffQr, previousBase, pureSales, countedQr, totalPettyCashExpenses);
 
         saveClosureToOutbox(savedClosure);
 
@@ -232,14 +235,10 @@ public class ExecuteDailyClosureUseCase {
                                   BigDecimal previousBase,
                                   BigDecimal pureSales,
                                   BigDecimal countedQr,
-                                  BigDecimal pettyCashExpenses,
-                                  BigDecimal roundingAdjustment
+                                  BigDecimal pettyCashExpenses
                                           ) {
 
         DailyClosure entity = new DailyClosure();
-        // Se guarda EN el cierre, no solo se calcula al vuelo: el cierre es el
-        // documento que se audita y tiene que explicarse solo dentro de un año.
-        entity.setRoundingAdjustment(roundingAdjustment != null ? roundingAdjustment : BigDecimal.ZERO);
         entity.setId(UUID.randomUUID());
         entity.setOpeningTime(openingTime);
         entity.setClosingTime(closingTime);
