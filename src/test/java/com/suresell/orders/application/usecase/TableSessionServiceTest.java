@@ -104,8 +104,10 @@ class TableSessionServiceTest {
         when(sessionRepository.findById(id)).thenReturn(Optional.of(viva));
 
         com.suresell.orders.domain.model.Order o1 = new com.suresell.orders.domain.model.Order();
+        o1.setStatus(com.suresell.orders.domain.model.OrderStatus.abierta);
         o1.setTotal(new java.math.BigDecimal("12000"));
         com.suresell.orders.domain.model.Order o2 = new com.suresell.orders.domain.model.Order();
+        o2.setStatus(com.suresell.orders.domain.model.OrderStatus.abierta);
         o2.setTotal(new java.math.BigDecimal("8500"));
         when(orderRepository.findByTableSessionId(id)).thenReturn(List.of(o1, o2));
         when(orderRepository.cobrarOrdenesDeLaMesa(id, "CASH")).thenReturn(2);
@@ -150,9 +152,11 @@ class TableSessionServiceTest {
 
         com.suresell.orders.domain.model.Order o1 = new com.suresell.orders.domain.model.Order();
         o1.setUuidId(java.util.UUID.randomUUID());
+        o1.setStatus(com.suresell.orders.domain.model.OrderStatus.abierta);
         o1.setTotal(new java.math.BigDecimal("6000"));
         com.suresell.orders.domain.model.Order o2 = new com.suresell.orders.domain.model.Order();
         o2.setUuidId(java.util.UUID.randomUUID());
+        o2.setStatus(com.suresell.orders.domain.model.OrderStatus.abierta);
         o2.setTotal(new java.math.BigDecimal("4000"));
         when(orderRepository.findByTableSessionId(id)).thenReturn(List.of(o1, o2));
         // lenient: la previsualización usa esta misma mesa y NO guarda nada —
@@ -220,6 +224,7 @@ class TableSessionServiceTest {
 
         com.suresell.orders.domain.model.Order o1 = new com.suresell.orders.domain.model.Order();
         o1.setUuidId(java.util.UUID.randomUUID());
+        o1.setStatus(com.suresell.orders.domain.model.OrderStatus.abierta);
         o1.setTotal(new java.math.BigDecimal("7000"));
         when(orderRepository.findByTableSessionId(id)).thenReturn(List.of(o1));
         when(sessionRepository.save(any(TableSession.class))).thenAnswer(i -> i.getArgument(0));
@@ -294,6 +299,50 @@ class TableSessionServiceTest {
         org.mockito.Mockito.verifyNoInteractions(orderPaymentRepository);
         org.mockito.Mockito.verify(orderRepository, org.mockito.Mockito.never())
                 .cobrarOrdenesDeLaMesa(any(), any());
+    }
+
+    /**
+     * SE COBRA EXACTAMENTE EL MISMO CONJUNTO QUE SE SUMA.
+     *
+     * <p>El total se calcula en Java y el cobro se aplica con un UPDATE que
+     * filtra por estado `abierta`. Si los dos conjuntos no fueran el mismo, a
+     * la mesa se le cobraría una cifra y en la caja quedaría registrada otra.
+     * Hoy toda orden de mesa nace `abierta`, así que esto no cambia nada — el
+     * test está para que siga sin cambiar nada cuando eso deje de ser cierto.
+     */
+    @Test
+    void unaOrdenQueYaNoEstaAbiertaNoEntraNiEnElTotalNiEnLosPagos() {
+        java.util.UUID id = java.util.UUID.randomUUID();
+        TableSession viva = new TableSession();
+        viva.setId(id);
+        viva.setStatus(TableSession.ABIERTA);
+        when(sessionRepository.findById(id)).thenReturn(Optional.of(viva));
+
+        com.suresell.orders.domain.model.Order abierta = new com.suresell.orders.domain.model.Order();
+        abierta.setUuidId(java.util.UUID.randomUUID());
+        abierta.setStatus(com.suresell.orders.domain.model.OrderStatus.abierta);
+        abierta.setTotal(new java.math.BigDecimal("10000"));
+        // El UPDATE de cobro NO la tocaría: tampoco puede sumar al total.
+        com.suresell.orders.domain.model.Order yaPagada = new com.suresell.orders.domain.model.Order();
+        yaPagada.setUuidId(java.util.UUID.randomUUID());
+        yaPagada.setStatus(com.suresell.orders.domain.model.OrderStatus.pagado);
+        yaPagada.setTotal(new java.math.BigDecimal("99999"));
+
+        when(orderRepository.findByTableSessionId(id)).thenReturn(List.of(abierta, yaPagada));
+        when(sessionRepository.save(any(TableSession.class))).thenAnswer(i -> i.getArgument(0));
+        when(orderRepository.cobrarOrdenesDeLaMesa(id, "MIXED")).thenReturn(1);
+
+        var r = service.cobrarDividido(id, 3, List.of("CASH", "CASH", "CARD"));
+
+        assertEquals(new java.math.BigDecimal("10000"), r.get("total"),
+                "La orden que el UPDATE no toca no puede sumar al total cobrado");
+
+        var captor = org.mockito.ArgumentCaptor.forClass(
+                com.suresell.orders.domain.model.OrderPayment.class);
+        org.mockito.Mockito.verify(orderPaymentRepository, org.mockito.Mockito.atLeastOnce())
+                .save(captor.capture());
+        captor.getAllValues().forEach(p -> assertEquals(abierta.getUuidId(), p.getOrderUuidId(),
+                "Un pago colgado de una orden que no queda MIXED se perdería en el cierre"));
     }
 
     /** Lo que consulta el cierre de caja para bloquearse. */

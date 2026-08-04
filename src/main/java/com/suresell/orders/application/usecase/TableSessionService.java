@@ -282,9 +282,26 @@ public class TableSessionService {
         return salida;
     }
 
-    /** Órdenes vivas de la cuenta. Sin consumo no hay nada que cobrar. */
+    /**
+     * Órdenes de la cuenta que de verdad se van a cobrar. Sin consumo no hay
+     * nada que cobrar.
+     *
+     * <p>Se filtra por estado {@code abierta} PORQUE ES EL MISMO CONJUNTO que
+     * actualiza {@code cobrarOrdenesDeLaMesa}. Si el total se calculara sobre
+     * un conjunto y el cobro se aplicara sobre otro, la mesa cobraría una cifra
+     * y la caja registraría otra.
+     *
+     * <p>Hoy toda orden ligada a una mesa nace {@code abierta} (lo garantiza
+     * {@code OrderHandler}), así que este filtro no cambia nada. Está para que
+     * siga sin cambiar nada el día que eso deje de ser cierto: con plata de por
+     * medio, depender de un invariante que vive en otra clase es cuestión de
+     * tiempo. Las órdenes borradas ya quedan fuera por el {@code SQLRestriction}
+     * de la entidad.
+     */
     private List<Order> ordenesCobrables(UUID sesionId) {
-        List<Order> ordenes = orderRepository.findByTableSessionId(sesionId);
+        List<Order> ordenes = orderRepository.findByTableSessionId(sesionId).stream()
+                .filter(o -> com.suresell.orders.domain.model.OrderStatus.abierta.equals(o.getStatus()))
+                .toList();
         if (ordenes.isEmpty()) {
             throw new IllegalStateException(
                     "La mesa no tiene consumo registrado; no hay nada que cobrar");
