@@ -254,10 +254,15 @@ public class WaiterService {
                 .filter(p -> p.getCategory() != null)
                 .collect(Collectors.groupingBy(p -> p.getCategory().getIdCategory(),
                         LinkedHashMap::new, Collectors.toList()));
-        return menuCategoryRepository.findAll().stream()
+        // ORDENADAS COMO LAS QUIERE EL NEGOCIO. Antes se usaba `findAll()`, que
+        // no garantiza ningún orden, y la app lo arreglaba reordenando con una
+        // lista de nombres de un cliente ("hamburguesas primero…"). El orden es
+        // del negocio, así que sale de sus datos y llega ya resuelto.
+        return menuCategoryRepository.findAllOrdenadas().stream()
                 .map(c -> new MenuCategoryDto(
                         c.getIdCategory(),
                         c.getNameCategory(),
+                        c.getIcon(),
                         byCategory.getOrDefault(c.getIdCategory(), List.of()).stream()
                                 .map(p -> new MenuProductDto(p.getIdProduct(), p.getNameProduct(),
                                         p.getPrice(), p.getActive()))

@@ -139,7 +139,14 @@ public final class WaiterDtos {
     }
 
     /** Menú anidado con los MISMOS nombres de campo del legacy (id/name/products). */
-    public record MenuCategoryDto(String id, String name, List<MenuProductDto> products) {
+    /**
+     * Categoría del menú.
+     *
+     * <p>Viene YA ORDENADA como la quiere el negocio: el cliente no reordena.
+     * `icon` es el emoji que eligió; nulo = el cliente pone uno neutro.
+     */
+    public record MenuCategoryDto(String id, String name, String icon,
+                                  List<MenuProductDto> products) {
     }
 
     public record MenuProductDto(String id, String name, Integer price, Boolean active) {

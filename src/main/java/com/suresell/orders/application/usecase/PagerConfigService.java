@@ -20,21 +20,24 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class PagerConfigService {
 
-    /** Config por defecto si el tenant todavía no tiene filas (misma de siempre). */
-    private static final List<PagerGroupDto> DEFAULT_GROUPS = List.of(
-            new PagerGroupDto("AMARILLO", "Amarillo", "#eab308", 16),
-            new PagerGroupDto("AZUL", "Azul", "#3b82f6", 16));
-
     private static final int MAX_QUANTITY = 200;
 
     private final TenantPagerGroupRepository repository;
 
-    /** Grupos del tenant; si no hay nada configurado, devuelve el default histórico. */
+    /**
+     * Los rastreadores QUE CONFIGURÓ ESTE NEGOCIO. Vacío si no usa.
+     *
+     * <p>Antes, un negocio sin filas recibía "Amarillo y Azul, 16 de cada uno":
+     * los de un cliente, entregados por defecto a todos. Un local que no usa
+     * rastreadores igual los veía, y uno que usa otros colores tenía que
+     * empezar por corregir los ajenos.
+     *
+     * <p>V31 guardó esa configuración como DATO para los negocios que ya
+     * dependían de ella, así que quitarla del código no le cambia nada a nadie.
+     * Los negocios nuevos arrancan sin rastreadores y eligen si los quieren.
+     */
     public List<PagerGroupDto> getGroups() {
         List<TenantPagerGroup> stored = repository.findAllByOrderBySortOrderAscIdAsc();
-        if (stored.isEmpty()) {
-            return DEFAULT_GROUPS;
-        }
         return stored.stream()
                 .map(g -> new PagerGroupDto(g.getCode(), g.getLabel(), g.getColor(), g.getQuantity()))
                 .toList();
