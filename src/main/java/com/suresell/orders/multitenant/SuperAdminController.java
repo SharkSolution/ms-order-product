@@ -23,10 +23,35 @@ public class SuperAdminController {
 
     private final SuperAdminService svc;
     private final JwtTenantResolver resolver;
+    private final AltaDeNegocioService alta;
 
-    public SuperAdminController(SuperAdminService svc, JwtTenantResolver resolver) {
+    public SuperAdminController(SuperAdminService svc, JwtTenantResolver resolver,
+                                AltaDeNegocioService alta) {
         this.svc = svc;
         this.resolver = resolver;
+        this.alta = alta;
+    }
+
+    /**
+     * Alta de un negocio completa: negocio, usuario administrador, sede con su
+     * modo, mesas y plan. Todo en una transacción.
+     *
+     * <p>Antes eran cinco pasos repartidos en dos sesiones distintas (el token
+     * del KAM y el del administrador del negocio recién creado). Era el paso más
+     * propenso a error de toda la operación.
+     */
+    @PostMapping("/admin/tenants")
+    public ResponseEntity<?> darDeAltaNegocio(@RequestBody AltaDeNegocioService.Solicitud req,
+                                              HttpServletRequest http) {
+        ResponseEntity<?> guard = requireSuper(http);
+        if (guard != null) {
+            return guard;
+        }
+        try {
+            return ResponseEntity.ok(alta.darDeAlta(req));
+        } catch (AltaDeNegocioService.AltaInvalidaException e) {
+            return ResponseEntity.status(e.codigo()).body(Map.of("error", e.getMessage()));
+        }
     }
 
     @PostMapping("/admin/login")

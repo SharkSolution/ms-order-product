@@ -383,11 +383,15 @@ public class AuthService {
                 .compact();
     }
 
-    /** Deriva un slug único desde el nombre del negocio (colisión → sufijo -2, -3…). */
+    /**
+     * Deriva un slug único desde el nombre del negocio (colisión → sufijo -2, -3…).
+     *
+     * <p>Comparte la limpieza con {@link AltaDeNegocioService#slugDe} para que el
+     * alta desde el KAM y el registro directo produzcan el MISMO identificador.
+     * Antes acá se perdían los acentos: "Pizzería" quedaba como {@code pizzer-a}.
+     */
     private String uniqueSlug(String businessName) {
-        String base = businessName.trim().toLowerCase(Locale.ROOT)
-                .replaceAll("[^a-z0-9]+", "-")
-                .replaceAll("(^-+)|(-+$)", "");
+        String base = AltaDeNegocioService.slugDe(businessName.trim());
         if (base.isBlank()) {
             base = "negocio";
         }
