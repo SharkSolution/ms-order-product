@@ -1,5 +1,6 @@
 package com.suresell.orders.application.usecase;
 
+import com.suresell.orders.shared.ZonaHoraria;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.suresell.orders.application.dto.request.ExecuteClosureRequest;
@@ -204,7 +205,7 @@ public class ExecuteDailyClosureUseCase {
 
     private LocalDateTime getOpeningTime(String sellerId) {
         return closureRepository.findLastClosingTimeByUser(sellerId)
-                .orElse(LocalDateTime.now().toLocalDate().atStartOfDay());
+                .orElse(ZonaHoraria.hoy().atStartOfDay());
     }
 
     private DailyClosure saveClosureAudit(ExecuteClosureRequest request,

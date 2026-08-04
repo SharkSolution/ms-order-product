@@ -1,5 +1,6 @@
 package com.suresell.orders.infrastructure.web;
 
+import com.suresell.orders.shared.ZonaHoraria;
 import com.suresell.orders.application.dto.request.RegisterPaymentRecordRequest;
 import com.suresell.orders.application.dto.responses.PaymentRecordResponse;
 import com.suresell.orders.application.usecase.DailyPaymentRecordService;
@@ -40,7 +41,7 @@ public class DailyPaymentRecordController {
     @Operation(summary = "Obtener el monto QR registrado para hoy",
             description = "El POS consulta este endpoint para pre-llenar el valor QR en el cierre")
     public ResponseEntity<Map<String, Object>> getQrForToday() {
-        LocalDate today = LocalDate.now();
+        LocalDate today = ZonaHoraria.hoy();
         return service.getQrAmountForDate(today)
                 .map(amount -> ResponseEntity.ok(buildQrResponse(today, amount, true)))
                 .orElseGet(() -> ResponseEntity.ok(buildQrResponse(today, BigDecimal.ZERO, false)));

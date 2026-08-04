@@ -1,5 +1,6 @@
 package com.suresell.orders.application.usecase;
 
+import com.suresell.orders.shared.ZonaHoraria;
 import com.suresell.orders.application.dto.KitchenOrderDto;
 import com.suresell.orders.application.dto.KitchenOrderDto.DeliverRequest;
 import com.suresell.orders.application.dto.KitchenOrderDto.KitchenOrderItemDto;
@@ -94,7 +95,7 @@ public class KitchenQueryService {
             orderItemRepository.marcarPreparados(order.getIdOrder(), LocalDateTime.now(BOGOTA_ZONE));
         }
         if (order != null && order.getDeliveredAt() == null) {
-            order.setDeliveredAt(LocalDateTime.now());
+            order.setDeliveredAt(ZonaHoraria.ahora());
         }
         trackingRepository.save(tracking);
     }
