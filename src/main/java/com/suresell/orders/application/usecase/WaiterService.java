@@ -54,6 +54,8 @@ public class WaiterService {
     private final WaiterSessionRepository sessionRepository;
     private final SiteService siteService;
     private final TableSessionService tableSessionService;
+    /** Clave del mesero (#20). Sin PIN configurado no cambia nada. */
+    private final PinDeMeseroService pinService;
     private final OrderRepository orderRepository;
     private final MenuCategoryRepository menuCategoryRepository;
     private final MenuProductRepository menuProductRepository;
@@ -66,9 +68,11 @@ public class WaiterService {
                          MenuProductRepository menuProductRepository,
                          OrderPort orderPort,
                          SiteService siteService,
-                         TableSessionService tableSessionService) {
+                         TableSessionService tableSessionService,
+                         PinDeMeseroService pinService) {
         this.waiterRepository = waiterRepository;
         this.sessionRepository = sessionRepository;
+        this.pinService = pinService;
         this.orderRepository = orderRepository;
         this.menuCategoryRepository = menuCategoryRepository;
         this.menuProductRepository = menuProductRepository;
@@ -152,8 +156,20 @@ public class WaiterService {
      */
     @Transactional
     public WaiterSession login(Long waiterId) {
+        return login(waiterId, null);
+    }
+
+    /**
+     * Entra como ese mesero, comprobando su clave si la configuró.
+     *
+     * <p>Sin PIN configurado se entra directo, como siempre: la feature se
+     * despliega sin dejar a nadie afuera y cada mesero decide cuándo ponerse el
+     * suyo.
+     */
+    public WaiterSession login(Long waiterId, String pin) {
         Waiter waiter = waiterRepository.findById(waiterId)
                 .orElseThrow(() -> new IllegalArgumentException("Mesero no encontrado: " + waiterId));
+        pinService.verificar(waiter, pin);
 
         var existing = sessionRepository
                 .findFirstByWaiterIdAndStatusOrderByLoginTimeDesc(waiterId, WaiterSession.STATUS_ACTIVE);

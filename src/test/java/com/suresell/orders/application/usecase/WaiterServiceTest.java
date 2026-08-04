@@ -54,9 +54,11 @@ class WaiterServiceTest {
         orderPort = mock(OrderPort.class);
         siteService = mock(SiteService.class);
         tableSessionService = mock(TableSessionService.class);
+        // PIN real, no un mock: sin clave configurada tiene que dejar entrar
+        // igual que siempre, y eso es justo lo que estos tests dan por hecho.
         service = new WaiterService(waiterRepository, sessionRepository, orderRepository,
                 mock(MenuCategoryRepository.class), mock(MenuProductRepository.class), orderPort,
-                siteService, tableSessionService);
+                siteService, tableSessionService, new PinDeMeseroService(waiterRepository));
         when(sessionRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
         when(waiterRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
     }

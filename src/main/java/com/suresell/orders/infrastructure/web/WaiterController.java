@@ -7,6 +7,7 @@ import com.suresell.orders.application.dto.WaiterDtos.OpenShiftRequest;
 import com.suresell.orders.application.dto.WaiterDtos.ShiftSummaryResponse;
 import com.suresell.orders.application.dto.WaiterDtos.WaiterOrderRequest;
 import com.suresell.orders.application.dto.WaiterDtos.WaiterOrderResponse;
+import com.suresell.orders.application.usecase.PinDeMeseroService;
 import com.suresell.orders.application.usecase.WaiterService;
 import com.suresell.orders.domain.model.Waiter;
 import com.suresell.orders.domain.model.WaiterSession;
@@ -35,9 +36,14 @@ import java.util.UUID;
 public class WaiterController {
 
     private final WaiterService service;
+    private final PinDeMeseroService pinService;
+    private final com.suresell.orders.multitenant.JwtTenantResolver resolver;
 
-    public WaiterController(WaiterService service) {
+    public WaiterController(WaiterService service, PinDeMeseroService pinService,
+                            com.suresell.orders.multitenant.JwtTenantResolver resolver) {
         this.service = service;
+        this.pinService = pinService;
+        this.resolver = resolver;
     }
 
     // ---------------------------- /mobile -----------------------------
@@ -58,9 +64,64 @@ public class WaiterController {
         return service.updateWaiter(id, request);
     }
 
+    /** Clave del mesero al entrar (#20). Cuerpo opcional: `{"pin":"1234"}`. */
+    public record LoginRequest(String pin) {
+    }
+
     @PostMapping("/mobile/login/{waiterId}")
-    public WaiterSession login(@PathVariable Long waiterId) {
-        return service.login(waiterId);
+    public ResponseEntity<?> login(@PathVariable Long waiterId,
+                                   @RequestBody(required = false) LoginRequest req) {
+        try {
+            return ResponseEntity.ok(service.login(waiterId, req == null ? null : req.pin()));
+        } catch (PinDeMeseroService.DemasiadosIntentosException e) {
+            return ResponseEntity.status(429).body(Map.of("error", e.getMessage()));
+        } catch (PinDeMeseroService.PinIncorrectoException e) {
+            // 401 y no 403: la clave está mal, no es que le falten permisos.
+            return ResponseEntity.status(401).body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    public record CambiarPinRequest(String pinActual, String pinNuevo) {
+    }
+
+    /**
+     * El mesero configura o cambia SU clave (#20).
+     *
+     * <p>Lo hace él, no el administrador: una clave que otro conoce no protege
+     * al mesero de que le cierren el turno, que es justo el problema.
+     */
+    @PostMapping("/mobile/waiters/{waiterId}/pin")
+    public ResponseEntity<?> configurarPin(@PathVariable Long waiterId,
+                                           @RequestBody CambiarPinRequest req) {
+        try {
+            pinService.configurar(waiterId, req == null ? null : req.pinActual(),
+                    req == null ? null : req.pinNuevo());
+            return ResponseEntity.ok(Map.of("message", "Clave actualizada"));
+        } catch (PinDeMeseroService.DemasiadosIntentosException e) {
+            return ResponseEntity.status(429).body(Map.of("error", e.getMessage()));
+        } catch (PinDeMeseroService.PinIncorrectoException e) {
+            return ResponseEntity.status(401).body(Map.of("error", e.getMessage()));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    /** Quita la clave de un mesero que la olvidó. Solo administrador. */
+    @org.springframework.web.bind.annotation.DeleteMapping("/mobile/waiters/{waiterId}/pin")
+    public ResponseEntity<?> quitarPin(@PathVariable Long waiterId,
+                                       jakarta.servlet.http.HttpServletRequest http) {
+        boolean esAdmin = resolver.resolveRole(http.getHeader("Authorization"))
+                .map("admin"::equalsIgnoreCase).orElse(false);
+        if (!esAdmin) {
+            return ResponseEntity.status(403)
+                    .body(Map.of("error", "Solo un administrador puede quitar la clave de un mesero"));
+        }
+        try {
+            pinService.quitar(waiterId);
+            return ResponseEntity.ok(Map.of("message", "Clave eliminada"));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
     }
 
     @PostMapping("/mobile/logout/{sessionId}")
