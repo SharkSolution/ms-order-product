@@ -34,7 +34,15 @@ public record OrderRequestRecord(
             + "estado `abierta` (consumo sin cobrar) y no ocupa rastreador. El cobro se hace "
             + "después sobre la SESIÓN completa, no sobre cada orden.",
             example = "3f2b8c4e-2f1a-4e2a-9d3b-6d5f1c9a7e10")
-    String tableSessionId
+    String tableSessionId,
+    @Schema(description = "La comanda se IMPRIMIÓ en papel y la cocina ya preparó el pedido con "
+            + "ese papel. La orden se registra para que quede la venta, pero NO entra a la cola "
+            + "de cocina —ya se preparó— ni deja ocupado el rastreador o la mesa. Es lo que pasa "
+            + "cuando el POS trabaja sin internet: se imprime la comanda y se cocina con ella; al "
+            + "volver la conexión, mandarla otra vez a cocina duplicaría el plato y dejaría el "
+            + "rastreador bloqueado sin que nadie pueda liberarlo.",
+            example = "false")
+    Boolean preparadoEnComanda
 ) {
     /** Split de multipago: método + monto. */
     public record PaymentSplitRecord(String method, java.math.BigDecimal amount) {

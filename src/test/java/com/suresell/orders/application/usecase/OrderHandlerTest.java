@@ -34,6 +34,10 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.mockito.ArgumentCaptor;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.mockito.ArgumentMatchers.anyString;
+
 @ExtendWith(MockitoExtension.class)
 class OrderHandlerTest {
     @Mock
@@ -123,7 +127,7 @@ class OrderHandlerTest {
                         new OrderItemRequestRecord("101", 1, BigDecimal.valueOf(5000), null, null),
                         new OrderItemRequestRecord("102", 2, BigDecimal.valueOf(2000), null, null)),
                 null,
-                "CASH", null, null, null, null);
+                "CASH", null, null, null, null, null);
         when(orderRepositoryPort.findOccupiedPagerOrder(
                 "AZUL", "10", OrderStatus.pagado)).thenReturn(Optional.empty());
         when(orderRepositoryPort.save(any(Order.class))).thenAnswer(invocation -> {
@@ -162,7 +166,7 @@ class OrderHandlerTest {
         OrderRequestRecord request = new OrderRequestRecord(
                 "AZUL", "10",
                 List.of(new OrderItemRequestRecord("101", 1, BigDecimal.valueOf(5000), null, null)),
-                null, "CASH", null, "clave-repetida", null, null);
+                null, "CASH", null, "clave-repetida", null, null, null);
 
         Order resultado = orderHandler.createOrUpdateOrder(request);
 
@@ -187,7 +191,7 @@ class OrderHandlerTest {
         OrderRequestRecord request = new OrderRequestRecord(
                 "Azul", "1",
                 List.of(new OrderItemRequestRecord("101", 1, BigDecimal.valueOf(5000), null, null)),
-                null, "CASH", null, null, true, null);
+                null, "CASH", null, null, true, null, null);
         when(orderRepositoryPort.save(any(Order.class))).thenAnswer(invocation -> {
             Order toSave = invocation.getArgument(0);
             toSave.setIdOrder(507L);
@@ -218,7 +222,7 @@ class OrderHandlerTest {
         OrderRequestRecord request = new OrderRequestRecord(
                 "AZUL", "16",
                 List.of(new OrderItemRequestRecord("101", 1, BigDecimal.valueOf(5000), null, null)),
-                null, enviado, null, null, null, null);
+                null, enviado, null, null, null, null, null);
         when(orderRepositoryPort.findOccupiedPagerOrder("AZUL", "16", OrderStatus.pagado))
                 .thenReturn(Optional.empty());
         when(orderRepositoryPort.save(any(Order.class))).thenAnswer(invocation -> {
@@ -249,7 +253,7 @@ class OrderHandlerTest {
                 null, "MIXED",
                 List.of(new OrderRequestRecord.PaymentSplitRecord("CASH", BigDecimal.valueOf(4000)),
                         new OrderRequestRecord.PaymentSplitRecord("NEQUI", BigDecimal.valueOf(6000))),
-                null, null, null);
+                null, null, null, null);
         when(orderRepositoryPort.findOccupiedPagerOrder("AZUL", "14", OrderStatus.pagado))
                 .thenReturn(Optional.empty());
         when(orderRepositoryPort.save(any(Order.class))).thenAnswer(invocation -> {
@@ -280,7 +284,7 @@ class OrderHandlerTest {
                 null, "MIXED",
                 List.of(new OrderRequestRecord.PaymentSplitRecord("CASH", BigDecimal.valueOf(4000)),
                         new OrderRequestRecord.PaymentSplitRecord("CARD", BigDecimal.valueOf(5000))),
-                null, null, null);
+                null, null, null, null);
         when(orderRepositoryPort.findOccupiedPagerOrder("AZUL", "15", OrderStatus.pagado))
                 .thenReturn(Optional.empty());
         when(orderRepositoryPort.save(any(Order.class))).thenAnswer(invocation -> {
@@ -305,7 +309,7 @@ class OrderHandlerTest {
         OrderRequestRecord request = new OrderRequestRecord(
                 "AZUL", "12",
                 List.of(new OrderItemRequestRecord("101", 1, BigDecimal.valueOf(5000), null, null)),
-                null, "NEQUI", null, null, null, null);
+                null, "NEQUI", null, null, null, null, null);
         when(orderRepositoryPort.findOccupiedPagerOrder("AZUL", "12", OrderStatus.pagado))
                 .thenReturn(Optional.empty());
         when(orderRepositoryPort.save(any(Order.class))).thenAnswer(invocation -> {
@@ -334,7 +338,7 @@ class OrderHandlerTest {
         OrderRequestRecord request = new OrderRequestRecord(
                 "AZUL", "11",
                 List.of(new OrderItemRequestRecord("101", 1, BigDecimal.valueOf(5000), null, null)),
-                null, "CASH", null, "clave-nueva", null, null);
+                null, "CASH", null, "clave-nueva", null, null, null);
         when(orderRepositoryPort.findByIdempotencyKey("clave-nueva")).thenReturn(Optional.empty());
         when(orderRepositoryPort.findOccupiedPagerOrder("AZUL", "11", OrderStatus.pagado))
                 .thenReturn(Optional.empty());
@@ -381,7 +385,7 @@ class OrderHandlerTest {
         OrderRequestRecord request = new OrderRequestRecord(
                 "AMARILLO", "1",
                 List.of(new OrderItemRequestRecord("101", 1, BigDecimal.valueOf(5000), null, null)),
-                null, "CASH", null, null, null, cuenta.toString());
+                null, "CASH", null, null, null, cuenta.toString(), null);
 
         orderHandler.createOrUpdateOrder(request);
 
@@ -392,4 +396,86 @@ class OrderHandlerTest {
         verify(orderRepositoryPort, never()).save(any(Order.class));
         verify(orderRepositoryPort).actualizarTotales(555L, BigDecimal.valueOf(10000), BigDecimal.valueOf(10000));
     }
+
+    // --- Comanda impresa: la orden se registra pero NO va a cocina ------------
+
+    /**
+     * Cuando el POS trabaja sin internet, el cajero imprime la comanda en papel y
+     * la cocina prepara el pedido con ese papel. Al volver la conexión la orden se
+     * sincroniza — la venta tiene que quedar registrada — pero mandarla a cocina
+     * duplicaría el plato, y dejaría el rastreador ocupado sin que nadie pueda
+     * liberarlo, porque la cocina nunca vio esa orden en pantalla.
+     */
+    @Test
+    void ordenPreparadaEnComandaNaceEntregadaYFueraDeLaColaDeCocina() {
+        OrderRequestRecord request = new OrderRequestRecord(
+                "AMARILLO", "7",
+                List.of(new OrderItemRequestRecord("101", 1, BigDecimal.valueOf(5000), null, null)),
+                null, "CASH", null, null, null, null, true);
+        prepararGuardado();
+
+        Order creada = orderHandler.createOrUpdateOrder(request);
+
+        // `isPrinted` la saca de la cola de cocina
+        // (findActiveKitchenOrders filtra por isPrinted = false).
+        assertEquals(Boolean.TRUE, creada.getIsPrinted());
+
+        // `delivered` libera el rastreador: un pager esta libre cuando
+        // delivered = true O pager_returned = true.
+        ArgumentCaptor<OrderDeliveryTracking> captor =
+                ArgumentCaptor.forClass(OrderDeliveryTracking.class);
+        verify(orderDeliveryTrackingRepositoryPort).save(captor.capture());
+        assertEquals(Boolean.TRUE, captor.getValue().getDelivered());
+    }
+
+    /** Una venta normal SI tiene que entrar a la cola de cocina. */
+    @Test
+    void ordenNormalEntraALaColaDeCocinaYOcupaElRastreador() {
+        OrderRequestRecord request = new OrderRequestRecord(
+                "AMARILLO", "8",
+                List.of(new OrderItemRequestRecord("101", 1, BigDecimal.valueOf(5000), null, null)),
+                null, "CASH", null, null, null, null, false);
+        prepararGuardado();
+
+        Order creada = orderHandler.createOrUpdateOrder(request);
+
+        assertNotEquals(Boolean.TRUE, creada.getIsPrinted());
+
+        ArgumentCaptor<OrderDeliveryTracking> captor =
+                ArgumentCaptor.forClass(OrderDeliveryTracking.class);
+        verify(orderDeliveryTrackingRepositoryPort).save(captor.capture());
+        assertEquals(Boolean.FALSE, captor.getValue().getDelivered());
+    }
+
+    /** Sin el campo (cliente viejo) se comporta como una venta normal. */
+    @Test
+    void sinElCampoSeComportaComoVentaNormal() {
+        OrderRequestRecord request = new OrderRequestRecord(
+                "AMARILLO", "9",
+                List.of(new OrderItemRequestRecord("101", 1, BigDecimal.valueOf(5000), null, null)),
+                null, "CASH", null, null, null, null, null);
+        prepararGuardado();
+
+        orderHandler.createOrUpdateOrder(request);
+
+        ArgumentCaptor<OrderDeliveryTracking> captor =
+                ArgumentCaptor.forClass(OrderDeliveryTracking.class);
+        verify(orderDeliveryTrackingRepositoryPort).save(captor.capture());
+        assertEquals(Boolean.FALSE, captor.getValue().getDelivered());
+    }
+
+    private void prepararGuardado() {
+        when(orderRepositoryPort.findOccupiedPagerOrder(anyString(), anyString(), any()))
+                .thenReturn(Optional.empty());
+        when(orderRepositoryPort.save(any(Order.class))).thenAnswer(inv -> {
+            Order o = inv.getArgument(0);
+            o.setIdOrder(777L);
+            return o;
+        });
+        when(orderRepositoryPort.findNumericIdByUuid(any(java.util.UUID.class)))
+                .thenReturn(Optional.of(777L));
+        when(syncOutboxRepositoryPort.save(any(SyncOutbox.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+    }
+
 }

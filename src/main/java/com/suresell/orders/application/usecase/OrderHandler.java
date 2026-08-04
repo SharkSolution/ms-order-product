@@ -213,13 +213,28 @@ public class OrderHandler implements OrderPort {
         savedOrder.setItems(items);
 
         // 4. Crear e Insertar el tracking con el ID ya conocido
+        //
+        // Si la comanda se imprimió en papel y la cocina ya preparó el pedido con
+        // ese papel, la orden nace ENTREGADA: se registra la venta, pero no entra
+        // a la cola de cocina ni deja el rastreador ocupado. Es el caso de una
+        // venta hecha sin internet: al sincronizar, volver a mandarla a cocina
+        // duplicaría el plato y dejaría un rastreador bloqueado que nadie puede
+        // liberar, porque la cocina nunca vio esa orden en pantalla.
+        boolean yaPreparado = Boolean.TRUE.equals(dto.preparadoEnComanda());
+
         OrderDeliveryTracking tracking = new OrderDeliveryTracking();
         tracking.setOrder(savedOrder);
         tracking.setOrderId(numericId);
         tracking.setOrderIdUuid(savedOrder.getUuidId());
-        tracking.setDelivered(false);
+        tracking.setDelivered(yaPreparado);
         tracking.setPreparationDurationSeconds(null);
-        
+
+        // `isPrinted` es lo que saca la orden de la cola de cocina
+        // (OrderDeliveryTrackingRepository.findActiveKitchenOrders filtra por él).
+        if (yaPreparado) {
+            savedOrder.setIsPrinted(true);
+        }
+
         orderDeliveryTrackingRepositoryPort.save(tracking);
         savedOrder.setDeliveryTracking(tracking);
 

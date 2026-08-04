@@ -282,9 +282,12 @@ public class WaiterService {
         // dos envíos simultáneos del móvil podían pasar ambos la verificación
         // previa y el segundo insert chocaba contra el índice único.
         String key = hasText(request.idempotencyKey()) ? request.idempotencyKey().trim() : null;
+        // El último parámetro (`preparadoEnComanda`) va en false: el pedido del
+        // mesero SÍ tiene que entrar a la cola de cocina, que es justamente para
+        // lo que lo manda.
         Order created = orderPort.createOrUpdateOrder(new OrderRequestRecord(
                 request.pagerColor(), request.pagerNumber(), request.items(),
-                request.discountCode(), request.paymentMethod(), null, key, true, null));
+                request.discountCode(), request.paymentMethod(), null, key, true, null, false));
         created.setIdempotencyKey(key);
         created.setWaiterId(waiterId);
         created.setWaiterSessionId(sessionUuid);
