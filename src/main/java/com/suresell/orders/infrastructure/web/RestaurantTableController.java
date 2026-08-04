@@ -142,14 +142,51 @@ public class RestaurantTableController {
         }
     }
 
-    public record CobrarMesaRequest(String paymentMethod) {
+    /**
+     * Cobro de mesa.
+     *
+     * <p>{@code personas} y {@code metodosPorPersona} son OPCIONALES y llegaron
+     * con la división de cuenta. Sin ellos el cobro se comporta exactamente
+     * como antes —un solo medio para toda la mesa—, así que un POS viejo sigue
+     * cobrando sin enterarse del cambio.
+     *
+     * <p>Nótese que NO se reciben montos: el cliente dice entre cuántos se
+     * divide y con qué paga cada uno; las cifras las calcula el servidor. Si el
+     * cliente pudiera mandar montos, podría registrar un reparto que no cuadra.
+     */
+    public record CobrarMesaRequest(String paymentMethod,
+                                    Integer personas,
+                                    List<String> metodosPorPersona) {
     }
 
     @PostMapping("/sessions/{id}/charge")
     @Operation(summary = "Cobrar la mesa completa: suma el consumo, marca las órdenes pagadas y cierra la cuenta")
     public ResponseEntity<?> cobrar(@PathVariable UUID id, @RequestBody CobrarMesaRequest req) {
         try {
+            Integer personas = req == null ? null : req.personas();
+            if (personas != null && personas > 1) {
+                return ResponseEntity.ok(
+                        sessionService.cobrarDividido(id, personas, req.metodosPorPersona()));
+            }
             return ResponseEntity.ok(sessionService.cobrar(id, req == null ? null : req.paymentMethod()));
+        } catch (IllegalStateException e) {
+            return ResponseEntity.status(409).body(Map.of("error", e.getMessage()));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    /**
+     * Previsualiza la división ANTES de cobrar: cuánto paga cada comensal y
+     * cuánto asume el negocio. El cajero tiene que poder decirle la cifra a la
+     * mesa sin haber cobrado todavía.
+     */
+    @GetMapping("/sessions/{id}/split-preview")
+    @Operation(summary = "Cuánto paga cada persona al dividir la cuenta (no cobra nada)")
+    public ResponseEntity<?> previsualizarDivision(@PathVariable UUID id,
+                                                   @RequestParam int personas) {
+        try {
+            return ResponseEntity.ok(sessionService.previsualizarDivision(id, personas));
         } catch (IllegalStateException e) {
             return ResponseEntity.status(409).body(Map.of("error", e.getMessage()));
         } catch (IllegalArgumentException e) {

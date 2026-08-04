@@ -20,6 +20,26 @@ public interface TableSessionRepository extends JpaRepository<TableSession, UUID
     long countByStatusNot(String status);
 
     /**
+     * Ajuste por redondeo asumido por el negocio en la ventana del cierre.
+     *
+     * <p>Se filtra por {@code closedAt} —cuándo se COBRÓ la mesa— y no por
+     * cuándo se abrió: el ajuste nace en el cobro. Además el cierre se BLOQUEA
+     * si queda alguna mesa sin cobrar, así que ninguna cuenta puede quedar a
+     * caballo entre dos turnos.
+     *
+     * <p>{@code COALESCE} porque sin mesas divididas la suma sería nula y el
+     * cierre no puede fallar por eso.
+     */
+    @Query("""
+            SELECT COALESCE(SUM(s.roundingAdjustment), 0)
+            FROM TableSession s
+            WHERE s.closedAt BETWEEN :desde AND :hasta
+            """)
+    java.math.BigDecimal sumaAjustePorRedondeo(
+            @org.springframework.data.repository.query.Param("desde") java.time.LocalDateTime desde,
+            @org.springframework.data.repository.query.Param("hasta") java.time.LocalDateTime hasta);
+
+    /**
      * N3/#1 — Resuelve la MESA de un lote de cuentas, en una sola consulta.
      * Lo usa cocina para titular la comanda; se hace por lote para no meter un
      * N+1 en la cola, que se refresca cada pocos segundos.

@@ -24,12 +24,14 @@ class TableSessionServiceTest {
     @Mock private TableSessionRepository sessionRepository;
     @Mock private RestaurantTableRepository tableRepository;
     @Mock private com.suresell.orders.infrastructure.persistence.OrderRepository orderRepository;
+    @Mock private com.suresell.orders.infrastructure.persistence.OrderPaymentRepository orderPaymentRepository;
 
     private TableSessionService service;
 
     @BeforeEach
     void setUp() {
-        service = new TableSessionService(sessionRepository, tableRepository, orderRepository);
+        service = new TableSessionService(
+                sessionRepository, tableRepository, orderRepository, orderPaymentRepository);
     }
 
     private RestaurantTable mesa(int numero, boolean activa) {
@@ -127,6 +129,171 @@ class TableSessionServiceTest {
         when(orderRepository.findByTableSessionId(id)).thenReturn(List.of());
 
         assertThrows(IllegalStateException.class, () -> service.cobrar(id, "CASH"));
+    }
+
+    // ------------------------------------------------------------------
+    // DIVISIÓN DE CUENTA entre N comensales.
+    //
+    // La aritmética se prueba a fondo en DivisionDeCuentaTest. Aquí se prueba
+    // lo que ESTE servicio agrega: que lo cobrado se persista, que el residuo
+    // quede registrado y que el total de la mesa no se toque.
+    // ------------------------------------------------------------------
+
+    /** Arma una mesa con dos rondas que suman $10.000. */
+    private java.util.UUID mesaConConsumoDe10000() {
+        java.util.UUID id = java.util.UUID.randomUUID();
+        TableSession viva = new TableSession();
+        viva.setId(id);
+        viva.setTableId(7L);
+        viva.setStatus(TableSession.ABIERTA);
+        when(sessionRepository.findById(id)).thenReturn(Optional.of(viva));
+
+        com.suresell.orders.domain.model.Order o1 = new com.suresell.orders.domain.model.Order();
+        o1.setUuidId(java.util.UUID.randomUUID());
+        o1.setTotal(new java.math.BigDecimal("6000"));
+        com.suresell.orders.domain.model.Order o2 = new com.suresell.orders.domain.model.Order();
+        o2.setUuidId(java.util.UUID.randomUUID());
+        o2.setTotal(new java.math.BigDecimal("4000"));
+        when(orderRepository.findByTableSessionId(id)).thenReturn(List.of(o1, o2));
+        // lenient: la previsualización usa esta misma mesa y NO guarda nada —
+        // que no guarde es justamente lo que ese test verifica.
+        org.mockito.Mockito.lenient()
+                .when(sessionRepository.save(any(TableSession.class)))
+                .thenAnswer(i -> i.getArgument(0));
+        return id;
+    }
+
+    /**
+     * EL CASO QUE TRABÓ LA DECISIÓN: $10.000 entre 3. Cada uno paga $3.333 y el
+     * peso que sobra lo asume el negocio, nunca el comensal.
+     */
+    @Test
+    void dividirEntreTresCobraDeMenosYRegistraElAjuste() {
+        java.util.UUID id = mesaConConsumoDe10000();
+        when(orderRepository.cobrarOrdenesDeLaMesa(id, "MIXED")).thenReturn(2);
+
+        var r = service.cobrarDividido(id, 3, List.of("CASH", "CASH", "CARD"));
+
+        assertEquals(new java.math.BigDecimal("10000"), r.get("total"));
+        assertEquals(new java.math.BigDecimal("3333"), r.get("porPersona"));
+        assertEquals(new java.math.BigDecimal("9999"), r.get("cobrado"));
+        assertEquals(new java.math.BigDecimal("1"), r.get("ajusteRedondeoNegocio"));
+        assertEquals("MIXED", r.get("paymentMethod"));
+    }
+
+    /**
+     * EL INVARIANTE, sobre el servicio y no solo sobre la aritmética: lo que se
+     * guarda en order_payments + el ajuste tiene que dar el total exacto.
+     */
+    @Test
+    void loGuardadoEnOrderPaymentsMasElAjusteDaElTotalExacto() {
+        java.util.UUID id = mesaConConsumoDe10000();
+        when(orderRepository.cobrarOrdenesDeLaMesa(id, "MIXED")).thenReturn(2);
+
+        var r = service.cobrarDividido(id, 3, List.of("CASH", "CASH", "CARD"));
+
+        var captor = org.mockito.ArgumentCaptor.forClass(
+                com.suresell.orders.domain.model.OrderPayment.class);
+        org.mockito.Mockito.verify(orderPaymentRepository, org.mockito.Mockito.atLeastOnce())
+                .save(captor.capture());
+
+        java.math.BigDecimal guardado = captor.getAllValues().stream()
+                .map(com.suresell.orders.domain.model.OrderPayment::getAmount)
+                .reduce(java.math.BigDecimal.ZERO, java.math.BigDecimal::add);
+
+        assertEquals(0, guardado.add((java.math.BigDecimal) r.get("ajusteRedondeoNegocio"))
+                        .compareTo(new java.math.BigDecimal("10000")),
+                "Los pagos guardados + el ajuste deben dar el total de la mesa");
+        // Nunca un pago en cero: sería basura en la tabla de pagos.
+        captor.getAllValues().forEach(p ->
+                assertTrue(p.getAmount().compareTo(java.math.BigDecimal.ZERO) > 0));
+    }
+
+    /** El total de la mesa es la fuente de verdad: la división no lo toca. */
+    @Test
+    void dividirNoModificaElTotalDeLasOrdenes() {
+        java.util.UUID id = java.util.UUID.randomUUID();
+        TableSession viva = new TableSession();
+        viva.setId(id);
+        viva.setStatus(TableSession.ABIERTA);
+        when(sessionRepository.findById(id)).thenReturn(Optional.of(viva));
+
+        com.suresell.orders.domain.model.Order o1 = new com.suresell.orders.domain.model.Order();
+        o1.setUuidId(java.util.UUID.randomUUID());
+        o1.setTotal(new java.math.BigDecimal("7000"));
+        when(orderRepository.findByTableSessionId(id)).thenReturn(List.of(o1));
+        when(sessionRepository.save(any(TableSession.class))).thenAnswer(i -> i.getArgument(0));
+        when(orderRepository.cobrarOrdenesDeLaMesa(id, "MIXED")).thenReturn(1);
+
+        service.cobrarDividido(id, 3, List.of("CASH", "CASH", "CASH"));
+
+        assertEquals(new java.math.BigDecimal("7000"), o1.getTotal());
+    }
+
+    /** El residuo queda en la mesa que lo generó, para poder auditarlo. */
+    @Test
+    void elResiduoQuedaRegistradoEnLaCuentaDeLaMesa() {
+        java.util.UUID id = mesaConConsumoDe10000();
+        when(orderRepository.cobrarOrdenesDeLaMesa(id, "MIXED")).thenReturn(2);
+
+        service.cobrarDividido(id, 3, List.of("CASH", "CASH", "CARD"));
+
+        var captor = org.mockito.ArgumentCaptor.forClass(TableSession.class);
+        org.mockito.Mockito.verify(sessionRepository).save(captor.capture());
+        assertEquals(0, new java.math.BigDecimal("1")
+                .compareTo(captor.getValue().getRoundingAdjustment()));
+        assertEquals(3, captor.getValue().getSplitPersons());
+        assertEquals(TableSession.CERRADA, captor.getValue().getStatus());
+    }
+
+    /**
+     * Las órdenes quedan MIXED SIEMPRE, incluso si todos pagan igual. Si no, el
+     * cierre las sumaría por su `total` —que es mayor que lo cobrado— y el
+     * residuo aparecería como faltante de caja.
+     */
+    @Test
+    void aunPagandoTodosIgualLasOrdenesQuedanMixed() {
+        java.util.UUID id = mesaConConsumoDe10000();
+        when(orderRepository.cobrarOrdenesDeLaMesa(id, "MIXED")).thenReturn(2);
+
+        var r = service.cobrarDividido(id, 3, List.of("CASH", "CASH", "CASH"));
+
+        assertEquals("MIXED", r.get("paymentMethod"));
+        org.mockito.Mockito.verify(orderRepository).cobrarOrdenesDeLaMesa(id, "MIXED");
+    }
+
+    @Test
+    void unMedioDePagoInvalidoEnLaDivisionSeRechaza() {
+        java.util.UUID id = java.util.UUID.randomUUID();
+        TableSession viva = new TableSession();
+        viva.setId(id);
+        viva.setStatus(TableSession.ABIERTA);
+
+        assertThrows(IllegalArgumentException.class,
+                () -> service.cobrarDividido(id, 2, List.of("CASH", "BITCOIN")));
+    }
+
+    @Test
+    void faltarElMedioDeAlgunaPersonaSeRechazaAntesDeTocarNada() {
+        java.util.UUID id = java.util.UUID.randomUUID();
+
+        assertThrows(IllegalArgumentException.class,
+                () -> service.cobrarDividido(id, 3, List.of("CASH", "CARD")));
+        org.mockito.Mockito.verifyNoInteractions(orderPaymentRepository);
+    }
+
+    /** La previsualización dice la cifra SIN cobrar: no cierra la cuenta. */
+    @Test
+    void previsualizarNoCobraNiCierraLaMesa() {
+        java.util.UUID id = mesaConConsumoDe10000();
+
+        var r = service.previsualizarDivision(id, 3);
+
+        assertEquals(new java.math.BigDecimal("3333"), r.get("porPersona"));
+        assertEquals(new java.math.BigDecimal("1"), r.get("ajusteRedondeoNegocio"));
+        org.mockito.Mockito.verifyNoInteractions(orderPaymentRepository);
+        org.mockito.Mockito.verify(orderRepository, org.mockito.Mockito.never())
+                .cobrarOrdenesDeLaMesa(any(), any());
     }
 
     /** Lo que consulta el cierre de caja para bloquearse. */

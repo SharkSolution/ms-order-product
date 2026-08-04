@@ -151,8 +151,16 @@ public class ExecuteDailyClosureUseCase {
             amountToDeposit = BigDecimal.ZERO;
         }
 
+        // División de cuenta: lo que el negocio DEJÓ DE COBRAR por redondeo al
+        // repartir mesas entre comensales. No es un faltante de caja ni una
+        // diferencia del cajero, así que NO entra en `totalDifference`: se
+        // reporta aparte, como línea propia. Meterlo en la diferencia haría que
+        // un cierre correcto apareciera con novedades.
+        BigDecimal roundingAdjustment = tableSessionService.ajustePorRedondeoEntre(openingTime, closingTime);
+
         DailyClosure savedClosure = saveClosureAudit(request, expected, totalDifference, openingTime, closingTime,
-                userName, calculatedTotalCash, calculatedBase, diffCash, diffCard, diffNequi, diffQr, previousBase, pureSales, countedQr, totalPettyCashExpenses);
+                userName, calculatedTotalCash, calculatedBase, diffCash, diffCard, diffNequi, diffQr, previousBase, pureSales, countedQr, totalPettyCashExpenses,
+                roundingAdjustment);
 
         saveClosureToOutbox(savedClosure);
 
@@ -172,7 +180,8 @@ public class ExecuteDailyClosureUseCase {
                 message,
                 shortages,
                 calculatedBase,
-                amountToDeposit
+                amountToDeposit,
+                roundingAdjustment
         );
     }
 
@@ -223,10 +232,14 @@ public class ExecuteDailyClosureUseCase {
                                   BigDecimal previousBase,
                                   BigDecimal pureSales,
                                   BigDecimal countedQr,
-                                  BigDecimal pettyCashExpenses
+                                  BigDecimal pettyCashExpenses,
+                                  BigDecimal roundingAdjustment
                                           ) {
 
         DailyClosure entity = new DailyClosure();
+        // Se guarda EN el cierre, no solo se calcula al vuelo: el cierre es el
+        // documento que se audita y tiene que explicarse solo dentro de un año.
+        entity.setRoundingAdjustment(roundingAdjustment != null ? roundingAdjustment : BigDecimal.ZERO);
         entity.setId(UUID.randomUUID());
         entity.setOpeningTime(openingTime);
         entity.setClosingTime(closingTime);
