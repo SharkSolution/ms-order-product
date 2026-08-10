@@ -26,8 +26,10 @@ import java.sql.ResultSet;
 import java.sql.Statement;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -472,6 +474,80 @@ class CloudTenantIsolationTest {
             assertTrue(rs.next());
             assertEquals(1, rs.getInt("marcada"), "La fila debe seguir en DB (soft-delete)");
             assertEquals(1, rs.getInt("auditada"), "Debe quedar rastro en order_deletions");
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // V32: el tenant_id sale del negocio en sesión, y sin negocio NO se escribe.
+    // ------------------------------------------------------------------
+
+    /** Conexión cruda como `app_user` — el rol con el que corre la app y al que RLS sí aplica. */
+    private Connection comoAppUser() throws Exception {
+        return DriverManager.getConnection(PG.getJdbcUrl(), "app_user", "app_pw");
+    }
+
+    /**
+     * LO QUE ESTO PROTEGE, y por qué está escrito así.
+     *
+     * <p>`ms-core-app` no mapea `tenant_id` en ninguna de sus 28 entidades, así que
+     * sus INSERT omiten la columna. V32 hace que el default la saque de la sesión.
+     * El riesgo de ese arreglo es el caso en que NO hay negocio en sesión: si ahí
+     * el default resolviera a algo escribible, el panel crearía filas que no son de
+     * nadie —o peor, del negocio equivocado— en silencio.
+     *
+     * <p>Y ese caso NO es teórico ni raro: {@code TenantAwareDataSource} fija la
+     * variable en <b>cadena vacía</b> —no la deja sin fijar— en toda conexión que
+     * entrega sin tenant en contexto (health checks, arranque, tareas de fondo).
+     * Verificado también contra Producción el 2026-08-04: `es_nulo = f`. Sin el
+     * `nullif` de V32 esa fila entraba con `tenant_id = ''` y la política la
+     * aceptaba, porque `'' = ''` es cierto.
+     *
+     * <p>Por eso se prueban los DOS estados: sin fijar y fijada en vacío. El
+     * segundo es el que produce nuestro propio código y el que de verdad ocurre.
+     */
+    @Test
+    void sinNegocioEnSesionElInsertSeRechaza() throws Exception {
+        try (Connection c = comoAppUser(); Statement s = c.createStatement()) {
+            // a) Conexión sin tocar: la variable ni siquiera existe.
+            rechazaElInsertSinTenant(s, "con app.tenant_id sin fijar");
+
+            // b) El estado que crea TenantAwareDataSource cuando no hay tenant.
+            s.execute("SELECT set_config('app.tenant_id', '', false)");
+            try (ResultSet rs = s.executeQuery(
+                    "SELECT current_setting('app.tenant_id', true) = '' AS es_vacia")) {
+                assertTrue(rs.next());
+                assertTrue(rs.getBoolean("es_vacia"));
+            }
+            rechazaElInsertSinTenant(s, "con app.tenant_id en cadena vacía");
+        }
+    }
+
+    private void rechazaElInsertSinTenant(Statement s, String estado) throws Exception {
+        try {
+            s.execute("INSERT INTO waiters (active, name) VALUES (true, '__sonda__')");
+            fail("El INSERT tiene que ser rechazado " + estado + ", y entró");
+        } catch (java.sql.SQLException e) {
+            assertTrue("42501".equals(e.getSQLState())        // RLS
+                            || "23502".equals(e.getSQLState()),  // tenant_id NOT NULL
+                    "Debe rechazarse por RLS o por NOT NULL, no por otra cosa (" + estado
+                            + "): " + e.getSQLState() + " / " + e.getMessage());
+        }
+    }
+
+    /** Y con negocio en sesión, el INSERT que omite la columna recibe el tenant correcto. */
+    @Test
+    void conNegocioEnSesionElDefaultPoblaElTenantCorrecto() throws Exception {
+        try (Connection c = comoAppUser(); Statement s = c.createStatement()) {
+            c.setAutoCommit(false);
+            s.execute("SET LOCAL app.tenant_id = 'tenant-a'");
+            s.execute("INSERT INTO waiters (active, name) VALUES (true, '__angie__')");
+            try (ResultSet rs = s.executeQuery(
+                    "SELECT tenant_id FROM waiters WHERE name = '__angie__'")) {
+                assertTrue(rs.next(), "La fila debe existir");
+                assertEquals("tenant-a", rs.getString("tenant_id"),
+                        "Es el caso que arregla el 500 al crear meseros desde el panel");
+            }
+            c.rollback();
         }
     }
 

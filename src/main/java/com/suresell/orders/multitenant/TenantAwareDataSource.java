@@ -46,6 +46,11 @@ public class TenantAwareDataSource extends DelegatingDataSource {
                 connection.prepareStatement("SELECT set_config('app.tenant_id', ?, false)")) {
             // Sin tenant en contexto (health checks, arranque, tareas de fondo) se
             // limpia a '': RLS no ve ninguna fila (default seguro), nunca las de otro.
+            //
+            // OJO: eso vale para LEER. Para ESCRIBIR, '' no es lo mismo que NULL —
+            // `'' = ''` es cierto, así que un WITH CHECK contra la cadena vacía pasa.
+            // Por eso el default de `tenant_id` en la base va envuelto en `nullif`
+            // (V32): sin él, una fila sin negocio entraba con tenant_id = ''.
             ps.setString(1, tenantId == null ? "" : tenantId);
             ps.execute();
         }
