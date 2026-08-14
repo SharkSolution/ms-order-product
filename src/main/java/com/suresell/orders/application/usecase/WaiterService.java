@@ -13,11 +13,13 @@ import com.suresell.orders.application.dto.WaiterDtos.WaiterOrderRequest;
 import com.suresell.orders.application.dto.WaiterDtos.WaiterOrderResponse;
 import com.suresell.orders.domain.model.MenuProduct;
 import com.suresell.orders.domain.model.Order;
+import com.suresell.orders.domain.model.OrderStatus;
 import com.suresell.orders.domain.model.Waiter;
 import com.suresell.orders.domain.model.WaiterSession;
 import com.suresell.orders.domain.port.in.OrderPort;
 import com.suresell.orders.infrastructure.persistence.MenuCategoryRepository;
 import com.suresell.orders.infrastructure.persistence.MenuProductRepository;
+import com.suresell.orders.infrastructure.persistence.OrderPaymentRepository;
 import com.suresell.orders.infrastructure.persistence.OrderRepository;
 import com.suresell.orders.infrastructure.persistence.WaiterRepository;
 import com.suresell.orders.infrastructure.persistence.WaiterSessionRepository;
@@ -49,6 +51,7 @@ public class WaiterService {
     private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(WaiterService.class);
     private static final ZoneId BOGOTA_ZONE = ZoneId.of("America/Bogota");
     public static final String CASH = "CASH";
+    private static final String MIXED = "MIXED";
 
     private final WaiterRepository waiterRepository;
     private final WaiterSessionRepository sessionRepository;
@@ -57,6 +60,7 @@ public class WaiterService {
     /** Clave del mesero (#20). Sin PIN configurado no cambia nada. */
     private final PinDeMeseroService pinService;
     private final OrderRepository orderRepository;
+    private final OrderPaymentRepository orderPaymentRepository;
     private final MenuCategoryRepository menuCategoryRepository;
     private final MenuProductRepository menuProductRepository;
     private final OrderPort orderPort;
@@ -64,6 +68,7 @@ public class WaiterService {
     public WaiterService(WaiterRepository waiterRepository,
                          WaiterSessionRepository sessionRepository,
                          OrderRepository orderRepository,
+                         OrderPaymentRepository orderPaymentRepository,
                          MenuCategoryRepository menuCategoryRepository,
                          MenuProductRepository menuProductRepository,
                          OrderPort orderPort,
@@ -74,6 +79,7 @@ public class WaiterService {
         this.sessionRepository = sessionRepository;
         this.pinService = pinService;
         this.orderRepository = orderRepository;
+        this.orderPaymentRepository = orderPaymentRepository;
         this.menuCategoryRepository = menuCategoryRepository;
         this.menuProductRepository = menuProductRepository;
         this.orderPort = orderPort;
@@ -389,18 +395,53 @@ public class WaiterService {
                 .orElseThrow(() -> new IllegalArgumentException("Sesión no encontrada: " + sessionId));
     }
 
+    /**
+     * Resumen del turno. El numero que importa es `expectedCash`: es lo que la
+     * cajera le va a pedir al mesero, y el faltante se lo cobran a el.
+     *
+     * <p>Tenia dos errores que lo movian en direcciones opuestas, los dos contra
+     * el mesero segun el dia:
+     *
+     * <ul>
+     *   <li><b>Las MIXED se perdian.</b> Una orden mixta metia su total entero
+     *       bajo la etiqueta "MIXED", y `cashSales` solo leia "CASH". La plata en
+     *       efectivo de esa venta —que el mesero tiene en la mano— no entraba en
+     *       lo esperado: entregaba de mas y le figuraba como sobrante.</li>
+     *   <li><b>Las cuentas abiertas contaban como venta.</b> Una orden de mesa
+     *       nace `abierta` pero ya con metodo de pago, asi que una mesa todavia
+     *       consumiendo inflaba lo esperado y le generaba un faltante por plata
+     *       que nunca recibio. Con modo Restaurante encendido esto pasa todos los
+     *       dias.</li>
+     * </ul>
+     *
+     * <p>La regla, ahora igual en los dos lados del mostrador (aca y en
+     * {@code WaiterSalesQueryService}, que es lo que ve la cajera): <b>solo lo
+     * cobrado es venta, y una MIXED vale por sus splits reales.</b>
+     */
     private ShiftSummaryResponse buildSummary(WaiterSession session, BigDecimal declaredCash) {
-        List<Order> orders = orderRepository.findByWaiterSessionId(session.getId());
+        // Una cuenta abierta no es una venta: todavia no se cobro nada.
+        List<Order> cobradas = orderRepository.findByWaiterSessionId(session.getId()).stream()
+                .filter(o -> !OrderStatus.abierta.equals(o.getStatus()))
+                .toList();
+
         Map<String, BigDecimal> salesByMethod = new LinkedHashMap<>();
         Map<String, Long> ordersByMethod = new LinkedHashMap<>();
         BigDecimal totalSales = BigDecimal.ZERO;
-        for (Order o : orders) {
-            String method = o.getPaymentMethod() == null ? "OTRO" : o.getPaymentMethod();
+        for (Order o : cobradas) {
+            String method = normalizarMetodo(o.getPaymentMethod());
             BigDecimal total = o.getTotal() == null ? BigDecimal.ZERO : o.getTotal();
-            salesByMethod.merge(method, total, BigDecimal::add);
+            // Las MIXED NO suman aca: sus montos entran abajo, repartidos por
+            // metodo real. Si sumaran, la venta se contaria dos veces.
+            if (!MIXED.equals(method)) {
+                salesByMethod.merge(method, total, BigDecimal::add);
+            }
             ordersByMethod.merge(method, 1L, Long::sum);
             totalSales = totalSales.add(total);
         }
+        for (Object[] fila : orderPaymentRepository.sumSplitsByWaiterSession(session.getId())) {
+            salesByMethod.merge(normalizarMetodo((String) fila[0]), monto(fila[1]), BigDecimal::add);
+        }
+
         BigDecimal cashSales = salesByMethod.getOrDefault(CASH, BigDecimal.ZERO);
         BigDecimal base = session.getOpeningCashBase() == null ? BigDecimal.ZERO : session.getOpeningCashBase();
         BigDecimal expectedCash = base.add(cashSales);
@@ -411,7 +452,23 @@ public class WaiterService {
                 session.getId(), session.getWaiterId(), session.getWaiterName(), session.getStatus(),
                 session.getLoginTime(), session.getClosedAt(), session.getOpeningCashBase(),
                 cashSales, expectedCash, declaredCash, difference,
-                salesByMethod, ordersByMethod, totalSales, orders.size(), dailySaleGoal);
+                salesByMethod, ordersByMethod, totalSales, cobradas.size(), dailySaleGoal);
+    }
+
+    /** NEQUI se pliega en QR, igual que el cierre de caja y las ventas por mesero. */
+    private static String normalizarMetodo(String metodo) {
+        if (metodo == null || metodo.isBlank()) {
+            return "OTRO";
+        }
+        String m = metodo.trim().toUpperCase();
+        return "NEQUI".equals(m) ? "QR" : m;
+    }
+
+    private static BigDecimal monto(Object valor) {
+        if (valor == null) {
+            return BigDecimal.ZERO;
+        }
+        return valor instanceof BigDecimal bd ? bd : new BigDecimal(valor.toString());
     }
 
     private WaiterOrderResponse toOrderResponse(Order order) {

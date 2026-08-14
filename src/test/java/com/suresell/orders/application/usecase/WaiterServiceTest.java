@@ -13,6 +13,7 @@ import com.suresell.orders.domain.model.WaiterSession;
 import com.suresell.orders.domain.port.in.OrderPort;
 import com.suresell.orders.infrastructure.persistence.MenuCategoryRepository;
 import com.suresell.orders.infrastructure.persistence.MenuProductRepository;
+import com.suresell.orders.infrastructure.persistence.OrderPaymentRepository;
 import com.suresell.orders.infrastructure.persistence.OrderRepository;
 import com.suresell.orders.infrastructure.persistence.WaiterRepository;
 import com.suresell.orders.infrastructure.persistence.WaiterSessionRepository;
@@ -41,6 +42,7 @@ class WaiterServiceTest {
     private WaiterRepository waiterRepository;
     private WaiterSessionRepository sessionRepository;
     private OrderRepository orderRepository;
+    private OrderPaymentRepository orderPaymentRepository;
     private OrderPort orderPort;
     private SiteService siteService;
     private TableSessionService tableSessionService;
@@ -51,14 +53,18 @@ class WaiterServiceTest {
         waiterRepository = mock(WaiterRepository.class);
         sessionRepository = mock(WaiterSessionRepository.class);
         orderRepository = mock(OrderRepository.class);
+        orderPaymentRepository = mock(OrderPaymentRepository.class);
         orderPort = mock(OrderPort.class);
         siteService = mock(SiteService.class);
         tableSessionService = mock(TableSessionService.class);
         // PIN real, no un mock: sin clave configurada tiene que dejar entrar
         // igual que siempre, y eso es justo lo que estos tests dan por hecho.
         service = new WaiterService(waiterRepository, sessionRepository, orderRepository,
+                orderPaymentRepository,
                 mock(MenuCategoryRepository.class), mock(MenuProductRepository.class), orderPort,
                 siteService, tableSessionService, new PinDeMeseroService(waiterRepository));
+        // Sin ordenes MIXED, no hay splits que repartir.
+        when(orderPaymentRepository.sumSplitsByWaiterSession(any())).thenReturn(java.util.List.of());
         when(sessionRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
         when(waiterRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
     }

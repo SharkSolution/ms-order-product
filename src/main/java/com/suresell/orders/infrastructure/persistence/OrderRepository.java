@@ -195,21 +195,35 @@ public interface OrderRepository extends JpaRepository<Order, java.util.UUID> {
   // El @SQLRestriction("deleted_at IS NULL") de Order ya excluye las borradas.
   // ---------------------------------------------------------------------
 
-  /** Ordenes por mesero (para ordersCount, sin duplicar por metodo de pago). */
+  /**
+   * Ordenes por mesero (para ordersCount, sin duplicar por metodo de pago).
+   *
+   * Excluye las `abierta`: una mesa que todavia esta consumiendo no es una venta.
+   */
   @Query("""
           SELECT o.waiterId, w.name, COUNT(o)
           FROM Order o LEFT JOIN Waiter w ON w.id = o.waiterId
           WHERE o.createdAt BETWEEN :start AND :end
+          AND o.status <> com.suresell.orders.domain.model.OrderStatus.abierta
           GROUP BY o.waiterId, w.name
           """)
   List<Object[]> contarOrdenesPorMesero(@Param("start") LocalDateTime start,
                                         @Param("end") LocalDateTime end);
 
-  /** Montos por mesero y metodo. Las MIXED se excluyen: sus montos salen de los splits. */
+  /**
+   * Montos por mesero y metodo. Las MIXED se excluyen: sus montos salen de los splits.
+   *
+   * Tambien excluye las `abierta`. Una orden de mesa NACE con metodo de pago ya
+   * puesto (OrderHandler: el estado depende de si hay cuenta de mesa, el metodo
+   * se asigna igual), asi que sin este filtro una cuenta sin cobrar entraba como
+   * venta en efectivo del mesero y le generaba un faltante por plata que nunca
+   * recibio.
+   */
   @Query("""
           SELECT o.waiterId, COALESCE(o.paymentMethod, 'UNKNOWN'), COALESCE(SUM(o.total), 0)
           FROM Order o
           WHERE o.createdAt BETWEEN :start AND :end
+          AND o.status <> com.suresell.orders.domain.model.OrderStatus.abierta
           AND (o.paymentMethod IS NULL OR o.paymentMethod <> 'MIXED')
           GROUP BY o.waiterId, o.paymentMethod
           """)

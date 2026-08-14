@@ -36,9 +36,33 @@ public interface OrderPaymentRepository extends JpaRepository<OrderPayment, Long
             FROM OrderPayment p, Order o
             WHERE o.uuidId = p.orderUuidId
             AND o.paymentMethod = 'MIXED'
+            AND o.status <> com.suresell.orders.domain.model.OrderStatus.abierta
             AND o.createdAt BETWEEN :startTime AND :endTime
             GROUP BY o.waiterId, p.method
             """)
     List<Object[]> sumSplitsByWaiterAndMethod(@Param("startTime") LocalDateTime startTime,
                                               @Param("endTime") LocalDateTime endTime);
+
+    /**
+     * Splits de las MIXED de UN TURNO, por metodo.
+     *
+     * <p>El resumen del turno se arma por sesion de mesero, no por ventana de
+     * tiempo: un turno puede cruzar la medianoche y dos meseros pueden tener
+     * turnos solapados. Por eso no sirve {@link #sumSplitsByWaiterAndMethod}.
+     *
+     * <p>Sin esto, una venta mixta entera caia bajo la etiqueta "MIXED" y su
+     * parte en EFECTIVO —que el mesero tiene fisicamente en la mano— no entraba
+     * en el efectivo esperado. El mesero entregaba mas de lo que el sistema le
+     * pedia y la diferencia le aparecia como sobrante.
+     */
+    @Query("""
+            SELECT p.method, SUM(p.amount)
+            FROM OrderPayment p, Order o
+            WHERE o.uuidId = p.orderUuidId
+            AND o.paymentMethod = 'MIXED'
+            AND o.status <> com.suresell.orders.domain.model.OrderStatus.abierta
+            AND o.waiterSessionId = :sessionId
+            GROUP BY p.method
+            """)
+    List<Object[]> sumSplitsByWaiterSession(@Param("sessionId") UUID sessionId);
 }
