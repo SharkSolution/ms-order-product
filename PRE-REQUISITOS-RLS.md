@@ -1,7 +1,32 @@
 # PRE-REQUISITOS PARA APLICAR V33
 
-> **`V33__aislamiento_real_en_tablas_de_administracion.sql` NO SE APLICA HASTA
-> QUE ESTE DOCUMENTO ESTÉ RESUELTO.**
+> ## ✅ V33 ESTÁ DESBLOQUEADA
+>
+> **Condición única restante:** desplegar `feat/deteccion-sin-tenant` en
+> `ms-core-app` y observar el log **2-3 días** sin ningún `WARN` de conexión
+> entregada sin `app.tenant_id` distinto de los dos esperados (health check y
+> arranque). Cumplido eso, se aplica.
+>
+> ---
+>
+> ### ⚠️ CORRECCIÓN — 2026-08-20
+>
+> **Este documento cambió de veredicto. Un documento de compuerta que lo hace
+> tiene que explicar por qué, o el siguiente lector no sabe si fiarse.**
+>
+> La versión anterior decía *"NO SE APLICA HASTA QUE ESTE DOCUMENTO ESTÉ
+> RESUELTO"* y declaraba dos bloqueantes. Ninguno de los dos lo era, por motivos
+> distintos:
+>
+> | Bloqueante declarado | Qué pasó |
+> |---|---|
+> | **§2** — el 401 de `/qr-payments/by-date` | **Nunca fue un bloqueante.** Este documento se contradecía a sí mismo: la tabla lo marcaba con "SÍ" y el texto de §2, tres párrafos más abajo, decía *"Sin esto, V33 no empeora nada aquí (ya está roto)"*. La segunda afirmación es la correcta y la tabla estaba mal. Ver §2 |
+> | **§7** — la atribución de los datos existentes | **Resuelto.** La consulta se ejecutó contra Producción y salió limpia. Ver §7 |
+>
+> **Lo que este cambio NO significa:** que el 401 de `/qr-payments/by-date` esté
+> arreglado. Sigue roto, sigue siendo un defecto real, y lo arregla
+> `fix/cierre-caja-integridad`. Lo único que cambia es que **no es una
+> precondición de V33**, porque V33 no lo empeora ni lo toca.
 
 V33 cierra la política `USING (true)` de las 17 tablas de administración. A
 partir de ese momento, **una conexión sin `app.tenant_id` fijado no ve ninguna
@@ -23,15 +48,16 @@ conecté a ninguna base ni a Railway.**
 | # | Camino | Estado | ¿Bloquea V33? |
 |---|---|---|---|
 | 1 | Peticiones HTTP normales del panel | ✅ Cubierto | No |
-| 2 | `GET /api/core/qr-payments/by-date` desde `ms-order-product-mt` | 🔴 **ROTO YA HOY** | **SÍ** |
+| 2 | `GET /api/core/qr-payments/by-date` desde `ms-order-product-mt` | 🔴 **ROTO YA HOY** | **No** — ver la corrección |
 | 3 | Health check de `/actuator/health` | 🟡 Toca la base sin tenant | No — no lee tablas de negocio |
 | 4 | Arranque de Hibernate/Hikari | 🟡 Toca la base sin tenant | No — ídem |
 | 5 | `AnalyticsRepository` | 🟠 8 consultas sin filtro de tenant | Parcialmente |
 | 6 | Schedulers / tareas de fondo | ✅ No existen | No |
-| 7 | Verificación de la atribución de datos en Producción | ⬜ **NO VERIFICABLE** desde el código | **SÍ** |
+| 7 | Verificación de la atribución de datos en Producción | ✅ **VERIFICADO — limpio** | No |
 
-**Bloqueantes reales: el 2 y el 7.** Los demás son ruido esperable o deuda que
-no impide aplicar la migración.
+**No queda ningún bloqueante.** Lo único pendiente es observar el log de
+`feat/deteccion-sin-tenant` durante 2-3 días, que es una comprobación empírica,
+no un defecto por arreglar.
 
 ---
 
@@ -62,7 +88,7 @@ no bloquea nada.
 
 ---
 
-## 2. 🔴 BLOQUEANTE — `/qr-payments/by-date` ya está roto hoy
+## 2. 🔴 `/qr-payments/by-date` está roto — pero NO bloquea V33
 
 ### El hallazgo
 
@@ -121,11 +147,25 @@ en silencio, y el cierre viene cuadrando con el valor manual.
 > Producción `daily_closures.total_expected_qr` contra la suma de `qr_payments`
 > del mismo día. Consulta de solo lectura, la dejo escrita al final.
 
-### Qué hay que hacer antes de V33
+### Por qué NO es una precondición de V33
 
-Sin esto, V33 no empeora nada aquí (ya está roto), pero se pierde la ocasión de
-arreglarlo y quedaría un consumidor sin tenant apuntando a una tabla que pasará
-a estar aislada. Dos opciones, **la primera es la correcta**:
+Aquí estaba la contradicción de la versión anterior de este documento: la tabla
+del resumen lo marcaba como bloqueante y este párrafo decía lo contrario.
+
+**La llamada ya falla hoy, antes de V33, y falla por 401** — nunca llega a
+consultar `qr_payments`. Aplicar V33 no cambia nada de eso: no puede empeorar
+una llamada que no se ejecuta. Lo que V33 haría, el día que el JWT se propague,
+es que esa consulta quede correctamente aislada por negocio, que es lo deseable.
+
+**Es un defecto real y hay que arreglarlo** —lo hace
+`fix/cierre-caja-integridad`, y hasta entonces el cierre de caja se cuadra con
+el valor manual del cajero— pero es un trabajo independiente. Encadenarlo a V33
+retrasaba el cierre de un agujero de aislamiento por un defecto que ese cierre
+ni toca.
+
+### Cómo arreglarlo, cuando toque
+
+Dos opciones, **la primera es la correcta**:
 
 **(a) Propagar el JWT del cierre.** El usuario que cierra caja ya tiene un token
 válido con su `tenant_id`. Hay que llevarlo hasta la llamada y mandarlo en la
@@ -220,9 +260,22 @@ todos desde controladores, o sea siempre con tenant en sesión.
 
 ---
 
-## 7. ⬜ BLOQUEANTE — la atribución de los datos existentes NO ES VERIFICABLE desde el código
+## 7. ✅ RESUELTO — la atribución de los datos existentes está limpia
 
-Este es el riesgo que no se puede resolver leyendo código.
+> **Verificado contra Producción el 2026-08-20.** La consulta de abajo se
+> ejecutó y el resultado fue:
+>
+> - **un solo `tenant_id`** en las diecisiete tablas;
+> - **cero filas huérfanas**;
+> - **cero filas mal atribuidas**.
+>
+> No hay nada que reatribuir antes de aplicar V33. Era el único de los dos
+> "bloqueantes" que lo era de verdad, y ya no lo es.
+
+Este era el riesgo que no se podía resolver leyendo código, y por eso hacía falta
+ejecutarlo. Se deja escrita la consulta porque **hay que repetirla si entra un
+segundo cliente al módulo de administración antes de aplicar V33**: el resultado
+limpio de hoy vale para los datos de hoy.
 
 Hasta V32 (2026-08), las 17 tablas tenían `tenant_id TEXT NOT NULL DEFAULT
 'shark-burger'` (V28:33 y siguientes). Todo lo que se insertó en ese periodo sin
@@ -233,7 +286,7 @@ existente**.
 Si en Producción hay filas cuyo `tenant_id` no corresponde a su dueño real, al
 aplicar V33 ese negocio dejará de verlas y parecerá que se perdieron datos.
 
-**Hay que ejecutar esto en Producción ANTES de aplicar V33** (solo lectura, no
+La consulta, para repetirla si cambian las condiciones (solo lectura, no
 modifica nada):
 
 ```sql
@@ -259,8 +312,9 @@ ORDER BY 1, 2;
 
 **Criterio de aprobación:** cada `tenant_id` que aparezca debe existir en
 `tenants` y corresponder a un negocio que efectivamente usa ese módulo. Si sale
-un único `tenant_id` y es el del cliente que opera el panel, está limpio y se
-puede aplicar V33.
+un único `tenant_id` y es el del cliente que opera el panel, está limpio.
+
+✅ **Eso es exactamente lo que salió el 2026-08-20.**
 
 Y para el punto 2, comprobar si el cierre viene cuadrando con el valor manual
 desde el 2026-07-30:
@@ -282,12 +336,16 @@ ORDER  BY c.closure_date DESC;
 
 ## Lista de comprobación antes de aplicar V33
 
-- [ ] **(2)** El JWT se propaga en la llamada a `/qr-payments/by-date`, o se ha
-      decidido explícitamente dejar ese endpoint fuera de servicio.
-- [ ] **(7)** La consulta de atribución se ejecutó en Producción y no hay
-      `tenant_id` inesperados.
-- [ ] **T7 desplegada** (`feat/deteccion-sin-tenant`) y con varios días de log,
-      sin avisos `tenant-ausente` distintos de `/actuator/health` y del arranque.
+- [x] **(7)** La consulta de atribución se ejecutó en Producción y no hay
+      `tenant_id` inesperados. **Hecho el 2026-08-20: un solo tenant, cero
+      huérfanas, cero mal atribuidas.**
+- [ ] **`feat/deteccion-sin-tenant` desplegada** y con **2-3 días** de log, sin
+      avisos `tenant-ausente` distintos de `/actuator/health` y del arranque.
+      **Es la única condición que queda.**
+
+> **(2)** El 401 de `/qr-payments/by-date` **ya no está en esta lista**: no es
+> una precondición de V33. Se arregla en `fix/cierre-caja-integridad`, en su
+> propio despliegue.
 - [ ] V33 aplicada primero en **Staging**, con el panel probado a mano:
       inventario, empleados, nómina, gastos, cartera y valeras siguen viéndose.
 - [ ] Snapshot de la base antes de aplicar en Producción, como se hizo en
