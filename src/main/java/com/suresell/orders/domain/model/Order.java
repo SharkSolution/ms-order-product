@@ -129,6 +129,17 @@ public class Order implements org.springframework.data.domain.Persistable<java.u
     @Column(name = "table_session_id")
     private java.util.UUID tableSessionId;
 
+    /**
+     * V37 — Quién registró la venta. FK a `users(id)`, no un nombre suelto: un
+     * cambio de nombre o dos empleados homónimos no pueden romper la
+     * trazabilidad. Regla 4 de LINEAMIENTOS.
+     *
+     * <p>NULL en el histórico anterior a V37. `waiterId` es otra cosa y se
+     * queda: identifica al mesero, no a quien operó la caja.
+     */
+    @Column(name = "created_by")
+    private Long createdBy;
+
     @OneToMany(mappedBy = "order", orphanRemoval = true)
     private List<OrderItem> items;
     @OneToOne(mappedBy = "order", orphanRemoval = true, fetch = FetchType.EAGER)

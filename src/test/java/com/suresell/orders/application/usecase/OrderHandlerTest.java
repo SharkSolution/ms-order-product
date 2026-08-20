@@ -82,7 +82,13 @@ class OrderHandlerTest {
                 org.mockito.Mockito.mock(com.suresell.orders.infrastructure.persistence.WaiterRepository.class),
                 org.mockito.Mockito.mock(com.suresell.orders.infrastructure.persistence.OrderPaymentRepository.class),
                 pagerConfigService,
-                tableSessionRepository);
+                tableSessionRepository,
+                // V37: ninguna de estas pruebas comprueba autoria, pero el
+                // constructor la exige. Un mock devuelve Optional.empty(), que
+                // es el caso "no se pudo resolver el autor" — y verifica de paso
+                // que eso NO tumba la venta.
+                org.mockito.Mockito.mock(
+                        com.suresell.orders.multitenant.UsuarioDeLaPeticion.class));
     }
     @Test
     void getAllOrdersCallsProductServiceOncePerDistinctProductId() {

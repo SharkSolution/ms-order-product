@@ -38,4 +38,12 @@ public class OrderEditHistory implements com.suresell.orders.multitenant.TenantO
     @Column(name = "edited_at", updatable = false)
     private LocalDateTime editedAt;
     private static final ZoneId BOGOTA_ZONE = ZoneId.of("America/Bogota");
+
+    /**
+     * V37 — Quién editó. FK a `users(id)`. Antes esta tabla guardaba QUÉ cambió
+     * y cuándo, pero no quién — que es la mitad que importa para el antifraude.
+     */
+    @jakarta.persistence.Column(name = "edited_by")
+    private Long editedBy;
+
 }
