@@ -233,6 +233,14 @@ public class OrderHandler implements OrderPort {
         order.setSubtotal(subtotal);
         BigDecimal total = applyDiscountIfPresent(order, dto.discountCode(), subtotal);
         order.setTotal(total);
+
+        // V36 — El total del cliente se COMPARA, nunca se usa. El servidor ya
+        // calculo el suyo arriba y es el que se guarda; aceptar el del cliente
+        // dejaria a un POS manipulado fijar el importe de su propia venta.
+        //
+        // Pero descartarlo sin compararlo desperdicia una senal que ya llega
+        // gratis: un POS alterado o un desfase de catalogo aparecen aqui.
+        order.setTotalDiscrepancia(discrepanciaDeTotal(dto.totalDeclaradoPorElCliente(), total));
         
         // 1. Guardar la Orden (genera idOrder numérico)
         Order savedOrder = orderRepositoryPort.save(order);
@@ -481,6 +489,33 @@ public class OrderHandler implements OrderPort {
      * puede tumbar la venta: se registra sin terminal, que es peor que tenerlo
      * pero infinitamente mejor que no vender.
      */
+    /**
+     * Diferencia entre lo que declara el cliente y lo que calcula el servidor.
+     *
+     * @return {@code null} si el cliente no declaro total —no habia con que
+     *         comparar, que NO es lo mismo que cero— y la diferencia en caso
+     *         contrario. Cero significa "comparados y coinciden"
+     */
+    private BigDecimal discrepanciaDeTotal(BigDecimal declarado, BigDecimal calculado) {
+        if (declarado == null || calculado == null) {
+            return null;
+        }
+        BigDecimal diferencia = declarado.subtract(calculado);
+        if (diferencia.compareTo(BigDecimal.ZERO) != 0) {
+            // WARN y no ERROR: la venta es correcta —se guarda con el total del
+            // servidor— pero alguien tiene que poder enterarse.
+            log.warn("Discrepancia de total en la orden {}: el cliente declaro {} y el servidor "
+                            + "calculo {} (diferencia {}). Se usa el del servidor.",
+                    dtoRef(), declarado, calculado, diferencia);
+        }
+        return diferencia;
+    }
+
+    /** Solo para el mensaje del log; la orden aun no tiene numero asignado. */
+    private String dtoRef() {
+        return "(sin folio aun)";
+    }
+
     private java.util.UUID parsearTerminal(String texto) {
         if (texto == null || texto.isBlank()) {
             return null;

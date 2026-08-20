@@ -21,19 +21,21 @@ import java.util.List;
  * <p>Los siete, y por qué no se aceptan:
  *
  * <ul>
- *   <li>{@code subtotal}, {@code total}, {@code discountAmount} — los calcula el
- *       servidor ({@code OrderHandler.java:198-204}). Aceptar los del cliente
- *       permitiría a un POS manipulado fijar el importe de su propia venta.</li>
+ *   <li>{@code subtotal}, {@code discountAmount} — los calcula el servidor
+ *       ({@code OrderHandler.java:198-204}). Aceptar los del cliente permitiría
+ *       a un POS manipulado fijar el importe de su propia venta.</li>
  *   <li>{@code status}, {@code synced}, {@code idOrder} — estado del servidor. El
  *       consecutivo lo asigna un trigger de la base (V28:226).</li>
  *   <li>{@code tenantId} — sale del JWT, nunca del cuerpo. Aceptarlo del cliente
  *       sería dejar que una petición eligiera en qué negocio escribe.</li>
  * </ul>
  *
- * <p>El octavo, {@code createdAt}, <b>sí se aprovecha</b>: ver {@link #ocurridoEn}.
+ * <p>Dos de los ocho <b>sí se aprovechan</b>, y ninguno de los dos manda:
+ * {@code createdAt} (ver {@link #ocurridoEn}) y {@code total} (ver
+ * {@link #totalDeclaradoPorElCliente}).
  */
 @com.fasterxml.jackson.annotation.JsonIgnoreProperties({
-        "subtotal", "total", "discountAmount", "status", "synced", "idOrder", "tenantId"
+        "subtotal", "discountAmount", "status", "synced", "idOrder", "tenantId"
 })
 @Schema(description = "Solicitud para crear o actualizar una orden")
 public record OrderRequestRecord(
@@ -129,7 +131,28 @@ public record OrderRequestRecord(
             + "ese terminal en ese epoch. Nulo en el primero de cada epoch. Definición del hash "
             + "en la cabecera de V36.",
             example = "9f2c...")
-    String hashAnterior
+    String hashAnterior,
+
+    /**
+     * El total que el cliente dice que cobró. <b>SEÑAL, NO AUTORIDAD.</b>
+     *
+     * <p>El servidor calcula siempre el suyo ({@code OrderHandler.java:198-204})
+     * y es el que se guarda. Este valor <b>no participa en ningún cálculo</b>:
+     * solo se compara, y la diferencia va a {@code orders.total_discrepancia}.
+     *
+     * <p>Descartarlo sin compararlo, que es lo que se hacía, desperdiciaba una
+     * señal que ya llegaba gratis. Un POS con el código alterado para inflar o
+     * desinflar totales aparece en la primera consulta; un desfase de catálogo
+     * entre terminal y servidor, también.
+     *
+     * <p>Se mapea desde {@code total}, que es como lo envía el POS
+     * ({@code db.ts:31}).
+     */
+    @com.fasterxml.jackson.annotation.JsonProperty("total")
+    @Schema(description = "V36 — Total que declara el cliente. NO se usa para calcular: el servidor "
+            + "usa siempre el suyo. Solo se compara, y la diferencia se registra.",
+            example = "23000.00")
+    java.math.BigDecimal totalDeclaradoPorElCliente
 ) {
 
     /**
@@ -154,7 +177,7 @@ public record OrderRequestRecord(
         return new OrderRequestRecord(
                 pagerColor, pagerNumber, items, discountCode, paymentMethod, payments,
                 idempotencyKey, skipPagerCheck, tableSessionId, preparadoEnComanda,
-                null, null, null, null, null);
+                null, null, null, null, null, null);
     }
 
     /** Split de multipago: método + monto. */
