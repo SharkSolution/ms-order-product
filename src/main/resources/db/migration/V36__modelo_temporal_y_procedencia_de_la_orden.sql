@@ -85,27 +85,85 @@
 -- `hash_anterior` guarda el hash del evento ANTERIOR de ese terminal en ese
 -- epoch. El primer evento de un epoch lleva NULL.
 --
--- El hash de un evento se define como:
+-- ⚠️ **EL HASH CUBRE EL CONTENIDO DEL EVENTO, NO SOLO SU IDENTIDAD.**
 --
---     SHA-256( terminal_id || '|' || epoch || '|' || seq || '|'
---              || tipo_de_evento || '|' || idempotency_key || '|'
---              || ocurrido_en_en_ISO_8601 || '|' || (hash_anterior ?? '') )
+-- La primera versión de esta migración hasheaba solo el sobre —terminal, epoch,
+-- seq, tipo, referencia y fecha— y dejaba fuera los importes, con el argumento
+-- de que "una orden se puede editar y un hash sobre un campo mutable se
+-- invalidaría con cada edición legítima".
 --
--- en hexadecimal minúsculas. Los separadores `|` no son adorno: sin ellos,
--- `seq=1, tipo="2x"` y `seq=12, tipo="x"` producirían la misma entrada.
+-- **Ese argumento se cae en cuanto la cadena es sobre EVENTOS.** Un evento del
+-- outbox es inmutable por construcción: editar una orden no muta el evento
+-- anterior, emite uno nuevo. El hash del evento original sigue cubriendo el
+-- importe original, que es exactamente lo que se quiere — dos hechos
+-- encadenados, el importe original y el editado, ambos verificables.
 --
--- Se eligen SOLO campos que ya son inmutables. **El total de la orden NO entra**,
--- y es deliberado: una orden se puede editar (`OrderHandler.java:405`) y un hash
--- sobre un campo mutable se invalidaría solo con cada edición legítima, con lo
--- que la cadena dejaría de distinguir manipulación de operación normal.
+-- La distinción que sostiene el diseño: **la orden es mutable, el evento no.**
 --
--- Lo que la cadena demuestra es la INTEGRIDAD DE LA SECUENCIA —que no se
--- borró ni se insertó un evento a posteriori—, no la inmutabilidad del
--- contenido. Para lo segundo está la auditoría de ediciones.
+-- Con el hash solo sobre el sobre, la cadena demostraba que un terminal emitió
+-- N eventos en cierto orden pero NO qué decían: alguien que alterara un importe
+-- en el almacenamiento local del POS antes de sincronizar no rompía nada. Para
+-- que la serie histórica sea verificable, la integridad del CONTENIDO es el
+-- punto entero.
+--
+-- ── LA FORMA CANÓNICA ─────────────────────────────────────────────────
+--
+-- La implementación de referencia está en
+-- `front_pos_electron/src/app/core/offline/hash-del-evento.ts`, en UNA sola
+-- función. Cualquier verificador (Java, SQL) debe seguir esta gramática al pie
+-- de la letra, o dará falsos positivos sobre datos correctos — que es peor que
+-- no verificar, porque hace desconfiar de lo que está bien.
+--
+--   canon := "v1" LF
+--            "terminal:" <texto>   LF   "epoch:"    <entero>  LF
+--            "seq:"      <entero>  LF   "tipo:"     <texto>   LF
+--            "ref:"      <texto>   LF   "ocurrido:" <fecha>   LF
+--            "medio:"    <texto>   LF
+--            "subtotal:" <decimal> LF   "descuento:"<decimal> LF
+--            "total:"    <decimal> LF
+--            "lineas:"   <entero>  LF
+--            { "  " <i> ":" <producto> "|" <cantidad> "|" <unitario> "|" <total> LF }
+--            "pagos:"    <entero>  LF
+--            { "  " <i> ":" <metodo> "|" <monto> LF }
+--            "anterior:" <texto>   LF
+--
+--   hash := SHA-256(UTF-8(canon)) en hexadecimal MINÚSCULAS
+--
+-- REGLAS, todas obligatorias:
+--
+--   · UTF-8. Separador de línea LF (0x0A), nunca CRLF.
+--   · <decimal>: punto, SIEMPRE 2 decimales, sin separador de miles, sin
+--     notación exponencial. 25000 -> "25000.00"; 0 -> "0.00"; -0 -> "0.00"
+--     (en JavaScript (-0).toFixed(2) da "-0.00" y en Java no: hay que
+--     normalizarlo o las dos plataformas discrepan).
+--   · <entero>: sin decimales ni separadores.
+--   · <fecha>: ISO-8601 en UTC con TRES decimales de milisegundo,
+--     `yyyy-MM-dd'T'HH:mm:ss.SSS'Z'`. En Java NO vale `Instant.toString()`,
+--     que omite los ceros finales.
+--   · AUSENTE y CERO son distintos: un nulo serializa como cadena VACÍA tras
+--     los dos puntos. `descuento:` y `descuento:0.00` son hechos diferentes.
+--   · Las listas van EN EL ORDEN EN QUE VIAJAN; no se reordenan. El orden en
+--     que el cajero marcó los productos es parte del hecho.
+--   · Todo texto se escapa —`\`→`\\`, LF→`\n`, CR→`\r`, `|`→`\p`, `:`→`\c`—
+--     para que su contenido no pueda fabricar estructura. Sin esto, un nombre
+--     de producto con un salto de línea podría simular líneas adicionales.
+--
+-- QUÉ NO ENTRA, y por qué:
+--
+--   · `tenant_id`      implícito: un terminal pertenece a un solo negocio (FK +
+--                      RLS). Incluirlo ataría el hecho a un valor que el
+--                      servidor descarta, porque el negocio lo decide el JWT.
+--   · `pager_color`,   enrutamiento operativo; un rastreador se reasigna sin
+--     `pager_number`   que el hecho económico cambie.
+--   · `table_session_id`, `preparado_en_comanda`  operativos, no económicos.
+--   · `status`, `synced`, `id_order`  estado del servidor: no existen todavía
+--                      cuando el evento se emite.
+--   · `discount_code`  el IMPORTE del descuento es el hecho; el código es cómo
+--                      se llegó a él y lo re-resuelve el servidor.
 --
 -- **Esta migración escribe y puebla la columna. NO construye la herramienta de
--- verificación**: el dato es lo que no se puede retrofitear, la verificación se
--- puede escribir en cualquier momento a partir de esta definición.
+-- verificación**: el dato es lo que no se puede retrofitear, y la verificación
+-- se puede escribir en cualquier momento a partir de esta definición.
 --
 -- ── Impacto ───────────────────────────────────────────────────────────
 --
