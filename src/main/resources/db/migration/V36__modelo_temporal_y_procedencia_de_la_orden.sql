@@ -109,7 +109,7 @@
 --
 -- ── Impacto ───────────────────────────────────────────────────────────
 --
--- Seis columnas nuevas, TODAS nullable y sin default. No toca ninguna fila ni
+-- Siete columnas nuevas, TODAS nullable y sin default. No toca ninguna fila ni
 -- columna existente. Las órdenes históricas quedan con las seis en NULL, que
 -- significa exactamente "de antes de que esto se registrara" y no se confunde
 -- con ningún valor real. **No se rellenan hacia atrás: no hay de dónde sacar el
@@ -162,6 +162,46 @@ COMMENT ON COLUMN orders.epoch IS
 COMMENT ON COLUMN orders.seq IS
     'Secuencia monotonica del evento del outbox que produjo esta orden, dentro '
     'de (terminal_id, epoch). Es del EVENTO, no de la orden.';
+-- ── La calidad de la fecha del dispositivo ───────────────────────────
+--
+-- El POS corre en el equipo del local. Un equipo con la pila de la BIOS agotada
+-- tiene el reloj mal, y eso es ordinario en el retail. El servidor NUNCA rechaza
+-- una venta por su fecha —seria dejar de facturar por un problema de hardware
+-- que el negocio no sabe que tiene— pero si deja constancia de si era creible.
+--
+-- Enum CERRADO, sin valor "otro" (reglas 9 y 10 de LINEAMIENTOS):
+--
+--   sin_fecha     el cliente no la mando. Un cliente viejo, no un problema.
+--   creible       incluye el atraso NORMAL de una venta que espero en la cola
+--                 sin internet. Ese caso NO se marca: marcarlo seria declarar
+--                 sospechosa la operacion que este modelo existe para registrar.
+--   adelantado    posterior a registrado_en. Fisicamente imposible: nada ocurre
+--                 despues de que el servidor lo supo.
+--   muy_atrasado  mas atras de lo que cualquier cola justifica (7 dias por
+--                 defecto, configurable).
+--
+-- Marcar y seguir es lo que permite, mas adelante, separar las series limpias de
+-- las sucias sin haber perdido ninguna venta por el camino.
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS reloj_veredicto TEXT;
+
+COMMENT ON COLUMN orders.reloj_veredicto IS
+    'Calidad de ocurrido_en: sin_fecha | creible | adelantado | muy_atrasado. '
+    'NUNCA se rechaza una venta por esto; solo se deja constancia.';
+
+ALTER TABLE orders DROP CONSTRAINT IF EXISTS ck_orders_reloj_veredicto;
+ALTER TABLE orders ADD CONSTRAINT ck_orders_reloj_veredicto
+    CHECK (reloj_veredicto IS NULL
+           OR reloj_veredicto IN ('sin_fecha', 'creible', 'adelantado', 'muy_atrasado'));
+
+-- Coherencia: si no hay fecha, el veredicto solo puede ser sin_fecha; y si hay
+-- fecha, no puede ser sin_fecha. Sostiene en la base que las dos columnas
+-- cuenten la misma historia.
+ALTER TABLE orders DROP CONSTRAINT IF EXISTS ck_orders_reloj_coherente;
+ALTER TABLE orders ADD CONSTRAINT ck_orders_reloj_coherente
+    CHECK (reloj_veredicto IS NULL
+           OR (ocurrido_en IS NULL     AND reloj_veredicto = 'sin_fecha')
+           OR (ocurrido_en IS NOT NULL AND reloj_veredicto <> 'sin_fecha'));
+
 COMMENT ON COLUMN orders.hash_anterior IS
     'SHA-256 hex del evento anterior de ese terminal en ese epoch. NULL en el '
     'primero de cada epoch. Definicion del hash en la cabecera de V36: no '
@@ -230,11 +270,11 @@ DECLARE
     faltan INT;
     tipo_created TEXT;
 BEGIN
-    SELECT 6 - count(*) INTO faltan
+    SELECT 7 - count(*) INTO faltan
     FROM information_schema.columns
     WHERE table_schema = 'public' AND table_name = 'orders'
       AND column_name IN ('ocurrido_en','registrado_en','terminal_id',
-                          'epoch','seq','hash_anterior');
+                          'epoch','seq','hash_anterior','reloj_veredicto');
     IF faltan <> 0 THEN
         RAISE EXCEPTION 'Faltan % columnas del modelo temporal en orders', faltan;
     END IF;
@@ -264,6 +304,9 @@ END $verificar$;
 --
 -- DROP INDEX IF EXISTS idx_orders_ocurrido_en;
 -- DROP INDEX IF EXISTS ux_orders_terminal_epoch_seq;
+-- ALTER TABLE orders DROP CONSTRAINT IF EXISTS ck_orders_reloj_coherente;
+-- ALTER TABLE orders DROP CONSTRAINT IF EXISTS ck_orders_reloj_veredicto;
+-- ALTER TABLE orders DROP COLUMN IF EXISTS reloj_veredicto;
 -- ALTER TABLE orders DROP CONSTRAINT IF EXISTS ck_orders_procedencia_coherente;
 -- ALTER TABLE orders DROP CONSTRAINT IF EXISTS ck_orders_hash_anterior;
 -- ALTER TABLE orders DROP CONSTRAINT IF EXISTS ck_orders_seq;
