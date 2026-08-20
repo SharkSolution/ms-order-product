@@ -129,6 +129,54 @@ public class Order implements org.springframework.data.domain.Persistable<java.u
     @Column(name = "table_session_id")
     private java.util.UUID tableSessionId;
 
+    // ------------------------------------------------------------------
+    // V36 — MODELO TEMPORAL Y PROCEDENCIA.
+    //
+    // `createdAt` NO se toca: cinco servicios lo leen y de él dependen los
+    // cierres, la analítica y los rastreadores. Estas columnas van al lado.
+    //
+    // La diferencia entre las dos fechas ES el dato:
+    // `registradoEn - ocurridoEn` responde "¿cuánto estuvo este local sin
+    // conexión?", que hoy no se puede responder de ninguna manera.
+    // ------------------------------------------------------------------
+
+    /**
+     * Cuándo ocurrió, según el reloj del DISPOSITIVO, tal como lo mandó.
+     * NULL si el cliente no la envía — y se queda nulo. No se rellena con la
+     * del servidor: un nulo honesto vale más que un dato inventado que después
+     * nadie puede distinguir de uno real.
+     */
+    @Column(name = "ocurrido_en")
+    private java.time.OffsetDateTime ocurridoEn;
+
+    /** Cuándo lo supo el SERVIDOR. Siempre reloj del servidor, nunca del cliente. */
+    @Column(name = "registrado_en")
+    private java.time.OffsetDateTime registradoEn;
+
+    /** Qué caja la produjo. FK a `terminals` (V35). */
+    @Column(name = "terminal_id")
+    private java.util.UUID terminalId;
+
+    /** Vida del terminal; sube cuando pierde su estado local. Ver V35. */
+    @Column(name = "epoch")
+    private Integer epoch;
+
+    /**
+     * Secuencia monotónica del EVENTO DEL OUTBOX que produjo esta orden, dentro
+     * de `(terminalId, epoch)`. Es del evento, no de la orden: en la Fase 3
+     * llegan más tipos de evento y todos entran en la misma secuencia.
+     */
+    @Column(name = "seq")
+    private Long seq;
+
+    /**
+     * SHA-256 hex del evento anterior de ese terminal en ese epoch. NULL en el
+     * primero de cada epoch. La definición exacta del hash está en la cabecera
+     * de V36 y no se cambia sin migrar la cadena entera.
+     */
+    @Column(name = "hash_anterior")
+    private String hashAnterior;
+
     @OneToMany(mappedBy = "order", orphanRemoval = true)
     private List<OrderItem> items;
     @OneToOne(mappedBy = "order", orphanRemoval = true, fetch = FetchType.EAGER)
