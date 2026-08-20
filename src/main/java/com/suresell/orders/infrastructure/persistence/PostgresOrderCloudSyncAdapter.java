@@ -350,6 +350,34 @@ public class PostgresOrderCloudSyncAdapter implements OrderCloudSyncPort {
         }
     }
 
+    /**
+     * Convierte un importe del JSON de sincronización.
+     *
+     * <h3>Un importe ilegible es un HECHO, no un {@code null}</h3>
+     *
+     * La versión anterior devolvía {@code null} ante cualquier error de
+     * conversión, <b>sin una sola línea de log</b>. Un importe corrupto se
+     * convertía en columna vacía y de ahí en cero, en silencio absoluto, y esto
+     * es dinero. Era el fallback más sigiloso del inventario de
+     * `discovery/FALLBACK-SILENCIOSO.md` (D10) — más que el del cierre de caja,
+     * que al menos dejaba un WARN.
+     *
+     * <p>Ahora se distinguen los dos casos, que no son el mismo:
+     *
+     * <ul>
+     *   <li><b>Ausente</b> ({@code null}, faltante o cadena vacía) → {@code null}.
+     *       El campo no venía; es información legítima y silenciosa.</li>
+     *   <li><b>Presente pero ilegible</b> → <b>excepción</b>. El campo venía y
+     *       no se pudo leer: eso NO es "no había importe", es un dato corrupto.
+     *       El evento del outbox queda FAILED con el motivo y se puede
+     *       investigar, en vez de escribir un cero que nadie sabrá de dónde
+     *       salió.</li>
+     * </ul>
+     *
+     * <p>Fallar aquí no pierde la venta: el outbox reintenta con backoff y
+     * conserva el evento (`SyncOutboxScheduler.java:53-70`). Lo que se pierde es
+     * la posibilidad de escribir un importe equivocado.
+     */
     private BigDecimal asBigDecimal(JsonNode node) {
         if (node == null || node.isNull() || node.isMissingNode()) return null;
         String text = node.asText();
@@ -357,7 +385,18 @@ public class PostgresOrderCloudSyncAdapter implements OrderCloudSyncPort {
         try {
             return node.isNumber() ? node.decimalValue() : new BigDecimal(text);
         } catch (Exception e) {
-            return null;
+            throw new ImporteIlegibleException(text, e);
+        }
+    }
+
+    /**
+     * Un importe venía en el evento y no se pudo leer. Se lanza en vez de
+     * devolver {@code null} porque un cero inventado y un cero real son
+     * indistinguibles una vez escritos.
+     */
+    public static class ImporteIlegibleException extends RuntimeException {
+        public ImporteIlegibleException(String textoRecibido, Throwable causa) {
+            super("Importe ilegible en el evento de sincronizacion: '" + textoRecibido + "'", causa);
         }
     }
 
