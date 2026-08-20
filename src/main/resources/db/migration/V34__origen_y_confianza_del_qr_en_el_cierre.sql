@@ -18,13 +18,52 @@
 -- un `NUMERIC` en `total_counted_qr`. Por eso el problema duró tres semanas sin
 -- que nadie pudiera detectarlo mirando los datos.
 --
--- ── Impacto en Producción ─────────────────────────────────────────────
+-- ── Impacto en Producción — MEDIDO, no estimado ───────────────────────
 --
--- Cierres afectados desde el 2026-07-30: [PENDIENTE — consulta de impacto]
+--   · Cierres afectados entre el 2026-07-30 y el 2026-08-19: **13**
+--   · Monto acumulado de QR en esos cierres: **$5.982.600**
+--   · `qr_registrado` en los trece: **0**
 --
--- No se estima. La consulta que da el número —de solo lectura— está en
--- `docs/CONSULTAS-VIGILANCIA.md` §2. Hasta tenerlo, este hueco se queda escrito:
--- un número inventado en una cabecera de migración es peor que un hueco.
+-- ── ⚠️ LA PREMISA DE LA PRIMERA VERSIÓN ERA FALSA ─────────────────────
+--
+-- La primera versión de esta migración daba por hecho que `qr_payments` era la
+-- fuente de verdad del QR y que el 401 solo impedía llegar a ella.
+--
+-- **Los datos lo desmienten: `qr_payments` tiene TRES filas en toda su
+-- historia.** Nunca hubo nada contra qué conciliar. El administrador
+-- prácticamente no ha usado ese registro.
+--
+-- Y ahí está el defecto grave de aquella versión: con `conciliado_core` como
+-- fuente preferente, un `ms-core-app` que responde correctamente **200 con
+-- amount = 0** —porque no hay registro— habría hecho que cada cierre reportara
+-- CERO esperado en QR, cuando el negocio recibe del orden de **$460.000 diarios**
+-- por ese medio. El arreglo habría sido peor que el defecto.
+--
+-- ── Tres columnas, tres hechos, ninguno destruido ─────────────────────
+--
+-- El error de fondo era guardar UN monto de QR y discutir de dónde salía. Hay
+-- tres hechos distintos y los tres valen:
+--
+--   `qr_pos`              lo que el POS registró como cobrado por QR ese día
+--                         (suma de `orders` con `payment_method = 'QR'`).
+--                         Es el único que existe SIEMPRE, porque sale de las
+--                         ventas mismas.
+--   `qr_manual_cajero`    lo que el cajero teclea al cerrar.
+--   `qr_conciliado_core`  lo que devuelva `ms-core-app`, si devuelve algo.
+--
+-- `total_counted_qr` sigue siendo el monto que manda en el cuadre y **no cambia
+-- de valor respecto a hoy**: el local cierra con el mismo número. Lo que cambia
+-- es que ahora se sabe de dónde salió y con qué otros dos hechos convive.
+--
+-- ── LA REGLA DURA ─────────────────────────────────────────────────────
+--
+-- **Un conciliado de 0 con un manual mayor que 0 NUNCA se convierte en un total
+-- de 0.** Eso es `sin_registro_externo`, confianza 0, y el total sigue usando el
+-- manual. Es exactamente el escenario que los datos revelaron y que la primera
+-- versión habría producido trece veces.
+--
+-- El invariante lo sostiene la BASE (`ck_daily_closures_qr_cero_externo`), no el
+-- código, por la misma razón que argumenta `V17:5-8`.
 --
 -- ── Qué añade ─────────────────────────────────────────────────────────
 --
@@ -91,14 +130,30 @@
 -- fallar antes que frenar un cierre de caja. Mismo criterio que V32:52.
 SET lock_timeout = '3s';
 
-ALTER TABLE daily_closures ADD COLUMN IF NOT EXISTS qr_fuente       TEXT;
-ALTER TABLE daily_closures ADD COLUMN IF NOT EXISTS qr_confianza    SMALLINT;
-ALTER TABLE daily_closures ADD COLUMN IF NOT EXISTS qr_capturado_en TIMESTAMPTZ;
-ALTER TABLE daily_closures ADD COLUMN IF NOT EXISTS qr_detalle      TEXT;
+ALTER TABLE daily_closures ADD COLUMN IF NOT EXISTS qr_fuente          TEXT;
+ALTER TABLE daily_closures ADD COLUMN IF NOT EXISTS qr_confianza       SMALLINT;
+ALTER TABLE daily_closures ADD COLUMN IF NOT EXISTS qr_capturado_en    TIMESTAMPTZ;
+ALTER TABLE daily_closures ADD COLUMN IF NOT EXISTS qr_detalle         TEXT;
+
+-- Los tres hechos, cada uno en su columna. Ninguno se destruye para producir
+-- otro; el que manda en el cuadre sigue siendo `total_counted_qr`.
+ALTER TABLE daily_closures ADD COLUMN IF NOT EXISTS qr_pos             NUMERIC(15,2);
+ALTER TABLE daily_closures ADD COLUMN IF NOT EXISTS qr_manual_cajero   NUMERIC(15,2);
+ALTER TABLE daily_closures ADD COLUMN IF NOT EXISTS qr_conciliado_core NUMERIC(15,2);
+
+COMMENT ON COLUMN daily_closures.qr_pos IS
+    'Suma de las ventas del dia con payment_method = QR. El unico de los tres que '
+    'existe SIEMPRE, porque sale de las ventas mismas.';
+COMMENT ON COLUMN daily_closures.qr_manual_cajero IS
+    'Lo que teclea el cajero al cerrar.';
+COMMENT ON COLUMN daily_closures.qr_conciliado_core IS
+    'Lo que devolvio ms-core-app, si devolvio algo. NULL = no se pudo consultar o '
+    'no hay registro. Ojo: qr_payments tiene 3 filas en toda su historia.';
 
 COMMENT ON COLUMN daily_closures.qr_fuente IS
-    'De donde salio total_counted_qr: conciliado_core | manual_cajero | fallo_integracion. '
-    'NULL = cierre anterior a V34, no reclasificable.';
+    'De donde salio total_counted_qr: conciliado_core | pos | manual_cajero | '
+    'sin_registro_externo | fallo_integracion. NULL = cierre anterior a V34, no '
+    'reclasificable.';
 COMMENT ON COLUMN daily_closures.qr_confianza IS
     'Nivel de confianza 0-3 del monto de QR (regla 5). 2 = conciliado contra ms-core-app; '
     '0 = sin conciliar.';
@@ -113,7 +168,11 @@ COMMENT ON COLUMN daily_closures.qr_detalle IS
 ALTER TABLE daily_closures DROP CONSTRAINT IF EXISTS ck_daily_closures_qr_fuente;
 ALTER TABLE daily_closures ADD CONSTRAINT ck_daily_closures_qr_fuente
     CHECK (qr_fuente IS NULL
-           OR qr_fuente IN ('conciliado_core', 'manual_cajero', 'fallo_integracion'));
+           OR qr_fuente IN ('conciliado_core',       -- ms-core-app respondio con un monto real
+                            'pos',                   -- se uso la suma de ventas por QR del POS
+                            'manual_cajero',         -- se uso el valor tecleado
+                            'sin_registro_externo',  -- core respondio 0 o 404; hay manual > 0
+                            'fallo_integracion'));   -- 401, timeout, 5xx, respuesta ilegible
 
 -- La escala es 0–3 (regla 5). Fuera de ese rango es un error de programación,
 -- no un dato.
@@ -129,8 +188,11 @@ ALTER TABLE daily_closures DROP CONSTRAINT IF EXISTS ck_daily_closures_qr_cohere
 ALTER TABLE daily_closures ADD CONSTRAINT ck_daily_closures_qr_coherencia
     CHECK (
         qr_fuente IS NULL
-        OR (qr_fuente = 'conciliado_core'   AND qr_confianza >= 1)
-        OR (qr_fuente IN ('manual_cajero', 'fallo_integracion') AND qr_confianza = 0)
+        -- Conciliado contra una segunda fuente: es el unico con confianza > 0.
+        OR (qr_fuente = 'conciliado_core' AND qr_confianza >= 1)
+        -- Todo lo demas es un solo origen sin verificar contra nada.
+        OR (qr_fuente IN ('pos', 'manual_cajero', 'sin_registro_externo', 'fallo_integracion')
+            AND qr_confianza = 0)
     );
 
 -- Un fallo sin explicacion no sirve para diagnosticar nada: si la fuente es
@@ -139,6 +201,35 @@ ALTER TABLE daily_closures DROP CONSTRAINT IF EXISTS ck_daily_closures_qr_detall
 ALTER TABLE daily_closures ADD CONSTRAINT ck_daily_closures_qr_detalle
     CHECK (qr_fuente IS DISTINCT FROM 'fallo_integracion'
            OR (qr_detalle IS NOT NULL AND length(btrim(qr_detalle)) > 0));
+
+-- ── LA REGLA DURA, sostenida por la base ─────────────────────────────
+--
+-- Un conciliado de 0 con un manual mayor que 0 NO puede producir un total de 0.
+-- Si el externo dice cero pero el cajero conto dinero, el hecho es
+-- `sin_registro_externo` y el total usa el manual.
+--
+-- Es el escenario que los datos revelaron —qr_payments con tres filas en toda su
+-- historia— y que la primera version de esta migracion habria producido trece
+-- veces. Que lo impida la BASE y no el codigo es lo mismo que argumenta V17:5-8:
+-- un chequeo en el codigo protege del codigo de hoy.
+ALTER TABLE daily_closures DROP CONSTRAINT IF EXISTS ck_daily_closures_qr_cero_externo;
+ALTER TABLE daily_closures ADD CONSTRAINT ck_daily_closures_qr_cero_externo
+    CHECK (
+        qr_fuente IS DISTINCT FROM 'conciliado_core'
+        OR qr_conciliado_core IS NULL
+        OR qr_conciliado_core <> 0
+        OR coalesce(qr_manual_cajero, 0) = 0
+    );
+
+-- Y el total nunca puede ser cero habiendo manual: es la misma regla vista desde
+-- el resultado en vez de desde la fuente.
+ALTER TABLE daily_closures DROP CONSTRAINT IF EXISTS ck_daily_closures_qr_total_no_se_pierde;
+ALTER TABLE daily_closures ADD CONSTRAINT ck_daily_closures_qr_total_no_se_pierde
+    CHECK (
+        qr_fuente IS NULL
+        OR coalesce(qr_manual_cajero, 0) = 0
+        OR coalesce(total_counted_qr, 0) <> 0
+    );
 
 -- La consulta de vigilancia (docs/CONSULTAS-VIGILANCIA.md) filtra por fuente y
 -- fecha: ese es el indice que importa. Parcial, porque lo que se busca son los
@@ -160,13 +251,15 @@ DO $verificar$
 DECLARE
     faltan INT;
 BEGIN
-    SELECT 4 - count(*) INTO faltan
+    SELECT 6 - count(*) INTO faltan
     FROM pg_constraint
     WHERE conrelid = 'daily_closures'::regclass
       AND conname IN ('ck_daily_closures_qr_fuente',
                       'ck_daily_closures_qr_confianza',
                       'ck_daily_closures_qr_coherencia',
-                      'ck_daily_closures_qr_detalle');
+                      'ck_daily_closures_qr_detalle',
+                      'ck_daily_closures_qr_cero_externo',
+                      'ck_daily_closures_qr_total_no_se_pierde');
 
     IF faltan <> 0 THEN
         RAISE EXCEPTION 'Faltan % restricciones de qr_fuente/qr_confianza en daily_closures', faltan;
@@ -181,6 +274,11 @@ END $verificar$;
 -- se aplico. El monto (total_counted_qr) NO se toca: el cuadre historico se
 -- mantiene al centavo.
 --
+-- ALTER TABLE daily_closures DROP CONSTRAINT IF EXISTS ck_daily_closures_qr_total_no_se_pierde;
+-- ALTER TABLE daily_closures DROP CONSTRAINT IF EXISTS ck_daily_closures_qr_cero_externo;
+-- ALTER TABLE daily_closures DROP COLUMN IF EXISTS qr_conciliado_core;
+-- ALTER TABLE daily_closures DROP COLUMN IF EXISTS qr_manual_cajero;
+-- ALTER TABLE daily_closures DROP COLUMN IF EXISTS qr_pos;
 -- ALTER TABLE daily_closures DROP CONSTRAINT IF EXISTS ck_daily_closures_qr_detalle;
 -- ALTER TABLE daily_closures DROP CONSTRAINT IF EXISTS ck_daily_closures_qr_coherencia;
 -- ALTER TABLE daily_closures DROP CONSTRAINT IF EXISTS ck_daily_closures_qr_confianza;

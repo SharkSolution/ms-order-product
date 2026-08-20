@@ -114,32 +114,55 @@ public class ConciliadorDeQr {
      * @param valorDelCajero  lo que tecleó el cajero; es el respaldo cuando no
      *                        hay conciliación posible
      */
-    public ResultadoQr resolver(LocalDate fecha, BigDecimal valorDelCajero) {
+    /**
+     * @param fecha          día que se está cerrando
+     * @param valorDelCajero lo que tecleó el cajero
+     * @param valorDelPos    suma de las ventas del día con `payment_method = 'QR'`.
+     *                       El único de los tres que existe siempre
+     */
+    public ResultadoQr resolver(LocalDate fecha, BigDecimal valorDelCajero, BigDecimal valorDelPos) {
         String url = coreApiUrl + "/qr-payments/by-date?date=" + fecha;
         try {
             ResponseEntity<JsonNode> respuesta = restTemplate.exchange(
                     url, HttpMethod.GET, new HttpEntity<>(cabeceras()), JsonNode.class);
 
             if (!respuesta.getStatusCode().is2xxSuccessful() || respuesta.getBody() == null) {
-                return ResultadoQr.fallo(valorDelCajero,
+                return ResultadoQr.fallo(valorDelCajero, valorDelPos,
                         "Respuesta inesperada de ms-core-app: HTTP " + respuesta.getStatusCode().value()
                                 + (respuesta.getBody() == null ? " con cuerpo vacio" : ""));
             }
 
             JsonNode monto = respuesta.getBody().get("amount");
             if (monto == null || monto.isNull()) {
-                return ResultadoQr.fallo(valorDelCajero,
+                return ResultadoQr.fallo(valorDelCajero, valorDelPos,
                         "ms-core-app respondio 200 sin el campo 'amount'");
             }
 
-            ResultadoQr conciliado = ResultadoQr.conciliado(new BigDecimal(monto.asText()));
+            BigDecimal deCore = new BigDecimal(monto.asText());
+
+            // ⚠️ LA REGLA DURA. Un cero del externo con dinero contado por el
+            // cajero NO es una conciliacion: es que no hay registro externo.
+            //
+            // No es una hipotesis: `qr_payments` tiene TRES filas en toda su
+            // historia. Tomar ese cero por bueno habria hecho que cada cierre
+            // reportara cero esperado en QR cuando el negocio recibe del orden de
+            // $460.000 diarios por ese medio — el arreglo peor que el defecto.
+            if (deCore.compareTo(BigDecimal.ZERO) == 0 && esPositivo(valorDelCajero)) {
+                log.warn("Cierre: ms-core-app reporta 0 en QR para {} pero el cajero conto {}. "
+                        + "Se usa el del cajero; el cierre queda como sin_registro_externo.",
+                        fecha, valorDelCajero);
+                return ResultadoQr.sinRegistroExterno(valorDelCajero, valorDelPos, deCore);
+            }
+
+            ResultadoQr conciliado = ResultadoQr.conciliado(deCore, valorDelPos, valorDelCajero);
             log.info("Cierre: QR conciliado contra ms-core-app = {}", conciliado.monto());
             return conciliado;
 
         } catch (HttpClientErrorException.NotFound e) {
-            // Caso legítimo: no hay pago QR registrado ese día. No es un fallo.
+            // Caso legítimo: no hay pago QR registrado ese día. No es un fallo —
+            // y con `qr_payments` en tres filas históricas, es lo NORMAL.
             log.info("Cierre: ms-core-app no tiene pago QR para {}; se usa el valor del cajero", fecha);
-            return ResultadoQr.manual(valorDelCajero);
+            return sinConciliacion(valorDelCajero, valorDelPos);
 
         } catch (Exception e) {
             String detalle = describir(e);
@@ -148,8 +171,33 @@ public class ConciliadorDeQr {
             // la columna qr_fuente que queda en la fila.
             log.warn("Cierre: no se pudo conciliar el QR contra ms-core-app ({}). "
                     + "Se usa el valor del cajero y el cierre queda marcado como fallo_integracion.", detalle);
-            return ResultadoQr.fallo(valorDelCajero, detalle);
+            return ResultadoQr.fallo(valorDelCajero, valorDelPos, detalle);
         }
+    }
+
+    /**
+     * No hubo conciliación externa. Se elige entre el valor del cajero y el del
+     * POS, y se deja constancia de cuál se usó.
+     *
+     * <p>Manda el del cajero cuando existe: es el que el negocio cuenta y con el
+     * que cierra hoy, y este cambio NO altera el monto con el que cierra el
+     * local. Si el cajero no puso nada, el del POS es mejor que cero — sale de
+     * las ventas mismas.
+     */
+    private ResultadoQr sinConciliacion(BigDecimal valorDelCajero, BigDecimal valorDelPos) {
+        if (esPositivo(valorDelCajero)) {
+            return ResultadoQr.manual(valorDelCajero, valorDelPos);
+        }
+        if (esPositivo(valorDelPos)) {
+            return ResultadoQr.delPos(valorDelPos, valorDelCajero);
+        }
+        // Ni cajero ni POS: no hubo QR ese dia. Se registra como manual en cero,
+        // que es la verdad, y no como una conciliacion que no ocurrio.
+        return ResultadoQr.manual(valorDelCajero, valorDelPos);
+    }
+
+    private static boolean esPositivo(BigDecimal valor) {
+        return valor != null && valor.compareTo(BigDecimal.ZERO) > 0;
     }
 
     private HttpHeaders cabeceras() {

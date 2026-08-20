@@ -43,6 +43,8 @@ class ConciliadorDeQrTest {
     private static final String URL_CORE = "http://core-de-prueba/api/core";
     private static final LocalDate FECHA = LocalDate.of(2026, 8, 20);
     private static final BigDecimal VALOR_DEL_CAJERO = new BigDecimal("150000");
+    /** Suma de ventas del dia por QR. El unico de los tres que existe siempre. */
+    private static final BigDecimal QR_DEL_POS = new BigDecimal("148000");
 
     private RestTemplate restTemplate;
     private MockRestServiceServer servidor;
@@ -78,7 +80,7 @@ class ConciliadorDeQrTest {
                     .andRespond(withSuccess("{\"amount\": 275000, \"paymentDate\": \"2026-08-20\"}",
                             MediaType.APPLICATION_JSON));
 
-            ResultadoQr r = conciliador().resolver(FECHA, VALOR_DEL_CAJERO);
+            ResultadoQr r = conciliador().resolver(FECHA, VALOR_DEL_CAJERO, QR_DEL_POS);
 
             // El monto que manda es el de core, NO el del cajero.
             assertThat(r.monto()).isEqualByComparingTo("275000");
@@ -86,20 +88,48 @@ class ConciliadorDeQrTest {
             assertThat(r.confianza()).isEqualTo(ResultadoQr.CONFIANZA_CONCILIADO);
             assertThat(r.confianza()).isEqualTo((short) 2);
             assertThat(r.detalle()).isNull();
+            // Los tres hechos, cada uno en su sitio.
+            assertThat(r.qrConciliado()).isEqualByComparingTo("275000");
+            assertThat(r.qrManual()).isEqualByComparingTo(VALOR_DEL_CAJERO);
+            assertThat(r.qrPos()).isEqualByComparingTo(QR_DEL_POS);
             servidor.verify();
         }
 
         @Test
-        @DisplayName("un cero afirmado por core SÍ es conciliado: no es lo mismo que 'no hay registro'")
-        void ceroAfirmadoEsConciliado() {
+        @DisplayName("🔴 core dice 0 pero el cajero contó dinero: NO se convierte en un total de 0")
+        void ceroDelExternoConDineroContado() {
+            // ESTE es el test que salva el arreglo. `qr_payments` tiene TRES
+            // filas en toda su historia, asi que "el externo dice cero" es la
+            // respuesta NORMAL, no una anomalia. Tomarla por conciliacion buena
+            // habria hecho que cada cierre reportara cero esperado en QR cuando
+            // el negocio recibe del orden de $460.000 diarios por ese medio.
             servidor.expect(requestTo(urlEsperada()))
                     .andRespond(withSuccess("{\"amount\": 0}", MediaType.APPLICATION_JSON));
 
-            ResultadoQr r = conciliador().resolver(FECHA, VALOR_DEL_CAJERO);
+            ResultadoQr r = conciliador().resolver(FECHA, VALOR_DEL_CAJERO, QR_DEL_POS);
 
-            assertThat(r.monto()).isEqualByComparingTo("0");
+            assertThat(r.monto())
+                    .as("el total usa el del cajero, JAMAS el cero del externo")
+                    .isEqualByComparingTo(VALOR_DEL_CAJERO);
+            assertThat(r.fuente()).isEqualTo(FuenteQr.sin_registro_externo);
+            assertThat(r.confianza()).isEqualTo((short) 0);
+            // Y los tres hechos quedan guardados, ninguno destruido.
+            assertThat(r.qrConciliado()).isEqualByComparingTo("0");
+            assertThat(r.qrManual()).isEqualByComparingTo(VALOR_DEL_CAJERO);
+            assertThat(r.qrPos()).isEqualByComparingTo(QR_DEL_POS);
+        }
+
+        @Test
+        @DisplayName("core dice 0 y el cajero tampoco contó nada: eso sí es conciliado")
+        void ceroDelExternoSinDineroContado() {
+            servidor.expect(requestTo(urlEsperada()))
+                    .andRespond(withSuccess("{\"amount\": 0}", MediaType.APPLICATION_JSON));
+
+            ResultadoQr r = conciliador().resolver(FECHA, BigDecimal.ZERO, QR_DEL_POS);
+
+            // Dos fuentes coinciden en que no hubo QR: eso es una conciliacion.
             assertThat(r.fuente()).isEqualTo(FuenteQr.conciliado_core);
-            assertThat(r.confianza()).isEqualTo((short) 2);
+            assertThat(r.monto()).isEqualByComparingTo("0");
         }
     }
 
@@ -119,7 +149,7 @@ class ConciliadorDeQrTest {
             servidor.expect(requestTo(urlEsperada()))
                     .andRespond(withStatus(HttpStatus.NOT_FOUND));
 
-            ResultadoQr r = conciliador().resolver(FECHA, VALOR_DEL_CAJERO);
+            ResultadoQr r = conciliador().resolver(FECHA, VALOR_DEL_CAJERO, QR_DEL_POS);
 
             assertThat(r.monto()).isEqualByComparingTo(VALOR_DEL_CAJERO);
             assertThat(r.fuente()).isEqualTo(FuenteQr.manual_cajero);
@@ -134,11 +164,22 @@ class ConciliadorDeQrTest {
             servidor.expect(requestTo(urlEsperada()))
                     .andRespond(withStatus(HttpStatus.NOT_FOUND));
 
-            ResultadoQr r = conciliador().resolver(FECHA, null);
+            ResultadoQr r = conciliador().resolver(FECHA, null, QR_DEL_POS);
+
+            // Sin valor del cajero, el del POS es mejor que cero: sale de las
+            // ventas mismas. Y queda dicho que vino de ahi.
+            assertThat(r.monto()).isEqualByComparingTo(QR_DEL_POS);
+            assertThat(r.fuente()).isEqualTo(FuenteQr.pos);
+        }
+
+        @Test
+        @DisplayName("sin cajero y sin ventas por QR: cero honesto, no conciliacion inventada")
+        void niCajeroNiPos() {
+            servidor.expect(requestTo(urlEsperada())).andRespond(withStatus(HttpStatus.NOT_FOUND));
+
+            ResultadoQr r = conciliador().resolver(FECHA, null, BigDecimal.ZERO);
 
             assertThat(r.monto()).isEqualByComparingTo("0");
-            // Cero por ausencia de dato NO es cero conciliado. La distinción es
-            // el punto entero de este cambio.
             assertThat(r.fuente()).isEqualTo(FuenteQr.manual_cajero);
         }
     }
@@ -154,7 +195,7 @@ class ConciliadorDeQrTest {
             servidor.expect(requestTo(urlEsperada()))
                     .andRespond(withStatus(HttpStatus.UNAUTHORIZED));
 
-            ResultadoQr r = conciliador().resolver(FECHA, VALOR_DEL_CAJERO);
+            ResultadoQr r = conciliador().resolver(FECHA, VALOR_DEL_CAJERO, QR_DEL_POS);
 
             // El cierre puede seguir: no se rompe la operación del local.
             assertThat(r.monto()).isEqualByComparingTo(VALOR_DEL_CAJERO);
@@ -170,7 +211,7 @@ class ConciliadorDeQrTest {
         void error500() {
             servidor.expect(requestTo(urlEsperada())).andRespond(withServerError());
 
-            ResultadoQr r = conciliador().resolver(FECHA, VALOR_DEL_CAJERO);
+            ResultadoQr r = conciliador().resolver(FECHA, VALOR_DEL_CAJERO, QR_DEL_POS);
 
             assertThat(r.fuente()).isEqualTo(FuenteQr.fallo_integracion);
             assertThat(r.detalle()).contains("500");
@@ -182,7 +223,7 @@ class ConciliadorDeQrTest {
             servidor.expect(requestTo(urlEsperada()))
                     .andRespond(withSuccess("{\"otraCosa\": 1}", MediaType.APPLICATION_JSON));
 
-            ResultadoQr r = conciliador().resolver(FECHA, VALOR_DEL_CAJERO);
+            ResultadoQr r = conciliador().resolver(FECHA, VALOR_DEL_CAJERO, QR_DEL_POS);
 
             assertThat(r.fuente()).isEqualTo(FuenteQr.fallo_integracion);
             assertThat(r.detalle()).contains("amount");
@@ -203,7 +244,7 @@ class ConciliadorDeQrTest {
                     .andExpect(header("Authorization", "Bearer token-del-cajero"))
                     .andRespond(withSuccess("{\"amount\": 100}", MediaType.APPLICATION_JSON));
 
-            conciliador().resolver(FECHA, VALOR_DEL_CAJERO);
+            conciliador().resolver(FECHA, VALOR_DEL_CAJERO, QR_DEL_POS);
 
             // Si la cabecera no viaja, verify() falla. Este es EL test que
             // impide que la regresión del 2026-07-30 vuelva a pasar.
@@ -218,7 +259,7 @@ class ConciliadorDeQrTest {
                     .andExpect(headerDoesNotExist("Authorization"))
                     .andRespond(withStatus(HttpStatus.UNAUTHORIZED));
 
-            ResultadoQr r = conciliador().resolver(FECHA, VALOR_DEL_CAJERO);
+            ResultadoQr r = conciliador().resolver(FECHA, VALOR_DEL_CAJERO, QR_DEL_POS);
 
             servidor.verify();
             assertThat(r.fuente()).isEqualTo(FuenteQr.fallo_integracion);
@@ -254,7 +295,7 @@ class ConciliadorDeQrTest {
             ConciliadorDeQr c = new ConciliadorDeQr(token, real);
             c.fijarUrlDeCore("http://127.0.0.1:1/api/core");
 
-            ResultadoQr r = c.resolver(FECHA, VALOR_DEL_CAJERO);
+            ResultadoQr r = c.resolver(FECHA, VALOR_DEL_CAJERO, QR_DEL_POS);
 
             assertThat(r.fuente()).isEqualTo(FuenteQr.fallo_integracion);
             assertThat(r.confianza()).isEqualTo((short) 0);

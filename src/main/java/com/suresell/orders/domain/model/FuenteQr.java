@@ -25,11 +25,37 @@ public enum FuenteQr {
     conciliado_core,
 
     /**
+     * El monto salió de la SUMA DE VENTAS del POS con `payment_method = 'QR'`.
+     *
+     * <p>Es el único de los tres orígenes que existe siempre, porque sale de las
+     * ventas mismas y no de un registro que alguien tenga que mantener.
+     */
+    pos,
+
+    /**
      * El monto lo tecleó el cajero y no había nada contra qué conciliarlo: la
      * consulta funcionó y respondió que no hay pago QR registrado para ese día
      * (404). No es un fallo — es la respuesta legítima "no hay nada".
      */
     manual_cajero,
+
+    /**
+     * `ms-core-app` respondió correctamente pero **con cero o sin registro**, y
+     * el cajero SÍ contó dinero por QR.
+     *
+     * <p>Este valor existe por lo que los datos revelaron: `qr_payments` tiene
+     * <b>tres filas en toda su historia</b>. El administrador prácticamente no
+     * ha usado ese registro, así que "el externo dice cero" es la respuesta
+     * normal, no una anomalía.
+     *
+     * <p>Sin este valor, la primera versión de V34 habría tomado ese cero como
+     * conciliación buena y **cada cierre habría reportado cero esperado en QR
+     * cuando el negocio recibe del orden de $460.000 diarios** por ese medio.
+     *
+     * <p>Confianza 0 y el total sigue usando el manual. La regla la sostiene la
+     * base: `ck_daily_closures_qr_cero_externo`.
+     */
+    sin_registro_externo,
 
     /**
      * La conciliación NO se pudo hacer: 401, timeout, 5xx, respuesta ilegible,

@@ -19,7 +19,8 @@ import java.math.BigDecimal;
  *                   analizable: no se agrega ni se compara, solo se lee cuando
  *                   alguien investiga. Lo analizable es {@code fuente}
  */
-public record ResultadoQr(BigDecimal monto, FuenteQr fuente, short confianza, String detalle) {
+public record ResultadoQr(BigDecimal monto, FuenteQr fuente, short confianza, String detalle,
+                          BigDecimal qrPos, BigDecimal qrManual, BigDecimal qrConciliado) {
 
     /**
      * Dato conciliado contra una segunda fuente (el registro del administrador
@@ -39,9 +40,40 @@ public record ResultadoQr(BigDecimal monto, FuenteQr fuente, short confianza, St
      */
     public static final short CONFIANZA_SIN_CONCILIAR = 0;
 
-    /** El monto salió del registro de `ms-core-app`: hay conciliación real. */
-    public static ResultadoQr conciliado(BigDecimal monto) {
-        return new ResultadoQr(monto, FuenteQr.conciliado_core, CONFIANZA_CONCILIADO, null);
+    /**
+     * `ms-core-app` respondió con un monto REAL (distinto de cero): hay
+     * conciliación de verdad contra una segunda fuente.
+     */
+    public static ResultadoQr conciliado(BigDecimal montoDeCore, BigDecimal delPos,
+                                         BigDecimal delCajero) {
+        return new ResultadoQr(montoDeCore, FuenteQr.conciliado_core, CONFIANZA_CONCILIADO, null,
+                delPos, delCajero, montoDeCore);
+    }
+
+    /**
+     * `ms-core-app` respondió correctamente pero con CERO o sin registro, y el
+     * cajero sí contó dinero.
+     *
+     * <p><b>El total usa el del cajero, nunca el cero.</b> Es el escenario que
+     * los datos revelaron —`qr_payments` con tres filas en toda su historia— y
+     * el que la primera versión de V34 habría convertido en trece cierres con
+     * cero esperado en QR.
+     */
+    public static ResultadoQr sinRegistroExterno(BigDecimal delCajero, BigDecimal delPos,
+                                                 BigDecimal loQueDijoCore) {
+        return new ResultadoQr(normalizar(delCajero), FuenteQr.sin_registro_externo,
+                CONFIANZA_SIN_CONCILIAR, null, delPos, delCajero, loQueDijoCore);
+    }
+
+    /**
+     * El monto salió de la suma de ventas por QR del POS.
+     *
+     * <p>Es el único origen que existe siempre: sale de las ventas mismas y no
+     * de un registro que alguien tenga que mantener al día.
+     */
+    public static ResultadoQr delPos(BigDecimal delPos, BigDecimal delCajero) {
+        return new ResultadoQr(normalizar(delPos), FuenteQr.pos,
+                CONFIANZA_SIN_CONCILIAR, null, delPos, delCajero, null);
     }
 
     /**
@@ -52,9 +84,9 @@ public record ResultadoQr(BigDecimal monto, FuenteQr fuente, short confianza, St
      * significa "no hay registro", no "el registro dice cero". Afirmar una
      * conciliación que no ocurrió es justo lo que este cambio viene a impedir.
      */
-    public static ResultadoQr manual(BigDecimal montoDelCajero) {
+    public static ResultadoQr manual(BigDecimal montoDelCajero, BigDecimal delPos) {
         return new ResultadoQr(normalizar(montoDelCajero), FuenteQr.manual_cajero,
-                CONFIANZA_SIN_CONCILIAR, null);
+                CONFIANZA_SIN_CONCILIAR, null, delPos, montoDelCajero, null);
     }
 
     /**
@@ -66,9 +98,10 @@ public record ResultadoQr(BigDecimal monto, FuenteQr fuente, short confianza, St
      *                       cuando lo que pasaba era un 401, y esa frase mandó a
      *                       todo el mundo a mirar donde no era
      */
-    public static ResultadoQr fallo(BigDecimal montoDelCajero, String detalleTecnico) {
+    public static ResultadoQr fallo(BigDecimal montoDelCajero, BigDecimal delPos,
+                                    String detalleTecnico) {
         return new ResultadoQr(normalizar(montoDelCajero), FuenteQr.fallo_integracion,
-                CONFIANZA_SIN_CONCILIAR, detalleTecnico);
+                CONFIANZA_SIN_CONCILIAR, detalleTecnico, delPos, montoDelCajero, null);
     }
 
     private static BigDecimal normalizar(BigDecimal valor) {

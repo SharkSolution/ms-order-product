@@ -135,7 +135,12 @@ public class ExecuteDailyClosureUseCase {
         // porque no había nada registrado, o degradado por un fallo de
         // integración. Los tres casos completan el cierre; lo que cambia es lo
         // que queda escrito en la fila.
-        ResultadoQr resultadoQr = conciliadorDeQr.resolver(closingTime.toLocalDate(), request.countedQr());
+        // El QR del POS: la suma de las ventas del dia por ese medio. Ya esta
+        // calculada arriba, en `expected` — es el unico de los tres hechos que
+        // existe siempre, porque sale de las ventas mismas.
+        BigDecimal qrDelPos = expected.getOrDefault("QR", BigDecimal.ZERO);
+        ResultadoQr resultadoQr = conciliadorDeQr.resolver(
+                closingTime.toLocalDate(), request.countedQr(), qrDelPos);
         BigDecimal countedQr = resultadoQr.monto();
         log.info("Valor QR a usar en cierre: {} (fuente={}, confianza={})",
                 countedQr, resultadoQr.fuente(), resultadoQr.confianza());
