@@ -351,7 +351,11 @@ public class WaiterService {
         //
         // Sin el campo se conserva el comportamiento anterior, así que los APK
         // ya instalados no se enteran.
-        Order created = orderPort.createOrUpdateOrder(new OrderRequestRecord(
+        // V36: la app de meseros todavía no manda procedencia temporal, así que
+        // los cinco campos nuevos van nulos. `ocurrido_en` quedará NULO para sus
+        // órdenes, que es la verdad —esa app no declara cuándo ocurrió la venta—
+        // y no un valor inventado. Cuando la app los envíe, se pasan aquí.
+        Order created = orderPort.createOrUpdateOrder(OrderRequestRecord.sinProcedencia(
                 request.pagerColor(), request.pagerNumber(), request.items(),
                 request.discountCode(), request.paymentMethod(), request.payments(),
                 key, request.omitirChequeoDeRastreador(), cuentaDeMesa, false));

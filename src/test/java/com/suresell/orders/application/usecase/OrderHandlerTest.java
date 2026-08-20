@@ -82,7 +82,12 @@ class OrderHandlerTest {
                 org.mockito.Mockito.mock(com.suresell.orders.infrastructure.persistence.WaiterRepository.class),
                 org.mockito.Mockito.mock(com.suresell.orders.infrastructure.persistence.OrderPaymentRepository.class),
                 pagerConfigService,
-                tableSessionRepository);
+                tableSessionRepository,
+                // V35/V36: el registro de terminales y la cordura del reloj no
+                // afectan a estas pruebas —ninguna manda procedencia— pero el
+                // constructor los exige.
+                org.mockito.Mockito.mock(RegistroDeTerminales.class),
+                new CorduraDelRelojDelDispositivo());
     }
     @Test
     void getAllOrdersCallsProductServiceOncePerDistinctProductId() {
@@ -120,7 +125,7 @@ class OrderHandlerTest {
     }
     @Test
     void createOrUpdateOrderSavesOrderWithCalculatedSubtotalAndTotal() {
-        OrderRequestRecord request = new OrderRequestRecord(
+        OrderRequestRecord request = OrderRequestRecord.sinProcedencia(
                 "AZUL",
                 "10",
                 List.of(
@@ -163,7 +168,7 @@ class OrderHandlerTest {
         when(orderRepositoryPort.findByIdempotencyKey("clave-repetida"))
                 .thenReturn(Optional.of(previa));
 
-        OrderRequestRecord request = new OrderRequestRecord(
+        OrderRequestRecord request = OrderRequestRecord.sinProcedencia(
                 "AZUL", "10",
                 List.of(new OrderItemRequestRecord("101", 1, BigDecimal.valueOf(5000), null, null)),
                 null, "CASH", null, "clave-repetida", null, null, null);
@@ -188,7 +193,7 @@ class OrderHandlerTest {
      */
     @Test
     void lasOrdenesDeMeseroNoValidanDisponibilidadDelRastreador() {
-        OrderRequestRecord request = new OrderRequestRecord(
+        OrderRequestRecord request = OrderRequestRecord.sinProcedencia(
                 "Azul", "1",
                 List.of(new OrderItemRequestRecord("101", 1, BigDecimal.valueOf(5000), null, null)),
                 null, "CASH", null, null, true, null, null);
@@ -219,7 +224,7 @@ class OrderHandlerTest {
             "Efectivo, CASH", "EFECTIVO, CASH", "Tarjeta, CARD", "Datafono, CARD",
             "Nequi, QR", "QR, QR", "CASH, CASH"})
     void aceptaLasEtiquetasEnEspanolQueMandaLaAppDeMeseros(String enviado, String esperado) {
-        OrderRequestRecord request = new OrderRequestRecord(
+        OrderRequestRecord request = OrderRequestRecord.sinProcedencia(
                 "AZUL", "16",
                 List.of(new OrderItemRequestRecord("101", 1, BigDecimal.valueOf(5000), null, null)),
                 null, enviado, null, null, null, null, null);
@@ -247,7 +252,7 @@ class OrderHandlerTest {
      */
     @Test
     void multipagoConSplitNequiSePersistenNormalizadosYSigueSiendoMixto() {
-        OrderRequestRecord request = new OrderRequestRecord(
+        OrderRequestRecord request = OrderRequestRecord.sinProcedencia(
                 "AZUL", "14",
                 List.of(new OrderItemRequestRecord("101", 1, BigDecimal.valueOf(10000), null, null)),
                 null, "MIXED",
@@ -278,7 +283,7 @@ class OrderHandlerTest {
      */
     @Test
     void multipagoQueNoSumaElTotalSeRechaza() {
-        OrderRequestRecord request = new OrderRequestRecord(
+        OrderRequestRecord request = OrderRequestRecord.sinProcedencia(
                 "AZUL", "15",
                 List.of(new OrderItemRequestRecord("101", 1, BigDecimal.valueOf(10000), null, null)),
                 null, "MIXED",
@@ -306,7 +311,7 @@ class OrderHandlerTest {
      */
     @Test
     void createOrUpdateOrderNormalizaNequiAQrEnVezDeRechazar() {
-        OrderRequestRecord request = new OrderRequestRecord(
+        OrderRequestRecord request = OrderRequestRecord.sinProcedencia(
                 "AZUL", "12",
                 List.of(new OrderItemRequestRecord("101", 1, BigDecimal.valueOf(5000), null, null)),
                 null, "NEQUI", null, null, null, null, null);
@@ -335,7 +340,7 @@ class OrderHandlerTest {
      */
     @Test
     void createOrUpdateOrderMarcaLaOrdenComoSincronizadaEnPerfilCloud() {
-        OrderRequestRecord request = new OrderRequestRecord(
+        OrderRequestRecord request = OrderRequestRecord.sinProcedencia(
                 "AZUL", "11",
                 List.of(new OrderItemRequestRecord("101", 1, BigDecimal.valueOf(5000), null, null)),
                 null, "CASH", null, "clave-nueva", null, null, null);
@@ -382,7 +387,7 @@ class OrderHandlerTest {
         nuevo.setTotalPrice(BigDecimal.valueOf(5000));
         when(orderItemRepositoryPort.findByOrderIds(List.of(555L))).thenReturn(List.of(yaHabia, nuevo));
 
-        OrderRequestRecord request = new OrderRequestRecord(
+        OrderRequestRecord request = OrderRequestRecord.sinProcedencia(
                 "AMARILLO", "1",
                 List.of(new OrderItemRequestRecord("101", 1, BigDecimal.valueOf(5000), null, null)),
                 null, "CASH", null, null, null, cuenta.toString(), null);
@@ -408,7 +413,7 @@ class OrderHandlerTest {
      */
     @Test
     void ordenPreparadaEnComandaNaceEntregadaYFueraDeLaColaDeCocina() {
-        OrderRequestRecord request = new OrderRequestRecord(
+        OrderRequestRecord request = OrderRequestRecord.sinProcedencia(
                 "AMARILLO", "7",
                 List.of(new OrderItemRequestRecord("101", 1, BigDecimal.valueOf(5000), null, null)),
                 null, "CASH", null, null, null, null, true);
@@ -431,7 +436,7 @@ class OrderHandlerTest {
     /** Una venta normal SI tiene que entrar a la cola de cocina. */
     @Test
     void ordenNormalEntraALaColaDeCocinaYOcupaElRastreador() {
-        OrderRequestRecord request = new OrderRequestRecord(
+        OrderRequestRecord request = OrderRequestRecord.sinProcedencia(
                 "AMARILLO", "8",
                 List.of(new OrderItemRequestRecord("101", 1, BigDecimal.valueOf(5000), null, null)),
                 null, "CASH", null, null, null, null, false);
@@ -450,7 +455,7 @@ class OrderHandlerTest {
     /** Sin el campo (cliente viejo) se comporta como una venta normal. */
     @Test
     void sinElCampoSeComportaComoVentaNormal() {
-        OrderRequestRecord request = new OrderRequestRecord(
+        OrderRequestRecord request = OrderRequestRecord.sinProcedencia(
                 "AMARILLO", "9",
                 List.of(new OrderItemRequestRecord("101", 1, BigDecimal.valueOf(5000), null, null)),
                 null, "CASH", null, null, null, null, null);

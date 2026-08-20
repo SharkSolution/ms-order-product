@@ -1,6 +1,20 @@
 server:
   port: 8081
 spring:
+
+  # V36 — UN CAMPO DESCONOCIDO EN EL PAYLOAD FALLA RUIDOSAMENTE.
+  #
+  # Estaba apagado, que es el valor por defecto de Spring Boot, y por eso el POS
+  # llevaba meses mandando `createdAt` en el payload de la orden
+  # (offline-order.repository.ts:25) mientras el servidor lo descartaba sin un
+  # solo error. La fecha del dispositivo viajaba y se perdia en silencio.
+  #
+  # Con esto, un campo que el DTO no declara devuelve 400 en vez de evaporarse.
+  # Es ruidoso a proposito: preferimos que un despliegue falle en staging a que
+  # un dato se pierda callado durante meses.
+  jackson:
+    deserialization:
+      fail-on-unknown-properties: true
   # Multi-tenancy (B1): las migraciones Flyway son SOLO para el esquema Postgres
   # cloud. Se desactiva el auto-run para NO ejecutarlas contra el SQLite local.
   flyway:

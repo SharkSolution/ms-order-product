@@ -73,6 +73,12 @@ public class OrderHandler implements OrderPort {
     private final PagerConfigService pagerConfigService;
     // N3/#1: resolver la MESA de las órdenes para el historial.
     private final com.suresell.orders.infrastructure.persistence.TableSessionRepository tableSessionRepository;
+    // V35/V36 — procedencia de la orden. Declarados AL FINAL a proposito: con
+    // @RequiredArgsConstructor el orden de los campos ES el orden del
+    // constructor, y meterlos en medio desplazaria todos los parametros
+    // posteriores en cada punto de construccion.
+    private final RegistroDeTerminales registroDeTerminales;
+    private final CorduraDelRelojDelDispositivo corduraDelReloj;
     // N2/D2: en el perfil cloud este servicio ES la nube (no hay outbox saliente),
     // así que las órdenes nacen ya sincronizadas. Ver createOrUpdateOrder.
     @org.springframework.beans.factory.annotation.Value("${sync.cloud.enabled:false}")
@@ -178,6 +184,38 @@ public class OrderHandler implements OrderPort {
         order.setPaymentMethod(multipago ? derivePaymentMethod(dto.payments())
                 : normalizePaymentMethod(dto.paymentMethod()));
         order.setCreatedAt(LocalDateTime.now(BOGOTA_ZONE));
+
+        // ------------------------------------------------------------------
+        // V36 — Las dos fechas.
+        //
+        // `createdAt` se sigue estampando igual que siempre: cinco servicios lo
+        // leen y de él dependen cierres, analítica y rastreadores. NO cambia de
+        // significado.
+        //
+        // `registradoEn` es el reloj del SERVIDOR, que es lo que esta línea
+        // venía siendo en realidad. `ocurridoEn` es el del DISPOSITIVO, y solo
+        // se puebla si el cliente la manda.
+        // ------------------------------------------------------------------
+        java.time.OffsetDateTime registradoEn = java.time.OffsetDateTime.now();
+        order.setRegistradoEn(registradoEn);
+        order.setOcurridoEn(dto.ocurridoEn());   // nulo si el cliente no la manda
+
+        java.util.UUID terminal = parsearTerminal(dto.terminalId());
+        order.setTerminalId(terminal);
+        if (terminal != null) {
+            // La procedencia solo tiene sentido con un terminal detrás; sin él,
+            // el CHECK `ck_orders_procedencia_coherente` (V36) rechaza la fila.
+            order.setEpoch(dto.epoch() == null ? 1 : dto.epoch());
+            order.setSeq(dto.seq());
+            order.setHashAnterior(dto.hashAnterior());
+            registroDeTerminales.asegurarRegistrado(terminal, order.getEpoch());
+        }
+
+        // La deriva del reloj se REGISTRA, nunca rechaza la venta: un equipo con
+        // la pila de la BIOS agotada no puede dejar sin facturar a un negocio.
+        order.setRelojVeredicto(
+                corduraDelReloj.evaluarYRegistrar(dto.ocurridoEn(), registradoEn, terminal).name());
+
         if (idempotencyKey != null && !idempotencyKey.isBlank()) {
             order.setIdempotencyKey(idempotencyKey);
         }
@@ -436,6 +474,23 @@ public class OrderHandler implements OrderPort {
         Order savedOrder = orderRepositoryPort.save(order);
         saveOrderCreatedOutbox(savedOrder, savedOrder.getDeliveryTracking());
         saveEditHistory(orderId, previousItems, order.getItems(), previousTotal, order.getTotal());
+    }
+
+    /**
+     * V35 — El terminal viene como texto del cliente. Un UUID mal formado NO
+     * puede tumbar la venta: se registra sin terminal, que es peor que tenerlo
+     * pero infinitamente mejor que no vender.
+     */
+    private java.util.UUID parsearTerminal(String texto) {
+        if (texto == null || texto.isBlank()) {
+            return null;
+        }
+        try {
+            return java.util.UUID.fromString(texto.trim());
+        } catch (IllegalArgumentException e) {
+            log.warn("terminalId malformado '{}' — la orden se crea sin procedencia de terminal", texto);
+            return null;
+        }
     }
 
     private void saveTrackingToOutbox(OrderDeliveryTracking tracking) {

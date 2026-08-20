@@ -177,6 +177,15 @@ public class Order implements org.springframework.data.domain.Persistable<java.u
     @Column(name = "hash_anterior")
     private String hashAnterior;
 
+    /**
+     * Si la fecha del dispositivo era creíble:
+     * {@code sin_fecha | creible | adelantado | muy_atrasado}.
+     * NUNCA se rechaza una venta por esto; solo se deja constancia. La deriva
+     * de un reloj es un dato, no un error.
+     */
+    @Column(name = "reloj_veredicto")
+    private String relojVeredicto;
+
     @OneToMany(mappedBy = "order", orphanRemoval = true)
     private List<OrderItem> items;
     @OneToOne(mappedBy = "order", orphanRemoval = true, fetch = FetchType.EAGER)
