@@ -105,9 +105,26 @@ public class AuthController {
         }
     }
 
+    /**
+     * Comparte el cupo de {@link RegisterRateLimiter.Bucket#RECUPERACION} con
+     * {@code /auth/forgot-password}: los dos son pasos del mismo flujo, así que
+     * un cupo común es lo que de verdad acota el abuso del flujo entero.
+     *
+     * <p>El token es de un solo uso, con expiración y guardado como hash
+     * SHA-256 ({@code V9:11-18}), así que adivinarlo ya era difícil. Pero sin
+     * cupo se podían probar tokens indefinidamente, y eso no tenía por qué ser
+     * gratis.
+     *
+     * <p>Se cuentan TODOS los intentos, no solo los fallidos: un reset correcto
+     * ocurre una vez, no diez. A diferencia del login, aquí el volumen legítimo
+     * es tan bajo que no hay riesgo de dejar fuera a nadie.
+     */
     @PostMapping("/auth/reset-password")
-    public ResponseEntity<?> resetPassword(@RequestBody ResetRequest req) {
+    public ResponseEntity<?> resetPassword(@RequestBody ResetRequest req, HttpServletRequest http) {
         try {
+            String ip = clientIp(http);
+            rateLimiter.verificarCupo(RegisterRateLimiter.Bucket.RECUPERACION, ip);
+            rateLimiter.anotarIntento(RegisterRateLimiter.Bucket.RECUPERACION, ip);
             auth.resetPassword(req.token(), req.newPassword());
             return ResponseEntity.ok(Map.of("status", "ok"));
         } catch (AuthException e) {

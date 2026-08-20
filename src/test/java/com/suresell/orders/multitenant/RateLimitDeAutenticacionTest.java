@@ -198,6 +198,53 @@ class RateLimitDeAutenticacionTest {
 
     // =====================================================================
     @Nested
+    @DisplayName("POST /auth/reset-password")
+    class Reset {
+
+        @Test
+        @DisplayName("tras agotar el cupo responde 429 y deja de probar tokens")
+        void bloqueaTrasElCupo() {
+            AuthService auth = mock(AuthService.class);
+            AuthController controller = new AuthController(auth, new RegisterRateLimiter());
+            var req = new AuthController.ResetRequest("token-a-probar", "ClaveNueva123");
+            var http = peticionDesde(IP);
+
+            for (int i = 0; i < RegisterRateLimiter.MAX_RECUPERACIONES; i++) {
+                assertEquals(200, controller.resetPassword(req, http).getStatusCode().value());
+            }
+
+            assertEquals(429, controller.resetPassword(req, http).getStatusCode().value());
+
+            // El token no se puede seguir probando una vez agotado el cupo.
+            verify(auth, times(RegisterRateLimiter.MAX_RECUPERACIONES))
+                    .resetPassword(anyString(), anyString());
+        }
+
+        @Test
+        @DisplayName("comparte cupo con forgot-password: son el mismo flujo")
+        void comparteCupoConForgot() {
+            AuthService auth = mock(AuthService.class);
+            when(auth.forgotPassword(anyString()))
+                    .thenReturn(new AuthService.ForgotResponse(true, null));
+            AuthController controller = new AuthController(auth, new RegisterRateLimiter());
+            var http = peticionDesde(IP);
+
+            // Agotar el cupo pidiendo enlaces...
+            for (int i = 0; i < RegisterRateLimiter.MAX_RECUPERACIONES; i++) {
+                controller.forgotPassword(new AuthController.ForgotRequest("a@b.co"), http);
+            }
+
+            // ...deja también sin cupo el consumo de tokens. Si fueran cupos
+            // separados, el atacante tendría el doble de intentos sobre el
+            // mismo flujo.
+            assertEquals(429, controller.resetPassword(
+                    new AuthController.ResetRequest("t", "ClaveNueva123"), http)
+                    .getStatusCode().value());
+        }
+    }
+
+    // =====================================================================
+    @Nested
     @DisplayName("Los cupos no se pisan entre sí")
     class CuposIndependientes {
 
