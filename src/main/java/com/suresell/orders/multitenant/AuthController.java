@@ -13,8 +13,10 @@ import java.util.Map;
  * Endpoints de autenticación (perfil `cloud`). Exentos del {@link TenantContextFilter}
  * (si no, haría falta un token para pedir un token). Ver docs/110-plan-auth-real.md.
  *
- * - POST /auth/login    → credenciales de usuario (email+clave); deriva el tenant.
- * - POST /auth/register → alta self-service de un negocio (crea tenant + admin); rate-limited.
+ * - POST /auth/login           → credenciales de usuario (email+clave); deriva el tenant. Rate-limited por fallos.
+ * - POST /auth/register        → alta self-service de un negocio (crea tenant + admin); rate-limited.
+ * - POST /auth/forgot-password → envía el enlace de restablecimiento; rate-limited.
+ * - POST /auth/reset-password  → consume el token de un solo uso.
  *
  * La lógica vive en {@link AuthService}; aquí solo se mapea HTTP y errores. El login
  * legacy por clave compartida (/auth/token) se eliminó tras migrar el front a /auth/login.
@@ -31,11 +33,27 @@ public class AuthController {
         this.rateLimiter = rateLimiter;
     }
 
+    /**
+     * El cupo se comprueba ANTES de intentar y solo se consume si las
+     * credenciales fallan; un login correcto además borra los fallos previos de
+     * esa IP. Así un local con varias cajas detrás de la misma IP pública nunca
+     * se queda fuera por escribir bien, y la fuerza bruta —que es solo
+     * fallos— choca contra el muro enseguida. Ver {@link RegisterRateLimiter}.
+     */
     @PostMapping("/auth/login")
-    public ResponseEntity<?> login(@RequestBody LoginRequest req) {
+    public ResponseEntity<?> login(@RequestBody LoginRequest req, HttpServletRequest http) {
+        String ip = clientIp(http);
         try {
-            return ResponseEntity.ok(auth.login(req.email(), req.password()));
+            rateLimiter.verificarCupo(RegisterRateLimiter.Bucket.LOGIN, ip);
+            var resultado = auth.login(req.email(), req.password());
+            rateLimiter.limpiar(RegisterRateLimiter.Bucket.LOGIN, ip);
+            return ResponseEntity.ok(resultado);
         } catch (AuthException e) {
+            // El propio 429 no gasta cupo: si no, un cliente que reintenta contra
+            // el muro extendería su bloqueo indefinidamente.
+            if (e.status() != 429) {
+                rateLimiter.anotarIntento(RegisterRateLimiter.Bucket.LOGIN, ip);
+            }
             return error(e);
         }
     }
@@ -61,9 +79,19 @@ public class AuthController {
         return http.getRemoteAddr();
     }
 
+    /**
+     * Aquí se cuentan TODOS los intentos, no solo los fallidos: este endpoint
+     * responde lo mismo exista o no el email (para no filtrar quién tiene
+     * cuenta), así que "fallo" no significa nada. Lo que hay que frenar es el
+     * volumen — mandar cien correos de recuperación al buzón de alguien, o
+     * medir tiempos de respuesta para enumerar cuentas.
+     */
     @PostMapping("/auth/forgot-password")
-    public ResponseEntity<?> forgotPassword(@RequestBody ForgotRequest req) {
+    public ResponseEntity<?> forgotPassword(@RequestBody ForgotRequest req, HttpServletRequest http) {
         try {
+            String ip = clientIp(http);
+            rateLimiter.verificarCupo(RegisterRateLimiter.Bucket.RECUPERACION, ip);
+            rateLimiter.anotarIntento(RegisterRateLimiter.Bucket.RECUPERACION, ip);
             var r = auth.forgotPassword(req.email());
             // link SOLO viene en staging (expose-link); en prod es null.
             Map<String, Object> body = new java.util.HashMap<>();
