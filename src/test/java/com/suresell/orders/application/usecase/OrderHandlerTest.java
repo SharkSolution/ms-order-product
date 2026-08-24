@@ -87,7 +87,13 @@ class OrderHandlerTest {
                 // afectan a estas pruebas —ninguna manda procedencia— pero el
                 // constructor los exige.
                 org.mockito.Mockito.mock(RegistroDeTerminales.class),
-                new CorduraDelRelojDelDispositivo());
+                new CorduraDelRelojDelDispositivo(),
+                // V37: ninguna de estas pruebas comprueba autoria, pero el
+                // constructor la exige. Un mock devuelve Optional.empty(), que
+                // es el caso "no se pudo resolver el autor" — y verifica de paso
+                // que eso NO tumba la venta.
+                org.mockito.Mockito.mock(
+                        com.suresell.orders.multitenant.UsuarioDeLaPeticion.class));
     }
     @Test
     void getAllOrdersCallsProductServiceOncePerDistinctProductId() {

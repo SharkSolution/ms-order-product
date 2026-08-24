@@ -79,6 +79,12 @@ public class OrderHandler implements OrderPort {
     // posteriores en cada punto de construccion.
     private final RegistroDeTerminales registroDeTerminales;
     private final CorduraDelRelojDelDispositivo corduraDelReloj;
+
+    // V37 — autoria con identidad real (regla 4 de LINEAMIENTOS). Declarado AL
+    // FINAL a proposito: con @RequiredArgsConstructor el orden de los campos ES
+    // el del constructor, y meterlo en medio desplazaria todos los parametros
+    // posteriores en cada punto de construccion.
+    private final com.suresell.orders.multitenant.UsuarioDeLaPeticion usuarioDeLaPeticion;
     // N2/D2: en el perfil cloud este servicio ES la nube (no hay outbox saliente),
     // así que las órdenes nacen ya sincronizadas. Ver createOrUpdateOrder.
     @org.springframework.beans.factory.annotation.Value("${sync.cloud.enabled:false}")
@@ -215,6 +221,11 @@ public class OrderHandler implements OrderPort {
         // la pila de la BIOS agotada no puede dejar sin facturar a un negocio.
         order.setRelojVeredicto(
                 corduraDelReloj.evaluarYRegistrar(dto.ocurridoEn(), registradoEn, terminal).name());
+
+        // V37 — Quien vendio. Si no se puede resolver, queda nulo: la venta no
+        // se pierde por no poder firmarla. Los procesos automaticos firman con
+        // UsuarioDeSistema, no con nulo.
+        order.setCreatedBy(usuarioDeLaPeticion.id().orElse(null));
 
         if (idempotencyKey != null && !idempotencyKey.isBlank()) {
             order.setIdempotencyKey(idempotencyKey);
@@ -559,6 +570,9 @@ public class OrderHandler implements OrderPort {
 
     private void saveEditHistory(Long orderId, List<OrderItem> oldItems, List<OrderItem> newItems, BigDecimal oldTotal, BigDecimal newTotal) {
         LocalDateTime now = LocalDateTime.now(BOGOTA_ZONE);
+        // V37 — QUIEN edito. Esta tabla guardaba que cambio y cuando, pero no
+        // quien, que es la mitad que importa para el antifraude.
+        Long autor = usuarioDeLaPeticion.id().orElse(null);
         Set<String> productIds = new LinkedHashSet<>();
         oldItems.forEach(item -> productIds.add(item.getProductId()));
         newItems.forEach(item -> productIds.add(item.getProductId()));
@@ -576,6 +590,7 @@ public class OrderHandler implements OrderPort {
                 history.setOldTotal(oldTotal);
                 history.setNewTotal(newTotal);
                 history.setEditedAt(now);
+                history.setEditedBy(autor);
                 OrderEditHistory savedHistory = orderEditHistoryRepository.save(history);
                 saveEditHistoryToOutbox(savedHistory);
             }
@@ -596,6 +611,7 @@ public class OrderHandler implements OrderPort {
                 history.setOldTotal(oldTotal);
                 history.setNewTotal(newTotal);
                 history.setEditedAt(now);
+                history.setEditedBy(autor);
                 OrderEditHistory savedHistory = orderEditHistoryRepository.save(history);
                 saveEditHistoryToOutbox(savedHistory);
             } else if (oldItem.getQuantity() != newItem.getQuantity()) {
@@ -609,6 +625,7 @@ public class OrderHandler implements OrderPort {
                 history.setOldTotal(oldTotal);
                 history.setNewTotal(newTotal);
                 history.setEditedAt(now);
+                history.setEditedBy(autor);
                 OrderEditHistory savedHistory = orderEditHistoryRepository.save(history);
                 saveEditHistoryToOutbox(savedHistory);
             }
