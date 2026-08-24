@@ -120,19 +120,29 @@ class ContratoTemporalDeLaOrdenTest {
         }
 
         @Test
-        @DisplayName("los siete campos que calcula el servidor se ignoran de forma DELIBERADA")
+        @DisplayName("los seis campos que calcula el servidor se ignoran de forma DELIBERADA")
         void losCamposDelServidorSeIgnoran() throws Exception {
             // No es que "no se lean": es que aceptarlos permitiria a un POS
             // manipulado fijar el importe de su propia venta.
             String conTotalesFalsos = """
                     {"pagerColor":"AZUL","pagerNumber":"3","items":[],"paymentMethod":"CARD",
-                     "subtotal":1,"total":1,"discountAmount":99999,
+                     "subtotal":1,"discountAmount":99999,
                      "status":"pagado","synced":true,"idOrder":42,"tenantId":"otro-negocio"}
                     """;
             // No lanza: estan en la lista explicita de @JsonIgnoreProperties.
             OrderRequestRecord dto = mapper.readValue(conTotalesFalsos, OrderRequestRecord.class);
             assertThat(dto.pagerColor()).isEqualTo("AZUL");
             // El record no tiene donde guardarlos, que es justo la garantia.
+        }
+
+        @Test
+        @DisplayName("`total` SI se lee, pero como senal: el record lo expone aparte")
+        void elTotalSeLeeComoSenal() throws Exception {
+            OrderRequestRecord dto = mapper.readValue(PAYLOAD_DEL_POS_ACTUAL, OrderRequestRecord.class);
+
+            // El nombre del campo dice lo que es. No hay un `total()` que alguien
+            // pueda usar por error creyendo que es el total de la orden.
+            assertThat(dto.totalDeclaradoPorElCliente()).isEqualByComparingTo("25000");
         }
     }
 

@@ -167,7 +167,7 @@
 --
 -- ── Impacto ───────────────────────────────────────────────────────────
 --
--- Siete columnas nuevas, TODAS nullable y sin default. No toca ninguna fila ni
+-- Ocho columnas nuevas, TODAS nullable y sin default. No toca ninguna fila ni
 -- columna existente. Las órdenes históricas quedan con las seis en NULL, que
 -- significa exactamente "de antes de que esto se registrara" y no se confunde
 -- con ningún valor real. **No se rellenan hacia atrás: no hay de dónde sacar el
@@ -220,6 +220,42 @@ COMMENT ON COLUMN orders.epoch IS
 COMMENT ON COLUMN orders.seq IS
     'Secuencia monotonica del evento del outbox que produjo esta orden, dentro '
     'de (terminal_id, epoch). Es del EVENTO, no de la orden.';
+-- ── La discrepancia de importes ──────────────────────────────────────
+--
+-- El servidor DESCARTA los importes que manda el cliente y usa siempre los
+-- suyos (OrderHandler.java:198-204). Es lo correcto: aceptarlos dejaria a un POS
+-- manipulado fijar el importe de su propia venta.
+--
+-- Pero descartar y no comparar desperdicia una senal que ya esta llegando
+-- gratis. El cliente manda `total` en el payload; compararlo contra el calculo
+-- del servidor cuesta una columna y detecta dos cosas distintas:
+--
+--   · un POS con el codigo alterado para inflar o desinflar totales;
+--   · un desfase de catalogo entre el terminal y el servidor —el POS vendio con
+--     un precio viejo— que es un problema real de operacion y hoy es invisible.
+--
+-- LA DISCREPANCIA ES SENAL, NO AUTORIDAD. El total de la orden lo sigue
+-- calculando el servidor; esta columna no participa en ningun calculo.
+--
+-- Se guarda la DIFERENCIA y no el importe del cliente porque cero es la
+-- respuesta esperada y una columna que casi siempre vale cero es barata de
+-- indexar y de consultar. El importe del cliente se reconstruye sumando.
+--
+-- NULL = no habia con que comparar (el cliente no mando total). Distinto de 0,
+-- que significa "comparado y coincide". Misma regla de AUSENTE vs CERO que
+-- gobierna la forma canonica del hash.
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS total_discrepancia NUMERIC(15,2);
+
+COMMENT ON COLUMN orders.total_discrepancia IS
+    'total del cliente menos total del servidor. 0 = coinciden. NULL = el cliente '
+    'no mando total. El servidor SIEMPRE usa su propio calculo: esto es senal, no '
+    'autoridad.';
+
+-- Indice parcial: lo que se busca son las discrepancias, que deberian ser pocas.
+CREATE INDEX IF NOT EXISTS idx_orders_discrepancia
+    ON orders (tenant_id, created_at DESC)
+    WHERE total_discrepancia IS NOT NULL AND total_discrepancia <> 0;
+
 -- ── La calidad de la fecha del dispositivo ───────────────────────────
 --
 -- El POS corre en el equipo del local. Un equipo con la pila de la BIOS agotada
@@ -328,11 +364,12 @@ DECLARE
     faltan INT;
     tipo_created TEXT;
 BEGIN
-    SELECT 7 - count(*) INTO faltan
+    SELECT 8 - count(*) INTO faltan
     FROM information_schema.columns
     WHERE table_schema = 'public' AND table_name = 'orders'
       AND column_name IN ('ocurrido_en','registrado_en','terminal_id',
-                          'epoch','seq','hash_anterior','reloj_veredicto');
+                          'epoch','seq','hash_anterior','reloj_veredicto',
+                          'total_discrepancia');
     IF faltan <> 0 THEN
         RAISE EXCEPTION 'Faltan % columnas del modelo temporal en orders', faltan;
     END IF;
@@ -360,6 +397,8 @@ END $verificar$;
 -- (Hibernate fallaria al mapear Order). Misma leccion de V21:15-16: primero se
 -- revierte el codigo, luego el esquema.
 --
+-- DROP INDEX IF EXISTS idx_orders_discrepancia;
+-- ALTER TABLE orders DROP COLUMN IF EXISTS total_discrepancia;
 -- DROP INDEX IF EXISTS idx_orders_ocurrido_en;
 -- DROP INDEX IF EXISTS ux_orders_terminal_epoch_seq;
 -- ALTER TABLE orders DROP CONSTRAINT IF EXISTS ck_orders_reloj_coherente;

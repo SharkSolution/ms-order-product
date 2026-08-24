@@ -186,6 +186,19 @@ public class Order implements org.springframework.data.domain.Persistable<java.u
     @Column(name = "reloj_veredicto")
     private String relojVeredicto;
 
+    /**
+     * V36 — Total del cliente menos total del servidor. SEÑAL, NO AUTORIDAD.
+     *
+     * <p>{@code 0} = comparados y coinciden. {@code NULL} = el cliente no mandó
+     * total, así que no había con qué comparar — que no es lo mismo que cero.
+     *
+     * <p>El servidor usa siempre su propio cálculo; esta columna no participa en
+     * ninguno. Existe porque descartar el importe del cliente sin compararlo
+     * desperdiciaba una señal que ya llegaba gratis.
+     */
+    @Column(name = "total_discrepancia")
+    private BigDecimal totalDiscrepancia;
+
     @OneToMany(mappedBy = "order", orphanRemoval = true)
     private List<OrderItem> items;
     @OneToOne(mappedBy = "order", orphanRemoval = true, fetch = FetchType.EAGER)
