@@ -114,7 +114,15 @@
 -- de la letra, o dará falsos positivos sobre datos correctos — que es peor que
 -- no verificar, porque hace desconfiar de lo que está bien.
 --
---   canon := "v1" LF
+-- ⚠️ NO IMPLEMENTES A PARTIR DE ESTE COMENTARIO SOLO. Hay 15 vectores de oro
+-- en `front_pos_electron/src/app/core/offline/hash-vectores-oro.json`, con el
+-- evento de entrada, la CADENA CANÓNICA INTERMEDIA y el hash de cada caso.
+-- Reprodúcelos todos antes de tocar un dato real. Dos de las reglas de abajo
+-- —redondeo y Unicode— se descubrieron precisamente al generarlos, así que un
+-- verificador escrito solo de leer prosa tiene alta probabilidad de fallar en
+-- las mismas dos cosas.
+--
+--   canon := "v2" LF
 --            "terminal:" <texto>   LF   "epoch:"    <entero>  LF
 --            "seq:"      <entero>  LF   "tipo:"     <texto>   LF
 --            "ref:"      <texto>   LF   "ocurrido:" <fecha>   LF
@@ -133,9 +141,15 @@
 --
 --   · UTF-8. Separador de línea LF (0x0A), nunca CRLF.
 --   · <decimal>: punto, SIEMPRE 2 decimales, sin separador de miles, sin
---     notación exponencial. 25000 -> "25000.00"; 0 -> "0.00"; -0 -> "0.00"
---     (en JavaScript (-0).toFixed(2) da "-0.00" y en Java no: hay que
---     normalizarlo o las dos plataformas discrepan).
+--     notación exponencial, REDONDEO HALF_UP sobre el valor decimal.
+--         25000 -> "25000.00"    0 -> "0.00"    1.005 -> "1.01"
+--     En Java es exactamente `setScale(2, RoundingMode.HALF_UP)`. Se eligió
+--     HALF_UP porque es lo que hace Postgres al guardar en NUMERIC(15,2): así
+--     el hash cubre el importe TAL COMO QUEDA ALMACENADO en esta misma tabla.
+--     ⚠️ En JavaScript NO vale `toFixed(2)`, que redondea sobre la
+--     representación binaria: da "1.00" para 1.005 y "2.67" para 2.675.
+--     Un negativo que redondee a cero se normaliza a "0.00": (-0.004) da
+--     "-0.00" en JavaScript y `BigDecimal` no tiene cero negativo.
 --   · <entero>: sin decimales ni separadores.
 --   · <fecha>: ISO-8601 en UTC con TRES decimales de milisegundo,
 --     `yyyy-MM-dd'T'HH:mm:ss.SSS'Z'`. En Java NO vale `Instant.toString()`,
@@ -144,9 +158,16 @@
 --     los dos puntos. `descuento:` y `descuento:0.00` son hechos diferentes.
 --   · Las listas van EN EL ORDEN EN QUE VIAJAN; no se reordenan. El orden en
 --     que el cajero marcó los productos es parte del hecho.
---   · Todo texto se escapa —`\`→`\\`, LF→`\n`, CR→`\r`, `|`→`\p`, `:`→`\c`—
---     para que su contenido no pueda fabricar estructura. Sin esto, un nombre
---     de producto con un salto de línea podría simular líneas adicionales.
+--   · Todo texto se NORMALIZA A NFC y DESPUÉS se escapa. Las dos cosas, en ese
+--     orden.
+--       - NFC (`Normalizer.normalize(s, Form.NFC)` en Java): "Café" llega
+--         descompuesto desde iOS (e + U+0301) y compuesto desde Windows
+--         (U+00E9). Se ven idénticos y son el MISMO HECHO; sin normalizar dan
+--         hashes distintos y el verificador diría "manipulado" sobre una venta
+--         correcta cuyo único pecado es haberse tecleado en otro teclado.
+--       - Escape —`\`→`\\`, LF→`\n`, CR→`\r`, `|`→`\p`, `:`→`\c`— para que el
+--         contenido no pueda fabricar estructura. Sin esto, un nombre de
+--         producto con un salto de línea podría simular líneas adicionales.
 --
 -- QUÉ NO ENTRA, y por qué:
 --
@@ -243,7 +264,7 @@ COMMENT ON COLUMN orders.seq IS
 --
 -- NULL = no habia con que comparar (el cliente no mando total). Distinto de 0,
 -- que significa "comparado y coincide". Misma regla de AUSENTE vs CERO que
--- gobierna la forma canonica del hash.
+-- gobierna la forma canonica del hash (hoy v2).
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS total_discrepancia NUMERIC(15,2);
 
 COMMENT ON COLUMN orders.total_discrepancia IS
