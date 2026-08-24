@@ -52,12 +52,24 @@ sync:
     fixed-delay-ms: 5000
     batch-size: 20
   cloud:
-    enabled: true
+    # ⚠️ CORREGIDO 2026-08-20 — este perfil (el POR DEFECTO, o sea el que corre
+    # en la máquina de un desarrollador) tenía aquí la URL y las credenciales del
+    # Supabase de PRODUCCIÓN, con `enabled: true`. Un `./gradlew bootRun` local
+    # sincronizaba contra la base real.
+    #
+    # Ahora: apagado por defecto y sin destino hardcodeado. Quien de verdad
+    # necesite probar la sincronización local-first exporta las tres variables
+    # apuntando a SU base, nunca a producción.
+    #
+    # NO afecta al despliegue: el perfil `cloud` fija `sync.cloud.enabled=false`
+    # (application-cloud.yml:41) y ahí este bloque ni se usa — el adaptador no
+    # llega a instanciarse (@ConditionalOnProperty en SyncOutboxScheduler:14).
+    enabled: ${SYNC_CLOUD_ENABLED:false}
     datasource:
       driver-class-name: org.postgresql.Driver
-      url: jdbc:postgresql://aws-1-us-east-1.pooler.supabase.com:6543/postgres?prepareThreshold=0
-      username: postgres.iwlbtkqszbkugfxdpzyk
-      password: w9Rz3wcIeT3i184t
+      url: ${SYNC_CLOUD_DB_URL:jdbc:postgresql://localhost:5432/postgres}
+      username: ${SYNC_CLOUD_DB_USER:postgres}
+      password: ${SYNC_CLOUD_DB_PASSWORD:postgres}
       hikari:
         maximum-pool-size: 4
         minimum-idle: 1
