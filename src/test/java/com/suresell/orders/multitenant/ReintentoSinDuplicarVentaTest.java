@@ -79,6 +79,9 @@ class ReintentoSinDuplicarVentaTest {
         r.add("spring.flyway.user", PG::getUsername);
         r.add("spring.flyway.password", PG::getPassword);
         r.add("security.jwt.secret", () -> SECRET);
+        // Obligatoria desde ResetLinkBaseValidator: sin ella el contexto del
+        // perfil cloud no levanta, que es justo lo que se quiere en producción.
+        r.add("auth.reset.link-base", () -> "https://pos-de-prueba.invalid");
     }
 
     @Autowired
