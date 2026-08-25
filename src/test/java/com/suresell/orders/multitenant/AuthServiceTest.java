@@ -68,9 +68,9 @@ class AuthServiceTest {
 
     private AuthRepository repoWithTenant(String plan) {
         AuthRepository repo = mock(AuthRepository.class);
-        when(repo.findUserByEmail(anyString())).thenReturn(Optional.of(
-                new AuthRepository.UserRow(1, "u@x.co", encoder.encode("s3cret"),
-                        "t1", "admin", "active")));
+        when(repo.buscarUsuarioParaLogin(anyString())).thenReturn(Optional.of(
+                new AuthRepository.UsuarioParaLogin("u@x.co", "t1", encoder.encode("s3cret"),
+                        "admin", true)));
         when(repo.findTenant("t1")).thenReturn(Optional.of(
                 new AuthRepository.TenantRow("t1", "T", plan, "active", null, null, null, null)));
         return repo;
@@ -125,8 +125,9 @@ class AuthServiceTest {
     void loginHappyPathReturnsTenantScopedToken() {
         AuthRepository repo = mock(AuthRepository.class);
         String hash = encoder.encode("s3cret");
-        when(repo.findUserByEmail("ana@shark.co")).thenReturn(Optional.of(
-                new AuthRepository.UserRow(1, "ana@shark.co", hash, "shark-burger", "admin", "active")));
+        when(repo.buscarUsuarioParaLogin("ana@shark.co")).thenReturn(Optional.of(
+                new AuthRepository.UsuarioParaLogin("ana@shark.co", "shark-burger", hash,
+                        "admin", true)));
         when(repo.findTenant("shark-burger")).thenReturn(Optional.of(
                 new AuthRepository.TenantRow("shark-burger", "Shark Burger", "pro", "active", "NIT-1", "Calle 1", "3001", "Gracias")));
 
@@ -141,9 +142,9 @@ class AuthServiceTest {
     @Test
     void loginWrongPasswordIs401AndGeneric() {
         AuthRepository repo = mock(AuthRepository.class);
-        when(repo.findUserByEmail(anyString())).thenReturn(Optional.of(
-                new AuthRepository.UserRow(1, "ana@shark.co", encoder.encode("right"),
-                        "shark-burger", "admin", "active")));
+        when(repo.buscarUsuarioParaLogin(anyString())).thenReturn(Optional.of(
+                new AuthRepository.UsuarioParaLogin("ana@shark.co", "shark-burger", encoder.encode("right"),
+                        "admin", true)));
 
         AuthException ex = assertThrows(AuthException.class,
                 () -> newService(repo).login("ana@shark.co", "wrong"));
@@ -154,7 +155,7 @@ class AuthServiceTest {
     @Test
     void loginUnknownEmailIs401SameMessage() {
         AuthRepository repo = mock(AuthRepository.class);
-        when(repo.findUserByEmail(anyString())).thenReturn(Optional.empty());
+        when(repo.buscarUsuarioParaLogin(anyString())).thenReturn(Optional.empty());
 
         AuthException ex = assertThrows(AuthException.class,
                 () -> newService(repo).login("nope@x.co", "whatever"));
@@ -166,9 +167,9 @@ class AuthServiceTest {
     @Test
     void loginSuspendedTenantIs403() {
         AuthRepository repo = mock(AuthRepository.class);
-        when(repo.findUserByEmail(anyString())).thenReturn(Optional.of(
-                new AuthRepository.UserRow(1, "ana@shark.co", encoder.encode("s3cret"),
-                        "shark-burger", "admin", "active")));
+        when(repo.buscarUsuarioParaLogin(anyString())).thenReturn(Optional.of(
+                new AuthRepository.UsuarioParaLogin("ana@shark.co", "shark-burger", encoder.encode("s3cret"),
+                        "admin", true)));
         when(repo.findTenant("shark-burger")).thenReturn(Optional.of(
                 new AuthRepository.TenantRow("shark-burger", "Shark Burger", "pro", "suspended", null, null, null, null)));
 
@@ -298,9 +299,9 @@ class AuthServiceTest {
     @Test
     void loginReturnsBusinessProfileForTicket() {
         AuthRepository repo = mock(AuthRepository.class);
-        when(repo.findUserByEmail("ana@shark.co")).thenReturn(Optional.of(
-                new AuthRepository.UserRow(1, "ana@shark.co", encoder.encode("s3cret"),
-                        "shark-burger", "admin", "active")));
+        when(repo.buscarUsuarioParaLogin("ana@shark.co")).thenReturn(Optional.of(
+                new AuthRepository.UsuarioParaLogin("ana@shark.co", "shark-burger",
+                        encoder.encode("s3cret"), "admin", true)));
         when(repo.findTenant("shark-burger")).thenReturn(Optional.of(
                 new AuthRepository.TenantRow("shark-burger", "Shark Burger", "pro", "active",
                         "NIT-1", "Calle 1", "3001", "Gracias")));
@@ -405,7 +406,7 @@ class AuthServiceTest {
     @Test
     void forgotEmailDesconocidoNoInsertaPeroResponde() {
         AuthRepository repo = mock(AuthRepository.class);
-        when(repo.findUserByEmail(anyString())).thenReturn(Optional.empty());
+        when(repo.buscarUsuarioParaLogin(anyString())).thenReturn(Optional.empty());
 
         AuthService.ForgotResponse r = newService(repo).forgotPassword("nadie@x.co");
 
@@ -417,8 +418,9 @@ class AuthServiceTest {
     @Test
     void forgotEmailConocidoInsertaReset_yExponeLinkEnStaging() {
         AuthRepository repo = mock(AuthRepository.class);
-        when(repo.findUserByEmail("ana@shark.co")).thenReturn(Optional.of(
-                new AuthRepository.UserRow(1, "ana@shark.co", "h", "shark-burger", "admin", "active")));
+        when(repo.buscarUsuarioParaLogin("ana@shark.co")).thenReturn(Optional.of(
+                new AuthRepository.UsuarioParaLogin("ana@shark.co", "shark-burger", "h",
+                        "admin", true)));
         AuthService svc = newService(repo);
         ReflectionTestUtils.setField(svc, "resetExposeLink", true);
         ReflectionTestUtils.setField(svc, "resetLinkBase", "https://pos.test");

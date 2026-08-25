@@ -81,7 +81,25 @@ public class AuthService {
     public record BusinessProfile(String tenantId, String name, String nit,
                                   String address, String phone, String ticketFooter) {}
 
-    /** Login por credenciales de usuario; el tenant sale de su cuenta. */
+    /**
+     * Login por credenciales de usuario; el tenant sale de su cuenta.
+     *
+     * <h3>Por qué es {@code @Transactional}</h3>
+     *
+     * V40 cierra la política de {@code tenant_modules}, que se lee aquí abajo en
+     * {@code effectiveModulesFor}. Para ese momento el negocio <b>ya se conoce</b>
+     * —lo acaba de devolver {@code findTenant}— así que no hace falta ninguna
+     * función privilegiada: basta con fijarlo. Pero fijarlo solo sirve dentro de
+     * una transacción: con el pool, cada sentencia suelta toma su propia conexión
+     * y {@code TenantAwareDataSource} la reinicia a cadena vacía.
+     *
+     * <p>El coste: la transacción abarca también el {@code encoder.matches}, que
+     * es BCrypt y tarda del orden de 100 ms con una conexión retenida. Se acepta
+     * porque es el mismo intercambio que ya hace {@code register}, y porque el
+     * volumen de logins de un local es de unos pocos al día. Si algún día pesa,
+     * lo que toca es acotar la transacción a la lectura de módulos, no quitarla.
+     */
+    @Transactional
     public AuthResponse login(String email, String password) {
         if (isBlank(email) || isBlank(password)) {
             throw new AuthException(400, "Email y contraseña son requeridos");
@@ -89,11 +107,14 @@ public class AuthService {
         // Mensaje genérico e idéntico para "no existe" y "clave mala": no revela
         // qué emails están registrados.
         AuthException invalid = new AuthException(401, "Credenciales inválidas");
-        var user = repo.findUserByEmail(email.trim()).orElseThrow(() -> invalid);
+        // V39 — por la función `buscar_usuario_para_login`, no por `users` directo:
+        // aquí todavía no hay negocio en sesión y no puede haberlo, porque el
+        // negocio es justamente lo que esta consulta averigua.
+        var user = repo.buscarUsuarioParaLogin(email.trim()).orElseThrow(() -> invalid);
         if (!encoder.matches(password, user.passwordHash())) {
             throw invalid;
         }
-        if (!"active".equals(user.status())) {
+        if (!user.activo()) {
             throw new AuthException(403, "Usuario deshabilitado");
         }
         var tenant = repo.findTenant(user.tenantId())
@@ -101,10 +122,16 @@ public class AuthService {
         if (!"active".equals(tenant.status())) {
             throw new AuthException(403, "El negocio está suspendido");
         }
+        // V40 — a partir de aquí el negocio se conoce, así que `tenant_modules`
+        // se lee por RLS normal. Sin esta línea la política cerrada devolvería
+        // CERO overrides y el login no fallaría: emitiría un JWT con los módulos
+        // del plan a secas. Un negocio con módulos regalados o revocados los
+        // perdería en cada login, sin un solo error en ninguna parte.
+        repo.fijarNegocioEnLaTransaccion(tenant.id());
         List<String> modules = effectiveModulesFor(tenant.id(), tenant.plan());
-        String token = issueToken(tenant.id(), user.email(), user.role(), modules);
+        String token = issueToken(tenant.id(), user.email(), user.rol(), modules);
         return new AuthResponse(token, tenant.id(), tenant.name(), tenant.plan(),
-                user.email(), user.role(),
+                user.email(), user.rol(),
                 tenant.nit(), tenant.address(), tenant.phone(), tenant.ticketFooter(), modules);
     }
 
@@ -137,6 +164,21 @@ public class AuthService {
         String tenantId = uniqueSlug(businessName);
         repo.insertTenant(tenantId, businessName.trim(), DEFAULT_PLAN,
                 trimOrNull(nit), trimOrNull(address), trimOrNull(phone));
+
+        // V39 — `users` está en FORCE ROW LEVEL SECURITY y su WITH CHECK exige
+        // que `tenant_id` coincida con el negocio de la sesión. Aquí el negocio
+        // ya existe (se acaba de crear en la línea de arriba), así que no hace
+        // falta ninguna función privilegiada: basta con fijarlo.
+        //
+        // Sin esta línea el INSERT de abajo NO insertaría nada Y NO DARÍA ERROR
+        // — devolvería 0 filas y el método seguiría hasta emitir un JWT para un
+        // usuario que no existe. El negocio quedaría creado y sin dueño.
+        //
+        // El método es @Transactional, que es lo que hace que el `set_config`
+        // acotado a la transacción llegue vivo hasta el INSERT: con el pool,
+        // fuera de transacción cada sentencia toma su propia conexión y
+        // `TenantAwareDataSource` la reinicia a cadena vacía.
+        repo.fijarNegocioEnLaTransaccion(tenantId);
         repo.insertUser(cleanEmail, encoder.encode(password), tenantId, ADMIN_ROLE);
 
         List<String> modules = planes.modulesForPlan(DEFAULT_PLAN);
@@ -213,10 +255,21 @@ public class AuthService {
     public record ModuleConfig(String plan, List<String> planModules,
                                Map<String, Boolean> overrides, List<String> effectiveModules) {}
 
-    /** Configuración de módulos del tenant (plan + overrides + efectivos). Para el panel. */
+    /**
+     * Configuración de módulos del tenant (plan + overrides + efectivos). Para el panel.
+     *
+     * <p>{@code @Transactional} + fijar el negocio por la misma razón que en el
+     * login, y con un llamador que lo necesita de verdad:
+     * {@code /admin/tenants/{id}/modules} (`SuperAdminService:78`) es una ruta de
+     * super-admin, exenta del filtro de negocio, que consulta el negocio de OTRO.
+     * El llamador de {@code /account/modules} ya trae el suyo en el contexto, así
+     * que ahí fijarlo es un no-op.
+     */
+    @Transactional
     public ModuleConfig getModuleConfig(String tenantId) {
         var tenant = repo.findTenant(tenantId)
                 .orElseThrow(() -> new AuthException(404, "Negocio no encontrado"));
+        repo.fijarNegocioEnLaTransaccion(tenantId);
         Map<String, Boolean> overrides = new HashMap<>();
         for (AuthRepository.ModuleOverride o : repo.getOverrides(tenantId)) {
             overrides.put(o.module(), o.enabled());
@@ -231,7 +284,20 @@ public class AuthService {
      * resultante. Los cambios aplican al PRÓXIMO login del usuario (el JWT lleva los
      * módulos). Ver docs/160.
      */
+    @Transactional
     public ModuleConfig setModuleOverrides(String tenantId, Map<String, Boolean> overrides) {
+        // 🔴 ESTA ES LA LÍNEA QUE TIENE QUE IR CON V40 EN EL MISMO CAMBIO.
+        //
+        // `/admin/tenants/{id}/modules` (SuperAdminController:100) es una ruta de
+        // super-admin: está exenta del TenantContextFilter (:51), así que la
+        // conexión sale con app.tenant_id = ''. Con la política de
+        // `tenant_modules` cerrada y sin esta línea, el UPSERT y el DELETE de
+        // abajo afectarían a CERO filas y devolverían 200 igual.
+        //
+        // El KAM regalaría un módulo, vería la pantalla confirmar el cambio, y el
+        // negocio no lo tendría. Separar esta línea de la migración habría sido
+        // fabricar exactamente el fallo que la migración viene a eliminar.
+        repo.fijarNegocioEnLaTransaccion(tenantId);
         if (overrides != null) {
             for (Map.Entry<String, Boolean> e : overrides.entrySet()) {
                 if (!PlanCatalog.isKnownModule(e.getKey())) {
@@ -292,15 +358,23 @@ public class AuthService {
      * devuelve el link para pruebas. SIEMPRE responde igual (no revela si el email
      * existe). Ver docs/160.
      */
+    @Transactional
     public ForgotResponse forgotPassword(String email) {
         if (isBlank(email)) {
             throw new AuthException(400, "Email es requerido");
         }
-        var user = repo.findUserByEmail(email.trim());
+        // V39 — misma razón que en el login: aquí no hay negocio en sesión y no
+        // puede haberlo, porque llega un correo y nada más.
+        var user = repo.buscarUsuarioParaLogin(email.trim());
         String exposed = null;
         if (user.isPresent()) {
             String token = randomToken();
             Instant expires = Instant.now().plus(resetTtlMinutes, ChronoUnit.MINUTES);
+            // A partir de aquí el negocio SÍ se conoce: sale del usuario que
+            // acaba de encontrarse. `password_resets` está en FORCE, así que sin
+            // fijarlo el INSERT insertaría cero filas sin dar error y el correo
+            // saldría con un token que no existe en ninguna parte.
+            repo.fijarNegocioEnLaTransaccion(user.get().tenantId());
             repo.insertReset(sha256(token), user.get().email(), user.get().tenantId(), expires);
             String link = buildResetLink(token);
             sendResetEmail(user.get().email(), link); // best-effort (no rompe el flujo)
@@ -352,6 +426,13 @@ public class AuthService {
                     hash.substring(0, Math.min(8, hash.length())));
             throw new AuthException(400, "Enlace inválido o expirado");
         }
+
+        // V39 — el negocio sale de la fila del token, y a partir de aquí se
+        // conoce. Las dos escrituras de abajo tocan `users` y `password_resets`,
+        // las dos en FORCE: sin fijarlo cambiarían cero filas. Eso ya no pasaría
+        // en silencio —las comprobaciones de más abajo lo cazarían— pero
+        // convertiría cada recuperación de contraseña en un 500.
+        repo.fijarNegocioEnLaTransaccion(consulta.tenantId());
 
         int cambiadas = repo.updatePasswordHash(
                 consulta.email(), consulta.tenantId(), encoder.encode(newPassword));
