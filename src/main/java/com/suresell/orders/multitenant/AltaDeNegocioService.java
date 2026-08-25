@@ -109,9 +109,12 @@ public class AltaDeNegocioService {
             throw new AltaInvalidaException(400, "La clave debe tener al menos 6 caracteres");
         }
 
-        Integer yaExiste = jdbc.queryForObject(
-                "SELECT count(*) FROM users WHERE lower(email) = ?", Integer.class, email);
-        if (yaExiste != null && yaExiste > 0) {
+        // V39 — por la función `existe_email`: `users.email` es UNIQUE GLOBAL, así
+        // que la pregunta es cross-tenant y el KAM no trae negocio en sesión. Con
+        // un count(*) normal y la política cerrada respondería siempre "libre".
+        Boolean yaExiste = jdbc.queryForObject(
+                "SELECT existe_email(?)", Boolean.class, email);
+        if (Boolean.TRUE.equals(yaExiste)) {
             throw new AltaInvalidaException(409, "Ese email ya está registrado en otro negocio");
         }
 
@@ -138,15 +141,21 @@ public class AltaDeNegocioService {
                 tenantId, nombre, plan, limpiarONulo(s.nit()),
                 limpiarONulo(s.direccion()), limpiarONulo(s.telefono()));
 
+        // `users`, `sites`, `restaurant_tables` y `tenant_order_counters` tienen
+        // RLS en modo FORCE: aplica hasta al dueño de la tabla. El KAM es
+        // cross-tenant y no trae negocio en contexto, así que sin fijarlo acá los
+        // INSERT de abajo NO insertarían nada —y sin error—. El `true` del tercer
+        // parámetro lo acota a esta transacción.
+        //
+        // ⚠️ Esta línea estaba DESPUÉS del INSERT de `users`, que entonces no
+        // tenía política por negocio. Con V39 sí la tiene, así que se movió
+        // arriba. El comentario original ya nombraba tres tablas en FORCE
+        // cuando `tenant_order_counters` todavía no lo estaba: describía el
+        // estado deseado como si fuera el real. Ahora las cuatro lo están.
+        jdbc.queryForObject("SELECT set_config('app.tenant_id', ?, true)", String.class, tenantId);
+
         jdbc.update("INSERT INTO users (email, password_hash, tenant_id, role) VALUES (?, ?, ?, ?)",
                 email, encoder.encode(clave), tenantId, ROL_ADMIN);
-
-        // `sites`, `restaurant_tables` y `tenant_order_counters` tienen RLS en
-        // modo FORCE: aplica hasta al dueño de la tabla. El KAM es cross-tenant
-        // y no trae negocio en contexto, así que sin fijarlo acá los INSERT de
-        // abajo NO insertarían nada —y sin error—. El `true` del tercer
-        // parámetro lo acota a esta transacción.
-        jdbc.queryForObject("SELECT set_config('app.tenant_id', ?, true)", String.class, tenantId);
 
         // La sede se crea explicitamente y no se deja al disparador de V28: asi
         // queda con el modo elegido desde el minuto cero. Si se dejara al

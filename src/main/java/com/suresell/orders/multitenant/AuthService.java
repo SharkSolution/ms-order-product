@@ -89,11 +89,14 @@ public class AuthService {
         // Mensaje genérico e idéntico para "no existe" y "clave mala": no revela
         // qué emails están registrados.
         AuthException invalid = new AuthException(401, "Credenciales inválidas");
-        var user = repo.findUserByEmail(email.trim()).orElseThrow(() -> invalid);
+        // V39 — por la función `buscar_usuario_para_login`, no por `users` directo:
+        // aquí todavía no hay negocio en sesión y no puede haberlo, porque el
+        // negocio es justamente lo que esta consulta averigua.
+        var user = repo.buscarUsuarioParaLogin(email.trim()).orElseThrow(() -> invalid);
         if (!encoder.matches(password, user.passwordHash())) {
             throw invalid;
         }
-        if (!"active".equals(user.status())) {
+        if (!user.activo()) {
             throw new AuthException(403, "Usuario deshabilitado");
         }
         var tenant = repo.findTenant(user.tenantId())
@@ -102,9 +105,9 @@ public class AuthService {
             throw new AuthException(403, "El negocio está suspendido");
         }
         List<String> modules = effectiveModulesFor(tenant.id(), tenant.plan());
-        String token = issueToken(tenant.id(), user.email(), user.role(), modules);
+        String token = issueToken(tenant.id(), user.email(), user.rol(), modules);
         return new AuthResponse(token, tenant.id(), tenant.name(), tenant.plan(),
-                user.email(), user.role(),
+                user.email(), user.rol(),
                 tenant.nit(), tenant.address(), tenant.phone(), tenant.ticketFooter(), modules);
     }
 
@@ -137,6 +140,21 @@ public class AuthService {
         String tenantId = uniqueSlug(businessName);
         repo.insertTenant(tenantId, businessName.trim(), DEFAULT_PLAN,
                 trimOrNull(nit), trimOrNull(address), trimOrNull(phone));
+
+        // V39 — `users` está en FORCE ROW LEVEL SECURITY y su WITH CHECK exige
+        // que `tenant_id` coincida con el negocio de la sesión. Aquí el negocio
+        // ya existe (se acaba de crear en la línea de arriba), así que no hace
+        // falta ninguna función privilegiada: basta con fijarlo.
+        //
+        // Sin esta línea el INSERT de abajo NO insertaría nada Y NO DARÍA ERROR
+        // — devolvería 0 filas y el método seguiría hasta emitir un JWT para un
+        // usuario que no existe. El negocio quedaría creado y sin dueño.
+        //
+        // El método es @Transactional, que es lo que hace que el `set_config`
+        // acotado a la transacción llegue vivo hasta el INSERT: con el pool,
+        // fuera de transacción cada sentencia toma su propia conexión y
+        // `TenantAwareDataSource` la reinicia a cadena vacía.
+        repo.fijarNegocioEnLaTransaccion(tenantId);
         repo.insertUser(cleanEmail, encoder.encode(password), tenantId, ADMIN_ROLE);
 
         List<String> modules = planes.modulesForPlan(DEFAULT_PLAN);
@@ -292,15 +310,23 @@ public class AuthService {
      * devuelve el link para pruebas. SIEMPRE responde igual (no revela si el email
      * existe). Ver docs/160.
      */
+    @Transactional
     public ForgotResponse forgotPassword(String email) {
         if (isBlank(email)) {
             throw new AuthException(400, "Email es requerido");
         }
-        var user = repo.findUserByEmail(email.trim());
+        // V39 — misma razón que en el login: aquí no hay negocio en sesión y no
+        // puede haberlo, porque llega un correo y nada más.
+        var user = repo.buscarUsuarioParaLogin(email.trim());
         String exposed = null;
         if (user.isPresent()) {
             String token = randomToken();
             Instant expires = Instant.now().plus(resetTtlMinutes, ChronoUnit.MINUTES);
+            // A partir de aquí el negocio SÍ se conoce: sale del usuario que
+            // acaba de encontrarse. `password_resets` está en FORCE, así que sin
+            // fijarlo el INSERT insertaría cero filas sin dar error y el correo
+            // saldría con un token que no existe en ninguna parte.
+            repo.fijarNegocioEnLaTransaccion(user.get().tenantId());
             repo.insertReset(sha256(token), user.get().email(), user.get().tenantId(), expires);
             String link = buildResetLink(token);
             sendResetEmail(user.get().email(), link); // best-effort (no rompe el flujo)
@@ -352,6 +378,13 @@ public class AuthService {
                     hash.substring(0, Math.min(8, hash.length())));
             throw new AuthException(400, "Enlace inválido o expirado");
         }
+
+        // V39 — el negocio sale de la fila del token, y a partir de aquí se
+        // conoce. Las dos escrituras de abajo tocan `users` y `password_resets`,
+        // las dos en FORCE: sin fijarlo cambiarían cero filas. Eso ya no pasaría
+        // en silencio —las comprobaciones de más abajo lo cazarían— pero
+        // convertiría cada recuperación de contraseña en un 500.
+        repo.fijarNegocioEnLaTransaccion(consulta.tenantId());
 
         int cambiadas = repo.updatePasswordHash(
                 consulta.email(), consulta.tenantId(), encoder.encode(newPassword));

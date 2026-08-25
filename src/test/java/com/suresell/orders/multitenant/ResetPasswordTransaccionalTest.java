@@ -73,29 +73,54 @@ class ResetPasswordTransaccionalTest {
 
     @Autowired AuthService auth;
     @MockitoSpyBean AuthRepository repo;
-    @Autowired JdbcTemplate jdbc;
+
+    /**
+     * Conexión como <b>dueño</b> de las tablas, que en el contenedor tiene
+     * BYPASSRLS. Se usa para dos cosas distintas y las dos a propósito:
+     *
+     * <ol>
+     *   <li><b>Sembrar.</b> Desde V39 {@code users} y {@code password_resets}
+     *       están en FORCE, así que el {@code JdbcTemplate} de la aplicación
+     *       —que conecta como {@code app_user} sin negocio en sesión— no puede
+     *       insertar la fixture. Montar una transacción con {@code set_config}
+     *       solo para sembrar mezclaría el andamio con lo que se prueba.</li>
+     *   <li><b>Leer el resultado.</b> Y esto importa más: si las aserciones
+     *       leyeran como {@code app_user}, una contraseña sin revertir y una
+     *       fila invisible por RLS <b>darían el mismo resultado</b>. El oráculo
+     *       tiene que ver la base entera; si no, el test comparte la suposición
+     *       con el código que verifica.</li>
+     * </ol>
+     */
+    private JdbcTemplate dueno;
 
     private String hashActual() {
-        return jdbc.queryForObject(
+        return dueno.queryForObject(
                 "SELECT password_hash FROM users WHERE email = ?", String.class, EMAIL);
     }
 
     @BeforeEach
     void sembrar() {
         reset(repo);
-        jdbc.update("DELETE FROM password_resets WHERE email = ?", EMAIL);
-        jdbc.update("DELETE FROM users WHERE email = ?", EMAIL);
-        jdbc.update("DELETE FROM tenants WHERE id = ?", TENANT);
-        jdbc.update("INSERT INTO tenants (id, name) VALUES (?, ?)", TENANT, "Negocio Reset");
-        jdbc.update("INSERT INTO users (email, password_hash, tenant_id, role) "
+        dueno = new JdbcTemplate(new org.springframework.jdbc.datasource.DriverManagerDataSource(
+                PG.getJdbcUrl(), PG.getUsername(), PG.getPassword()));
+        dueno.update("DELETE FROM password_resets WHERE email = ?", EMAIL);
+        dueno.update("DELETE FROM users WHERE email = ?", EMAIL);
+        dueno.update("DELETE FROM tenants WHERE id = ?", TENANT);
+        dueno.update("INSERT INTO tenants (id, name) VALUES (?, ?)", TENANT, "Negocio Reset");
+        dueno.update("INSERT INTO users (email, password_hash, tenant_id, role) "
                 + "VALUES (?, ?, ?, 'admin')", EMAIL, "$2a$10$hashviejoquenoimporta", TENANT);
     }
 
     /** Inserta un token de recuperación vivo y devuelve el token en claro. */
     private String tokenVivo() {
+        return tokenCon(Instant.now().plus(1, ChronoUnit.HOURS));
+    }
+
+    private String tokenCon(Instant expira) {
         String token = "token-de-prueba-" + System.nanoTime();
-        repo.insertReset(sha256Base64Url(token), EMAIL, TENANT,
-                Instant.now().plus(1, ChronoUnit.HOURS));
+        dueno.update("INSERT INTO password_resets (token_hash, email, tenant_id, expires_at) "
+                + "VALUES (?, ?, ?, ?)",
+                sha256Base64Url(token), EMAIL, TENANT, java.sql.Timestamp.from(expira));
         return token;
     }
 
@@ -118,7 +143,7 @@ class ResetPasswordTransaccionalTest {
         auth.resetPassword(tokenVivo(), "claveNueva123");
 
         assertNotEquals(antes, hashActual(), "la contraseña no cambió");
-        assertEquals(Boolean.TRUE, jdbc.queryForObject(
+        assertEquals(Boolean.TRUE, dueno.queryForObject(
                 "SELECT used FROM password_resets WHERE email = ?", Boolean.class, EMAIL),
                 "el token quedó sin marcar: se podría volver a usar");
     }
@@ -141,7 +166,7 @@ class ResetPasswordTransaccionalTest {
         assertEquals(antes, hashActual(),
                 "la contraseña quedó cambiada pese a que la operación falló: "
                         + "la transacción no revirtió");
-        assertEquals(Boolean.FALSE, jdbc.queryForObject(
+        assertEquals(Boolean.FALSE, dueno.queryForObject(
                 "SELECT used FROM password_resets WHERE email = ?", Boolean.class, EMAIL));
     }
 
@@ -165,9 +190,7 @@ class ResetPasswordTransaccionalTest {
     @DisplayName("un token vencido no cambia la contraseña y el mensaje no lo delata")
     void tokenVencidoNoCambiaNada() {
         String antes = hashActual();
-        String token = "token-vencido-" + System.nanoTime();
-        repo.insertReset(sha256Base64Url(token), EMAIL, TENANT,
-                Instant.now().minus(1, ChronoUnit.HOURS));
+        String token = tokenCon(Instant.now().minus(1, ChronoUnit.HOURS));
 
         AuthException ex = assertThrows(AuthException.class,
                 () -> auth.resetPassword(token, "claveNueva123"));
@@ -183,9 +206,7 @@ class ResetPasswordTransaccionalTest {
         String vivo = tokenVivo();
         assertEquals(EstadoDelToken.valido, repo.buscarReset(sha256Base64Url(vivo)).estado());
 
-        String vencido = "vencido-" + System.nanoTime();
-        repo.insertReset(sha256Base64Url(vencido), EMAIL, TENANT,
-                Instant.now().minus(1, ChronoUnit.HOURS));
+        String vencido = tokenCon(Instant.now().minus(1, ChronoUnit.HOURS));
         assertEquals(EstadoDelToken.vencido, repo.buscarReset(sha256Base64Url(vencido)).estado());
 
         auth.resetPassword(vivo, "otraClave123");
@@ -198,9 +219,7 @@ class ResetPasswordTransaccionalTest {
     @Test
     @DisplayName("los estados que no son válidos NO devuelven email ni negocio")
     void losEstadosInvalidosNoFiltranDatosPersonales() {
-        String vencido = "vencido-sin-datos-" + System.nanoTime();
-        repo.insertReset(sha256Base64Url(vencido), EMAIL, TENANT,
-                Instant.now().minus(1, ChronoUnit.HOURS));
+        String vencido = tokenCon(Instant.now().minus(1, ChronoUnit.HOURS));
 
         var consulta = repo.buscarReset(sha256Base64Url(vencido));
 

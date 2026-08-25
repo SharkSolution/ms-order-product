@@ -41,12 +41,25 @@ public class SuperAdminRepository {
         }
     }
 
-    /** Todos los negocios con su conteo de usuarios (vista del panel). */
+    /**
+     * Todos los negocios con su conteo de usuarios (vista del panel del KAM).
+     *
+     * <p>V39 — el conteo va por {@code contar_usuarios_por_negocio()} y no por
+     * una subconsulta a {@code users}. El KAM es cross-tenant por definición y
+     * no trae negocio en sesión: con la política cerrada, la subconsulta habría
+     * devuelto <b>0 para todos los negocios sin dar ningún error</b>. Un número
+     * equivocado en pantalla es peor que una pantalla en blanco, porque nadie
+     * abre una incidencia por él.
+     *
+     * <p>La función devuelve conteos, nunca filas de usuario.
+     */
     public List<TenantListItem> listTenants() {
         return jdbc.query(
                 "SELECT t.id, t.name, t.plan, t.status, "
-                        + "(SELECT count(*) FROM users u WHERE u.tenant_id = t.id) AS users "
-                        + "FROM tenants t ORDER BY t.created_at",
+                        + "coalesce(c.usuarios, 0) AS users "
+                        + "FROM tenants t "
+                        + "LEFT JOIN contar_usuarios_por_negocio() c ON c.tenant_id = t.id "
+                        + "ORDER BY t.created_at",
                 (rs, i) -> new TenantListItem(rs.getString("id"), rs.getString("name"),
                         rs.getString("plan"), rs.getString("status"), rs.getInt("users")));
     }

@@ -37,7 +37,51 @@ public class AuthRepository {
     /** Override de módulo por tenant: enabled=true regala, false quita. */
     public record ModuleOverride(String module, boolean enabled) {}
 
-    /** Busca el usuario por email (case-insensitive). */
+    /**
+     * Lo mínimo que el login necesita saber de un usuario. Es un tipo distinto de
+     * {@link UserRow} a propósito: marca la frontera entre lo que se lee con
+     * privilegios y lo que se lee por RLS normal.
+     */
+    public record UsuarioParaLogin(String email, String tenantId, String passwordHash,
+                                   String rol, boolean activo) {}
+
+    /**
+     * Busca el usuario del login <b>sin negocio en sesión</b>, vía la función
+     * {@code buscar_usuario_para_login} de V39.
+     *
+     * <p>Es el único camino que puede leer {@code users} sin `app.tenant_id`, y
+     * existe porque el login busca al usuario <i>para averiguar cuál es su
+     * negocio</i>: exigirle que lo fije antes sería pedirle el dato que va a
+     * buscar. Todo lo demás que lee {@code users} —listar, cambiar rol, resolver
+     * el autor de una petición— va por RLS normal con {@link #findUserByEmail}.
+     */
+    public Optional<UsuarioParaLogin> buscarUsuarioParaLogin(String email) {
+        List<UsuarioParaLogin> filas = jdbc.query(
+                "SELECT email, tenant_id, password_hash, rol, activo "
+                        + "FROM buscar_usuario_para_login(?)",
+                (rs, i) -> new UsuarioParaLogin(
+                        rs.getString("email"), rs.getString("tenant_id"),
+                        rs.getString("password_hash"), rs.getString("rol"),
+                        rs.getBoolean("activo")),
+                email);
+        return filas.stream().findFirst();
+    }
+
+    /**
+     * Fija el negocio para el resto de <b>esta transacción</b>.
+     *
+     * <p>El tercer parámetro {@code true} de {@code set_config} lo acota a la
+     * transacción: al terminar vuelve solo. Y esa acotación obliga a que quien
+     * llame esté dentro de una — fuera de transacción, en autocommit, la
+     * sentencia es su propia transacción y el valor se descarta antes de la
+     * consulta siguiente. Es el defecto que tiene hoy
+     * {@code SuperAdminService.getSites}, anotado en NOTAS.md.
+     */
+    public void fijarNegocioEnLaTransaccion(String tenantId) {
+        jdbc.queryForObject("SELECT set_config('app.tenant_id', ?, true)", String.class, tenantId);
+    }
+
+    /** Busca el usuario por email (case-insensitive). Requiere negocio en sesión. */
     public Optional<UserRow> findUserByEmail(String email) {
         try {
             UserRow row = jdbc.queryForObject(
@@ -69,10 +113,19 @@ public class AuthRepository {
         }
     }
 
+    /**
+     * Si el email ya está tomado, <b>en cualquier negocio de la plataforma</b>.
+     *
+     * <p>Va por la función {@code existe_email} de V39 porque
+     * {@code users.email} es UNIQUE GLOBAL (V4:23): la pregunta es forzosamente
+     * cross-tenant. Con un {@code count(*)} normal y la política cerrada
+     * respondería siempre "libre", el INSERT chocaría contra el índice único y
+     * el usuario recibiría un 500 donde hoy recibe un 409 explicado.
+     */
     public boolean emailExists(String email) {
-        Integer n = jdbc.queryForObject(
-                "SELECT count(*) FROM users WHERE lower(email) = lower(?)", Integer.class, email);
-        return n != null && n > 0;
+        Boolean existe = jdbc.queryForObject(
+                "SELECT existe_email(?)", Boolean.class, email);
+        return Boolean.TRUE.equals(existe);
     }
 
     public boolean tenantExists(String id) {
@@ -163,24 +216,18 @@ public class AuthRepository {
      * llegó al final alguna vez, y eso cambia por dónde se busca el problema.
      */
     public ConsultaDeReset buscarReset(String tokenHash) {
-        try {
-            ConsultaDeReset r = jdbc.queryForObject(
-                    "SELECT CASE WHEN used THEN 'usado' "
-                            + "          WHEN expires_at <= now() THEN 'vencido' "
-                            + "          ELSE 'valido' END AS estado, "
-                            + "       CASE WHEN NOT used AND expires_at > now() "
-                            + "            THEN email END AS email, "
-                            + "       CASE WHEN NOT used AND expires_at > now() "
-                            + "            THEN tenant_id END AS tenant_id "
-                            + "FROM password_resets WHERE token_hash = ?",
-                    (rs, i) -> new ConsultaDeReset(
-                            EstadoDelToken.valueOf(rs.getString("estado")),
-                            rs.getString("email"), rs.getString("tenant_id")),
-                    tokenHash);
-            return r != null ? r : new ConsultaDeReset(EstadoDelToken.no_existe, null, null);
-        } catch (EmptyResultDataAccessException e) {
-            return new ConsultaDeReset(EstadoDelToken.no_existe, null, null);
-        }
+        // La lógica de estados vive en la función `buscar_token_de_reset` (V39) y
+        // no aquí: es el único camino que puede leer `password_resets` sin
+        // negocio en sesión, y una petición de /auth/reset-password no trae
+        // ninguno — llega con un token y nada más.
+        List<ConsultaDeReset> filas = jdbc.query(
+                "SELECT estado, email, tenant_id FROM buscar_token_de_reset(?)",
+                (rs, i) -> new ConsultaDeReset(
+                        EstadoDelToken.valueOf(rs.getString("estado")),
+                        rs.getString("email"), rs.getString("tenant_id")),
+                tokenHash);
+        return filas.stream().findFirst()
+                .orElse(new ConsultaDeReset(EstadoDelToken.no_existe, null, null));
     }
 
     /** @return cuántas filas marcó (0 = el token no existe o ya estaba usado). */
