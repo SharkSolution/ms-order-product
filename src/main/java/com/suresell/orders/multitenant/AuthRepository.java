@@ -141,22 +141,53 @@ public class AuthRepository {
                 tokenHash, email, tenantId, java.sql.Timestamp.from(expiresAt));
     }
 
-    /** Devuelve el reset si el token existe, no está usado y no expiró. */
-    public Optional<ResetRow> findValidReset(String tokenHash) {
+    /**
+     * Resultado de consultar un token de recuperación.
+     *
+     * <p>{@code email} y {@code tenantId} vienen <b>en nulo salvo que el estado
+     * sea {@code valido}</b>. No es una precaución decorativa: son los dos
+     * únicos datos personales de la fila, y para decidir que un token está
+     * vencido no hacen ninguna falta.
+     */
+    public record ConsultaDeReset(EstadoDelToken estado, String email, String tenantId) {}
+
+    /**
+     * Busca un token de recuperación y dice <b>por qué</b> no sirve, si no sirve.
+     *
+     * <p>Sustituye a {@code findValidReset}, que devolvía un {@code Optional}
+     * vacío para cuatro situaciones distintas —no existe, caducado, ya usado— y
+     * hacía imposible diagnosticar un reporte de "el enlace no funciona".
+     *
+     * <p><b>Precedencia deliberada:</b> un token usado Y caducado se reporta como
+     * {@code usado}. Es lo que primero hay que saber: significa que el flujo sí
+     * llegó al final alguna vez, y eso cambia por dónde se busca el problema.
+     */
+    public ConsultaDeReset buscarReset(String tokenHash) {
         try {
-            ResetRow r = jdbc.queryForObject(
-                    "SELECT email, tenant_id FROM password_resets "
-                            + "WHERE token_hash = ? AND used = false AND expires_at > now()",
-                    (rs, i) -> new ResetRow(rs.getString("email"), rs.getString("tenant_id")),
+            ConsultaDeReset r = jdbc.queryForObject(
+                    "SELECT CASE WHEN used THEN 'usado' "
+                            + "          WHEN expires_at <= now() THEN 'vencido' "
+                            + "          ELSE 'valido' END AS estado, "
+                            + "       CASE WHEN NOT used AND expires_at > now() "
+                            + "            THEN email END AS email, "
+                            + "       CASE WHEN NOT used AND expires_at > now() "
+                            + "            THEN tenant_id END AS tenant_id "
+                            + "FROM password_resets WHERE token_hash = ?",
+                    (rs, i) -> new ConsultaDeReset(
+                            EstadoDelToken.valueOf(rs.getString("estado")),
+                            rs.getString("email"), rs.getString("tenant_id")),
                     tokenHash);
-            return Optional.ofNullable(r);
+            return r != null ? r : new ConsultaDeReset(EstadoDelToken.no_existe, null, null);
         } catch (EmptyResultDataAccessException e) {
-            return Optional.empty();
+            return new ConsultaDeReset(EstadoDelToken.no_existe, null, null);
         }
     }
 
-    public void markResetUsed(String tokenHash) {
-        jdbc.update("UPDATE password_resets SET used = true WHERE token_hash = ?", tokenHash);
+    /** @return cuántas filas marcó (0 = el token no existe o ya estaba usado). */
+    public int markResetUsed(String tokenHash) {
+        return jdbc.update(
+                "UPDATE password_resets SET used = true WHERE token_hash = ? AND used = false",
+                tokenHash);
     }
 
     /**

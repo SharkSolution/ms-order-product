@@ -431,11 +431,19 @@ class AuthServiceTest {
         verify(repo).insertReset(anyString(), eq("ana@shark.co"), eq("shark-burger"), any());
     }
 
+    /** Un token válido, con las dos escrituras devolviendo "1 fila". */
+    private AuthRepository repoConTokenValido() {
+        AuthRepository repo = mock(AuthRepository.class);
+        when(repo.buscarReset(anyString())).thenReturn(new AuthRepository.ConsultaDeReset(
+                EstadoDelToken.valido, "ana@shark.co", "shark-burger"));
+        when(repo.updatePasswordHash(any(), any(), any())).thenReturn(1);
+        when(repo.markResetUsed(anyString())).thenReturn(1);
+        return repo;
+    }
+
     @Test
     void resetValidoActualizaClaveYMarcaUsado() {
-        AuthRepository repo = mock(AuthRepository.class);
-        when(repo.findValidReset(anyString())).thenReturn(Optional.of(
-                new AuthRepository.ResetRow("ana@shark.co", "shark-burger")));
+        AuthRepository repo = repoConTokenValido();
 
         newService(repo).resetPassword("tok", "nueva123");
 
@@ -445,12 +453,55 @@ class AuthServiceTest {
 
     @Test
     void resetTokenInvalidoOExpiradoEs400() {
-        AuthRepository repo = mock(AuthRepository.class);
-        when(repo.findValidReset(anyString())).thenReturn(Optional.empty());
+        // Los cuatro estados que no son `valido` dan el MISMO 400 y el mismo
+        // mensaje. Esa ambigüedad de cara afuera es deliberada: distinguirlos en
+        // la respuesta HTTP convertiría el endpoint en un oráculo de tokens.
+        for (EstadoDelToken estado : new EstadoDelToken[] {
+                EstadoDelToken.no_existe, EstadoDelToken.vencido, EstadoDelToken.usado }) {
+            AuthRepository repo = mock(AuthRepository.class);
+            when(repo.buscarReset(anyString())).thenReturn(
+                    new AuthRepository.ConsultaDeReset(estado, null, null));
+
+            AuthException ex = assertThrows(AuthException.class,
+                    () -> newService(repo).resetPassword("tok", "nueva123"));
+
+            assertEquals(400, ex.status(), "estado " + estado);
+            assertEquals("Enlace inválido o expirado", ex.getMessage(),
+                    "el mensaje al usuario NO puede delatar el estado: " + estado);
+            verify(repo, never()).updatePasswordHash(any(), any(), any());
+            verify(repo, never()).markResetUsed(any());
+        }
+    }
+
+    @Test
+    void siLaClaveNoLlegaACambiarseNoSeMarcaElToken() {
+        // Un UPDATE que cambia cero filas no lanza nada: devuelve 0. Antes el
+        // método respondía `ok` igual, así que el usuario creía tener una
+        // contraseña nueva que nunca se guardó.
+        AuthRepository repo = repoConTokenValido();
+        when(repo.updatePasswordHash(any(), any(), any())).thenReturn(0);
+
         AuthException ex = assertThrows(AuthException.class,
                 () -> newService(repo).resetPassword("tok", "nueva123"));
-        assertEquals(400, ex.status());
-        verify(repo, never()).updatePasswordHash(any(), any(), any());
+
+        assertEquals(500, ex.status());
+        verify(repo, never()).markResetUsed(any());
+    }
+
+    @Test
+    void siElTokenNoSePuedeMarcarLaOperacionFalla() {
+        // El caso que motiva la transacción: si marcar el token falla, la
+        // contraseña NO puede quedar cambiada — sería un enlace de un solo uso
+        // que sirve dos veces. Aquí se comprueba que el método LANZA, que es lo
+        // que hace revertir; que la reversión ocurra de verdad lo comprueba
+        // ResetPasswordTransaccionalTest contra un Postgres real.
+        AuthRepository repo = repoConTokenValido();
+        when(repo.markResetUsed(anyString())).thenReturn(0);
+
+        AuthException ex = assertThrows(AuthException.class,
+                () -> newService(repo).resetPassword("tok", "nueva123"));
+
+        assertEquals(500, ex.status());
     }
 
     @Test
