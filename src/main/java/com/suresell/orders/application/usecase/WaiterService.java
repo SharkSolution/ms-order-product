@@ -64,6 +64,9 @@ public class WaiterService {
     private final MenuCategoryRepository menuCategoryRepository;
     private final MenuProductRepository menuProductRepository;
     private final OrderPort orderPort;
+    /** T2 — encadenado del lado del servidor para el camino del mesero. */
+    private final CadenaDelServidor cadena;
+    private final RegistroDeTerminales registroDeTerminales;
 
     public WaiterService(WaiterRepository waiterRepository,
                          WaiterSessionRepository sessionRepository,
@@ -74,7 +77,11 @@ public class WaiterService {
                          OrderPort orderPort,
                          SiteService siteService,
                          TableSessionService tableSessionService,
-                         PinDeMeseroService pinService) {
+                         PinDeMeseroService pinService,
+                         CadenaDelServidor cadena,
+                         RegistroDeTerminales registroDeTerminales) {
+        this.cadena = cadena;
+        this.registroDeTerminales = registroDeTerminales;
         this.waiterRepository = waiterRepository;
         this.sessionRepository = sessionRepository;
         this.pinService = pinService;
@@ -351,10 +358,9 @@ public class WaiterService {
         //
         // Sin el campo se conserva el comportamiento anterior, así que los APK
         // ya instalados no se enteran.
-        // V36: la app de meseros todavía no manda procedencia temporal, así que
-        // los cinco campos nuevos van nulos. `ocurrido_en` quedará NULO para sus
-        // órdenes, que es la verdad —esa app no declara cuándo ocurrió la venta—
-        // y no un valor inventado. Cuando la app los envíe, se pasan aquí.
+        // La orden se crea SIEMPRE, traiga o no procedencia. Un cliente viejo
+        // —que no conoce `terminalId`— sigue vendiendo exactamente igual que
+        // antes: `ocurrido_en` nulo y sin cadena. No peor que hoy.
         Order created = orderPort.createOrUpdateOrder(OrderRequestRecord.sinProcedencia(
                 request.pagerColor(), request.pagerNumber(), request.items(),
                 request.discountCode(), request.paymentMethod(), request.payments(),
@@ -363,7 +369,63 @@ public class WaiterService {
         created.setWaiterId(waiterId);
         created.setWaiterSessionId(sessionUuid);
         orderRepository.tagWaiterOrder(created.getUuidId(), key, waiterId, sessionUuid);
+
+        // T2 — Encadenado del lado del servidor. Va DESPUÉS de crear la orden
+        // porque el hash cubre los importes ya calculados y la clave de
+        // idempotencia definitiva.
+        //
+        // Todo lo de aquí abajo es best-effort: si falla, la venta ya está
+        // registrada. Perder un pedido por no poder firmarlo sería el peor
+        // intercambio posible.
+        encadenarSiSePuede(request, created);
         return toOrderResponse(created);
+    }
+
+    /**
+     * Firma la orden del mesero, si la app declaró terminal.
+     *
+     * <p>Sin {@code terminalId} no se hace nada y la orden queda como siempre:
+     * es el contrato viejo, que sigue valiendo. Con él, el servidor le asigna su
+     * posición en la cadena de ese dispositivo y marca
+     * {@code cadena_origen = 'servidor'} — porque esta cadena y la del POS no
+     * prueban lo mismo y un auditor tiene que poder distinguirlas.
+     */
+    private void encadenarSiSePuede(WaiterOrderRequest request, Order created) {
+        java.util.UUID terminal = CadenaDelServidor.terminalDe(request.terminalId());
+        if (terminal == null) {
+            if (request.terminalId() != null && !request.terminalId().isBlank()) {
+                // Llegó algo pero no era un UUID. Se vende igual, pero que quede
+                // dicho: un hueco por cliente viejo y uno por dato malformado se
+                // ven igual en la fila.
+                log.warn("[cadena] terminalId ilegible en la orden {}; se registra "
+                        + "sin cadena", created.getIdempotencyKey());
+            }
+            return;
+        }
+        try {
+            java.time.Instant ocurrido = CadenaDelServidor.ocurridoDe(request.ocurridoEn());
+            // El servidor NUNCA rechaza un terminal desconocido: lo da de alta.
+            // Rechazarlo convertiría un problema de registro en una venta
+            // perdida (V35, §Identidad).
+            registroDeTerminales.asegurarRegistrado(terminal, CadenaDelServidor.EPOCH_DEL_SERVIDOR);
+            CadenaDelServidor.Eslabon eslabon = cadena.encadenar(
+                    terminal, ocurrido, created,
+                    com.suresell.orders.multitenant.TenantContext.get());
+            if (eslabon != null) {
+                cadena.sellar(created.getUuidId(),
+                        com.suresell.orders.multitenant.TenantContext.get(),
+                        eslabon, terminal, ocurrido);
+                created.setTerminalId(terminal);
+                created.setEpoch(CadenaDelServidor.EPOCH_DEL_SERVIDOR);
+                created.setSeq(eslabon.seq());
+                created.setHashAnterior(eslabon.hashAnterior());
+                created.setOcurridoEn(ocurrido == null ? null
+                        : java.time.OffsetDateTime.ofInstant(ocurrido, java.time.ZoneOffset.UTC));
+            }
+        } catch (RuntimeException e) {
+            log.error("[cadena] fallo encadenando la orden {}; queda registrada "
+                    + "SIN cadena:", created.getIdempotencyKey(), e);
+        }
     }
 
     public java.util.Optional<WaiterOrderResponse> findByIdempotencyKey(String idempotencyKey) {

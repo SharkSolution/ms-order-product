@@ -62,7 +62,10 @@ class WaiterServiceTest {
         service = new WaiterService(waiterRepository, sessionRepository, orderRepository,
                 orderPaymentRepository,
                 mock(MenuCategoryRepository.class), mock(MenuProductRepository.class), orderPort,
-                siteService, tableSessionService, new PinDeMeseroService(waiterRepository));
+                siteService, tableSessionService, new PinDeMeseroService(waiterRepository),
+                // Sin terminalId en el DTO, la cadena no se toca: estos tests
+                // ejercen el CONTRATO VIEJO, que es lo que hay que preservar.
+                mock(CadenaDelServidor.class), mock(RegistroDeTerminales.class));
         // Sin ordenes MIXED, no hay splits que repartir.
         when(orderPaymentRepository.sumSplitsByWaiterSession(any())).thenReturn(java.util.List.of());
         when(sessionRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
@@ -185,7 +188,7 @@ class WaiterServiceTest {
         WaiterOrderResponse resp = service.createOrder(new WaiterOrderRequest(
                 "AMARILLO", "5", "CASH",
                 List.of(new OrderItemRequestRecord("p1", 1, new BigDecimal("10000"), null, null)),
-                null, "k-1", null, null, null, null));
+                null, "k-1", null, null, null, null, null, null));
 
         assertEquals(301900L, resp.idOrder());
         verify(orderPort, never()).createOrUpdateOrder(any());
@@ -203,7 +206,7 @@ class WaiterServiceTest {
         WaiterOrderResponse resp = service.createOrder(new WaiterOrderRequest(
                 "AMARILLO", "5", "CASH",
                 List.of(new OrderItemRequestRecord("p1", 1, new BigDecimal("10000"), null, null)),
-                null, "k-2", session.getId().toString(), null, null, null));
+                null, "k-2", session.getId().toString(), null, null, null, null, null));
 
         assertEquals("k-2", creada.getIdempotencyKey());
         assertEquals(3L, creada.getWaiterId());
@@ -224,7 +227,7 @@ class WaiterServiceTest {
         WaiterOrderResponse resp = service.createOrder(new WaiterOrderRequest(
                 "AMARILLO", "5", "CASH",
                 List.of(new OrderItemRequestRecord("p1", 1, new BigDecimal("10000"), null, null)),
-                null, null, fantasma.toString(), null, null, null));
+                null, null, fantasma.toString(), null, null, null, null, null));
 
         assertEquals(301902L, resp.idOrder());
         assertNull(creada.getWaiterId());
@@ -246,7 +249,7 @@ class WaiterServiceTest {
         WaiterOrderResponse resp = service.createOrder(new WaiterOrderRequest(
                 "AMARILLO", "5", "CASH",
                 List.of(new OrderItemRequestRecord("p1", 1, new BigDecimal("10000"), null, null)),
-                null, null, cerrada.getId().toString(), null, null, null));
+                null, null, cerrada.getId().toString(), null, null, null, null, null));
 
         assertEquals(301903L, resp.idOrder());
         assertEquals(3L, creada.getWaiterId());
@@ -262,7 +265,7 @@ class WaiterServiceTest {
         WaiterOrderResponse resp = service.createOrder(new WaiterOrderRequest(
                 "AMARILLO", "5", "CASH",
                 List.of(new OrderItemRequestRecord("p1", 1, new BigDecimal("10000"), null, null)),
-                null, null, "no-es-un-uuid", null, null, null));
+                null, null, "no-es-un-uuid", null, null, null, null, null));
 
         assertEquals(301904L, resp.idOrder());
         assertNull(creada.getWaiterId());
@@ -288,7 +291,7 @@ class WaiterServiceTest {
         service.createOrder(new WaiterOrderRequest(
                 "AMARILLO", "1", "CASH",
                 List.of(new OrderItemRequestRecord("p1", 1, new BigDecimal("10000"), null, null)),
-                null, "k-mesa", null, 23, null, null));
+                null, "k-mesa", null, 23, null, null, null, null));
 
         ArgumentCaptor<OrderRequestRecord> captor = ArgumentCaptor.forClass(OrderRequestRecord.class);
         verify(orderPort).createOrUpdateOrder(captor.capture());
@@ -308,10 +311,10 @@ class WaiterServiceTest {
 
         service.createOrder(new WaiterOrderRequest("AMARILLO", "1", "CASH",
                 List.of(new OrderItemRequestRecord("p1", 1, new BigDecimal("10000"), null, null)),
-                null, "k-1", null, 23, null, null));
+                null, "k-1", null, 23, null, null, null, null));
         service.createOrder(new WaiterOrderRequest("AMARILLO", "1", "CASH",
                 List.of(new OrderItemRequestRecord("p2", 1, new BigDecimal("5000"), null, null)),
-                null, "k-2", null, 23, null, null));
+                null, "k-2", null, 23, null, null, null, null));
 
         ArgumentCaptor<OrderRequestRecord> captor = ArgumentCaptor.forClass(OrderRequestRecord.class);
         verify(orderPort, times(2)).createOrUpdateOrder(captor.capture());
@@ -327,7 +330,7 @@ class WaiterServiceTest {
 
         service.createOrder(new WaiterOrderRequest("AMARILLO", "5", "CASH",
                 List.of(new OrderItemRequestRecord("p1", 1, new BigDecimal("10000"), null, null)),
-                null, "k-plaz", null, 23, null, null));
+                null, "k-plaz", null, 23, null, null, null, null));
 
         ArgumentCaptor<OrderRequestRecord> captor = ArgumentCaptor.forClass(OrderRequestRecord.class);
         verify(orderPort).createOrUpdateOrder(captor.capture());
@@ -343,7 +346,7 @@ class WaiterServiceTest {
 
         service.createOrder(new WaiterOrderRequest("AMARILLO", "5", "CASH",
                 List.of(new OrderItemRequestRecord("p1", 1, new BigDecimal("10000"), null, null)),
-                null, "k-sinmesa", null, null, null, null));
+                null, "k-sinmesa", null, null, null, null, null, null));
 
         ArgumentCaptor<OrderRequestRecord> captor = ArgumentCaptor.forClass(OrderRequestRecord.class);
         verify(orderPort).createOrUpdateOrder(captor.capture());
@@ -361,7 +364,7 @@ class WaiterServiceTest {
 
         service.createOrder(new WaiterOrderRequest("AMARILLO", "5", "MIXED",
                 List.of(new OrderItemRequestRecord("p1", 1, new BigDecimal("10000"), null, null)),
-                null, "k-mixto", null, null, splits, null));
+                null, "k-mixto", null, null, splits, null, null, null));
 
         ArgumentCaptor<OrderRequestRecord> captor = ArgumentCaptor.forClass(OrderRequestRecord.class);
         verify(orderPort).createOrUpdateOrder(captor.capture());
@@ -407,7 +410,7 @@ class WaiterServiceTest {
     private WaiterOrderRequest pedido(Boolean skipPagerCheck) {
         return new WaiterOrderRequest("AMARILLO", "5", "CASH",
                 List.of(new OrderItemRequestRecord("p1", 1, new BigDecimal("10000"), null, null)),
-                null, "k-pager", null, null, null, skipPagerCheck);
+                null, "k-pager", null, null, null, skipPagerCheck, null, null);
     }
 
     @Test

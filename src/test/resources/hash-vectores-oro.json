@@ -1,0 +1,666 @@
+{
+  "version": "v2",
+  "generadoPor": "src/app/core/offline/generar-vectores-oro.ts",
+  "algoritmo": "SHA-256 sobre la forma canónica codificada en UTF-8, hexadecimal en minúsculas",
+  "advertencia": "GENERADO. No editar a mano. Cambiar un vector NO es corregir un fichero: parte la cadena histórica en dos formatos. Ver hash-vectores-oro.README.md.",
+  "vectores": [
+    {
+      "nombre": "minimo-una-linea",
+      "porQue": "El caso base. Si este falla, no hay nada que depurar en los demás: está mal la gramática entera, no un caso borde.",
+      "entrada": {
+        "identidad": {
+          "terminalId": "7b3c1f9a-2e44-4d18-9c05-8a1f6d2b3e77",
+          "epoch": 1,
+          "seq": 1,
+          "tipo": "order_created",
+          "ref": "a1b2c3d4-0000-4000-8000-000000000001",
+          "hashAnterior": null
+        },
+        "orden": {
+          "createdAt": "2026-08-20T14:32:05.123Z",
+          "paymentMethod": "EFECTIVO",
+          "subtotal": 25000,
+          "total": 25000,
+          "discountAmount": 0,
+          "items": [
+            {
+              "productId": "HAMB-CLASICA",
+              "quantity": 1,
+              "unitPrice": 25000,
+              "totalPrice": 25000
+            }
+          ],
+          "payments": [
+            {
+              "method": "EFECTIVO",
+              "amount": 25000
+            }
+          ]
+        }
+      },
+      "canonica": "v2\nterminal:7b3c1f9a-2e44-4d18-9c05-8a1f6d2b3e77\nepoch:1\nseq:1\ntipo:order_created\nref:a1b2c3d4-0000-4000-8000-000000000001\nocurrido:2026-08-20T14:32:05.123Z\nmedio:EFECTIVO\nsubtotal:25000.00\ndescuento:0.00\ntotal:25000.00\nlineas:1\n  0:HAMB-CLASICA|1|25000.00|25000.00\npagos:1\n  0:EFECTIVO|25000.00\nanterior:\n",
+      "hash": "9eef3b4add6679a3311318b618205bfe9897c80f1568f24f1d7a7ca27e49927a"
+    },
+    {
+      "nombre": "encadenado-con-anterior",
+      "porQue": "El mismo hecho económico que `minimo-una-linea` pero con `anterior` poblado. Debe dar un hash DISTINTO: si diera el mismo, la cadena no estaría encadenando nada y reordenar eventos sería indetectable.",
+      "entrada": {
+        "identidad": {
+          "terminalId": "7b3c1f9a-2e44-4d18-9c05-8a1f6d2b3e77",
+          "epoch": 1,
+          "seq": 2,
+          "tipo": "order_created",
+          "ref": "a1b2c3d4-0000-4000-8000-000000000001",
+          "hashAnterior": "0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        "orden": {
+          "createdAt": "2026-08-20T14:32:05.123Z",
+          "paymentMethod": "EFECTIVO",
+          "subtotal": 25000,
+          "total": 25000,
+          "discountAmount": 0,
+          "items": [
+            {
+              "productId": "HAMB-CLASICA",
+              "quantity": 1,
+              "unitPrice": 25000,
+              "totalPrice": 25000
+            }
+          ],
+          "payments": [
+            {
+              "method": "EFECTIVO",
+              "amount": 25000
+            }
+          ]
+        }
+      },
+      "canonica": "v2\nterminal:7b3c1f9a-2e44-4d18-9c05-8a1f6d2b3e77\nepoch:1\nseq:2\ntipo:order_created\nref:a1b2c3d4-0000-4000-8000-000000000001\nocurrido:2026-08-20T14:32:05.123Z\nmedio:EFECTIVO\nsubtotal:25000.00\ndescuento:0.00\ntotal:25000.00\nlineas:1\n  0:HAMB-CLASICA|1|25000.00|25000.00\npagos:1\n  0:EFECTIVO|25000.00\nanterior:0000000000000000000000000000000000000000000000000000000000000000\n",
+      "hash": "117f8515841d8b5bdff592a444b68b03f5708812dcaf0e5abbdec6520bf42a0a",
+      "distintoDe": "minimo-una-linea"
+    },
+    {
+      "nombre": "veinte-lineas-en-el-orden-recibido",
+      "porQue": "Las listas NO se reordenan. El orden en que el cajero marcó los productos es parte del hecho: una implementación que ordenara por `productId` \"para normalizar\" produciría otro hash y el verificador diría manipulado sobre una venta correcta. Los productos van a propósito en orden NO alfabético.",
+      "entrada": {
+        "identidad": {
+          "terminalId": "7b3c1f9a-2e44-4d18-9c05-8a1f6d2b3e77",
+          "epoch": 1,
+          "seq": 3,
+          "tipo": "order_created",
+          "ref": "a1b2c3d4-0000-4000-8000-000000000003",
+          "hashAnterior": null
+        },
+        "orden": {
+          "createdAt": "2026-08-20T20:05:00.000Z",
+          "paymentMethod": "TARJETA",
+          "subtotal": 210000,
+          "total": 210000,
+          "discountAmount": 0,
+          "items": [
+            {
+              "productId": "PROD-20",
+              "quantity": 1,
+              "unitPrice": 10500,
+              "totalPrice": 10500
+            },
+            {
+              "productId": "PROD-19",
+              "quantity": 1,
+              "unitPrice": 10500,
+              "totalPrice": 10500
+            },
+            {
+              "productId": "PROD-18",
+              "quantity": 1,
+              "unitPrice": 10500,
+              "totalPrice": 10500
+            },
+            {
+              "productId": "PROD-17",
+              "quantity": 1,
+              "unitPrice": 10500,
+              "totalPrice": 10500
+            },
+            {
+              "productId": "PROD-16",
+              "quantity": 1,
+              "unitPrice": 10500,
+              "totalPrice": 10500
+            },
+            {
+              "productId": "PROD-15",
+              "quantity": 1,
+              "unitPrice": 10500,
+              "totalPrice": 10500
+            },
+            {
+              "productId": "PROD-14",
+              "quantity": 1,
+              "unitPrice": 10500,
+              "totalPrice": 10500
+            },
+            {
+              "productId": "PROD-13",
+              "quantity": 1,
+              "unitPrice": 10500,
+              "totalPrice": 10500
+            },
+            {
+              "productId": "PROD-12",
+              "quantity": 1,
+              "unitPrice": 10500,
+              "totalPrice": 10500
+            },
+            {
+              "productId": "PROD-11",
+              "quantity": 1,
+              "unitPrice": 10500,
+              "totalPrice": 10500
+            },
+            {
+              "productId": "PROD-10",
+              "quantity": 1,
+              "unitPrice": 10500,
+              "totalPrice": 10500
+            },
+            {
+              "productId": "PROD-09",
+              "quantity": 1,
+              "unitPrice": 10500,
+              "totalPrice": 10500
+            },
+            {
+              "productId": "PROD-08",
+              "quantity": 1,
+              "unitPrice": 10500,
+              "totalPrice": 10500
+            },
+            {
+              "productId": "PROD-07",
+              "quantity": 1,
+              "unitPrice": 10500,
+              "totalPrice": 10500
+            },
+            {
+              "productId": "PROD-06",
+              "quantity": 1,
+              "unitPrice": 10500,
+              "totalPrice": 10500
+            },
+            {
+              "productId": "PROD-05",
+              "quantity": 1,
+              "unitPrice": 10500,
+              "totalPrice": 10500
+            },
+            {
+              "productId": "PROD-04",
+              "quantity": 1,
+              "unitPrice": 10500,
+              "totalPrice": 10500
+            },
+            {
+              "productId": "PROD-03",
+              "quantity": 1,
+              "unitPrice": 10500,
+              "totalPrice": 10500
+            },
+            {
+              "productId": "PROD-02",
+              "quantity": 1,
+              "unitPrice": 10500,
+              "totalPrice": 10500
+            },
+            {
+              "productId": "PROD-01",
+              "quantity": 1,
+              "unitPrice": 10500,
+              "totalPrice": 10500
+            }
+          ],
+          "payments": [
+            {
+              "method": "TARJETA",
+              "amount": 210000
+            }
+          ]
+        }
+      },
+      "canonica": "v2\nterminal:7b3c1f9a-2e44-4d18-9c05-8a1f6d2b3e77\nepoch:1\nseq:3\ntipo:order_created\nref:a1b2c3d4-0000-4000-8000-000000000003\nocurrido:2026-08-20T20:05:00.000Z\nmedio:TARJETA\nsubtotal:210000.00\ndescuento:0.00\ntotal:210000.00\nlineas:20\n  0:PROD-20|1|10500.00|10500.00\n  1:PROD-19|1|10500.00|10500.00\n  2:PROD-18|1|10500.00|10500.00\n  3:PROD-17|1|10500.00|10500.00\n  4:PROD-16|1|10500.00|10500.00\n  5:PROD-15|1|10500.00|10500.00\n  6:PROD-14|1|10500.00|10500.00\n  7:PROD-13|1|10500.00|10500.00\n  8:PROD-12|1|10500.00|10500.00\n  9:PROD-11|1|10500.00|10500.00\n  10:PROD-10|1|10500.00|10500.00\n  11:PROD-09|1|10500.00|10500.00\n  12:PROD-08|1|10500.00|10500.00\n  13:PROD-07|1|10500.00|10500.00\n  14:PROD-06|1|10500.00|10500.00\n  15:PROD-05|1|10500.00|10500.00\n  16:PROD-04|1|10500.00|10500.00\n  17:PROD-03|1|10500.00|10500.00\n  18:PROD-02|1|10500.00|10500.00\n  19:PROD-01|1|10500.00|10500.00\npagos:1\n  0:TARJETA|210000.00\nanterior:\n",
+      "hash": "94a12ce64ac644a6a4a86b7f26a00900ea49d4e88b681b66e12cec8fd5b83835"
+    },
+    {
+      "nombre": "cero-negativo-literal",
+      "porQue": "En JavaScript `(-0).toFixed(2)` da \"0.00\" —el signo se pierde porque `-0 < 0` es falso— pero un cero negativo puede llegar de una resta y no debe producir una cadena distinta de la del cero. `BigDecimal` no tiene cero negativo.",
+      "entrada": {
+        "identidad": {
+          "terminalId": "7b3c1f9a-2e44-4d18-9c05-8a1f6d2b3e77",
+          "epoch": 1,
+          "seq": 1,
+          "tipo": "order_created",
+          "ref": "a1b2c3d4-0000-4000-8000-000000000001",
+          "hashAnterior": null
+        },
+        "orden": {
+          "createdAt": "2026-08-20T14:32:05.123Z",
+          "paymentMethod": "EFECTIVO",
+          "subtotal": 25000,
+          "total": 25000,
+          "discountAmount": 0,
+          "items": [
+            {
+              "productId": "HAMB-CLASICA",
+              "quantity": 1,
+              "unitPrice": 25000,
+              "totalPrice": 25000
+            }
+          ],
+          "payments": [
+            {
+              "method": "EFECTIVO",
+              "amount": 25000
+            }
+          ]
+        }
+      },
+      "canonica": "v2\nterminal:7b3c1f9a-2e44-4d18-9c05-8a1f6d2b3e77\nepoch:1\nseq:1\ntipo:order_created\nref:a1b2c3d4-0000-4000-8000-000000000001\nocurrido:2026-08-20T14:32:05.123Z\nmedio:EFECTIVO\nsubtotal:25000.00\ndescuento:0.00\ntotal:25000.00\nlineas:1\n  0:HAMB-CLASICA|1|25000.00|25000.00\npagos:1\n  0:EFECTIVO|25000.00\nanterior:\n",
+      "hash": "9eef3b4add6679a3311318b618205bfe9897c80f1568f24f1d7a7ca27e49927a",
+      "mismoHashQue": "minimo-una-linea"
+    },
+    {
+      "nombre": "negativo-que-redondea-a-cero",
+      "porQue": "ESTE es el caso real del cero negativo, no `-0`: `(-0.004).toFixed(2)` sí da \"-0.00\" en JavaScript, y `BigDecimal(\"-0.004\").setScale(2, HALF_UP)` da \"0.00\". Sin la normalización explícita, las dos plataformas discreparían aquí.",
+      "entrada": {
+        "identidad": {
+          "terminalId": "7b3c1f9a-2e44-4d18-9c05-8a1f6d2b3e77",
+          "epoch": 1,
+          "seq": 1,
+          "tipo": "order_created",
+          "ref": "a1b2c3d4-0000-4000-8000-000000000001",
+          "hashAnterior": null
+        },
+        "orden": {
+          "createdAt": "2026-08-20T14:32:05.123Z",
+          "paymentMethod": "EFECTIVO",
+          "subtotal": 25000,
+          "total": 25000,
+          "discountAmount": -0.004,
+          "items": [
+            {
+              "productId": "HAMB-CLASICA",
+              "quantity": 1,
+              "unitPrice": 25000,
+              "totalPrice": 25000
+            }
+          ],
+          "payments": [
+            {
+              "method": "EFECTIVO",
+              "amount": 25000
+            }
+          ]
+        }
+      },
+      "canonica": "v2\nterminal:7b3c1f9a-2e44-4d18-9c05-8a1f6d2b3e77\nepoch:1\nseq:1\ntipo:order_created\nref:a1b2c3d4-0000-4000-8000-000000000001\nocurrido:2026-08-20T14:32:05.123Z\nmedio:EFECTIVO\nsubtotal:25000.00\ndescuento:0.00\ntotal:25000.00\nlineas:1\n  0:HAMB-CLASICA|1|25000.00|25000.00\npagos:1\n  0:EFECTIVO|25000.00\nanterior:\n",
+      "hash": "9eef3b4add6679a3311318b618205bfe9897c80f1568f24f1d7a7ca27e49927a",
+      "mismoHashQue": "minimo-una-linea"
+    },
+    {
+      "nombre": "descuento-ausente",
+      "porQue": "AUSENTE y CERO son hechos distintos: \"no hubo descuento en este flujo\" no es \"se aplicó un descuento de cero\". Un ausente serializa como cadena vacía tras los dos puntos; un cero, \"0.00\". Debe dar un hash DISTINTO del de `minimo-una-linea`, que lleva `discountAmount: 0`.",
+      "entrada": {
+        "identidad": {
+          "terminalId": "7b3c1f9a-2e44-4d18-9c05-8a1f6d2b3e77",
+          "epoch": 1,
+          "seq": 1,
+          "tipo": "order_created",
+          "ref": "a1b2c3d4-0000-4000-8000-000000000001",
+          "hashAnterior": null
+        },
+        "orden": {
+          "createdAt": "2026-08-20T14:32:05.123Z",
+          "paymentMethod": "EFECTIVO",
+          "subtotal": 25000,
+          "total": 25000,
+          "items": [
+            {
+              "productId": "HAMB-CLASICA",
+              "quantity": 1,
+              "unitPrice": 25000,
+              "totalPrice": 25000
+            }
+          ],
+          "payments": [
+            {
+              "method": "EFECTIVO",
+              "amount": 25000
+            }
+          ]
+        }
+      },
+      "canonica": "v2\nterminal:7b3c1f9a-2e44-4d18-9c05-8a1f6d2b3e77\nepoch:1\nseq:1\ntipo:order_created\nref:a1b2c3d4-0000-4000-8000-000000000001\nocurrido:2026-08-20T14:32:05.123Z\nmedio:EFECTIVO\nsubtotal:25000.00\ndescuento:\ntotal:25000.00\nlineas:1\n  0:HAMB-CLASICA|1|25000.00|25000.00\npagos:1\n  0:EFECTIVO|25000.00\nanterior:\n",
+      "hash": "7b90927f22519f3f64eb8a4975869931755dd08ee14fe1d1b6f03f9f34c70001",
+      "distintoDe": "minimo-una-linea"
+    },
+    {
+      "nombre": "milisegundos-en-cero",
+      "porQue": "Los milisegundos van SIEMPRE, aunque sean ceros. En Java `Instant.toString()` los OMITE cuando son cero —da \"2026-08-20T21:00:00Z\" en vez de \"…T21:00:00.000Z\"— y ese es el error más probable de un verificador Java, porque solo se manifiesta en las ventas que caen en un segundo exacto: aproximadamente una de cada mil, imposible de reproducir a mano.",
+      "entrada": {
+        "identidad": {
+          "terminalId": "7b3c1f9a-2e44-4d18-9c05-8a1f6d2b3e77",
+          "epoch": 1,
+          "seq": 7,
+          "tipo": "order_created",
+          "ref": "a1b2c3d4-0000-4000-8000-000000000007",
+          "hashAnterior": null
+        },
+        "orden": {
+          "createdAt": "2026-08-20T21:00:00.000Z",
+          "paymentMethod": "EFECTIVO",
+          "subtotal": 12000,
+          "total": 12000,
+          "discountAmount": 0,
+          "items": [
+            {
+              "productId": "GASEOSA",
+              "quantity": 2,
+              "unitPrice": 6000,
+              "totalPrice": 12000
+            }
+          ],
+          "payments": [
+            {
+              "method": "EFECTIVO",
+              "amount": 12000
+            }
+          ]
+        }
+      },
+      "canonica": "v2\nterminal:7b3c1f9a-2e44-4d18-9c05-8a1f6d2b3e77\nepoch:1\nseq:7\ntipo:order_created\nref:a1b2c3d4-0000-4000-8000-000000000007\nocurrido:2026-08-20T21:00:00.000Z\nmedio:EFECTIVO\nsubtotal:12000.00\ndescuento:0.00\ntotal:12000.00\nlineas:1\n  0:GASEOSA|2|6000.00|12000.00\npagos:1\n  0:EFECTIVO|12000.00\nanterior:\n",
+      "hash": "3da53d5e31b999d8c30d5b6f61517eacb2c592474375a3a89f88f6b3d44153c6"
+    },
+    {
+      "nombre": "importe-con-mas-de-dos-decimales",
+      "porQue": "LA DECISIÓN DE REDONDEO. `(1.005).toFixed(2)` da \"1.00\" en JavaScript y `new BigDecimal(\"1.005\").setScale(2, HALF_UP)` da 1.01 en Java. El contrato elige HALF_UP —lo que hace Postgres al guardar en NUMERIC(15,2)— así que `unitPrice` 1.005 debe serializar \"1.01\" y `totalPrice` 2.675 debe serializar \"2.68\". Si tu implementación usa `toFixed`, este vector falla, y falla en la cadena canónica, no en el hash: se ve inmediatamente cuál es el problema.",
+      "entrada": {
+        "identidad": {
+          "terminalId": "7b3c1f9a-2e44-4d18-9c05-8a1f6d2b3e77",
+          "epoch": 1,
+          "seq": 8,
+          "tipo": "order_created",
+          "ref": "a1b2c3d4-0000-4000-8000-000000000008",
+          "hashAnterior": null
+        },
+        "orden": {
+          "createdAt": "2026-08-20T14:32:05.123Z",
+          "paymentMethod": "TARJETA",
+          "subtotal": 2.675,
+          "total": 2.675,
+          "discountAmount": 0,
+          "items": [
+            {
+              "productId": "PESO-VARIABLE",
+              "quantity": 1,
+              "unitPrice": 1.005,
+              "totalPrice": 2.675
+            }
+          ],
+          "payments": [
+            {
+              "method": "TARJETA",
+              "amount": 2.675
+            }
+          ]
+        }
+      },
+      "canonica": "v2\nterminal:7b3c1f9a-2e44-4d18-9c05-8a1f6d2b3e77\nepoch:1\nseq:8\ntipo:order_created\nref:a1b2c3d4-0000-4000-8000-000000000008\nocurrido:2026-08-20T14:32:05.123Z\nmedio:TARJETA\nsubtotal:2.68\ndescuento:0.00\ntotal:2.68\nlineas:1\n  0:PESO-VARIABLE|1|1.01|2.68\npagos:1\n  0:TARJETA|2.68\nanterior:\n",
+      "hash": "5bf485c0026d52050eee63cf6a64d8119c108931b6c0f5ccd7264b227300f0d6"
+    },
+    {
+      "nombre": "fecha-con-desfase-no-utc",
+      "porQue": "Colombia es UTC-05:00 y un POS puede enviar la hora con desfase. Se normaliza a UTC: dos terminales en husos distintos que registran el MISMO instante deben producir el mismo hash. Este caso lleva 09:32:05.123-05:00, que es exactamente el instante de `minimo-una-linea`, y debe dar SU MISMO HASH.",
+      "entrada": {
+        "identidad": {
+          "terminalId": "7b3c1f9a-2e44-4d18-9c05-8a1f6d2b3e77",
+          "epoch": 1,
+          "seq": 1,
+          "tipo": "order_created",
+          "ref": "a1b2c3d4-0000-4000-8000-000000000001",
+          "hashAnterior": null
+        },
+        "orden": {
+          "createdAt": "2026-08-20T09:32:05.123-05:00",
+          "paymentMethod": "EFECTIVO",
+          "subtotal": 25000,
+          "total": 25000,
+          "discountAmount": 0,
+          "items": [
+            {
+              "productId": "HAMB-CLASICA",
+              "quantity": 1,
+              "unitPrice": 25000,
+              "totalPrice": 25000
+            }
+          ],
+          "payments": [
+            {
+              "method": "EFECTIVO",
+              "amount": 25000
+            }
+          ]
+        }
+      },
+      "canonica": "v2\nterminal:7b3c1f9a-2e44-4d18-9c05-8a1f6d2b3e77\nepoch:1\nseq:1\ntipo:order_created\nref:a1b2c3d4-0000-4000-8000-000000000001\nocurrido:2026-08-20T14:32:05.123Z\nmedio:EFECTIVO\nsubtotal:25000.00\ndescuento:0.00\ntotal:25000.00\nlineas:1\n  0:HAMB-CLASICA|1|25000.00|25000.00\npagos:1\n  0:EFECTIVO|25000.00\nanterior:\n",
+      "hash": "9eef3b4add6679a3311318b618205bfe9897c80f1568f24f1d7a7ca27e49927a",
+      "mismoHashQue": "minimo-una-linea"
+    },
+    {
+      "nombre": "separadores-dentro-del-texto",
+      "porQue": "Sin escape, un nombre de producto puede FABRICAR ESTRUCTURA. Los dos productos de este caso —\"COMBO|2\" con \"X\" y \"COMBO\" con \"2|X\"— colisionarían en la misma cadena canónica si la barra no se escapara, y entonces dos hechos distintos tendrían el mismo hash: la cadena dejaría de demostrar nada. Se prueban los cinco caracteres a la vez: barra invertida, salto de línea, retorno de carro, barra vertical y dos puntos.",
+      "entrada": {
+        "identidad": {
+          "terminalId": "7b3c1f9a-2e44-4d18-9c05-8a1f6d2b3e77",
+          "epoch": 1,
+          "seq": 9,
+          "tipo": "order_created",
+          "ref": "a1b2c3d4-0000-4000-8000-000000000009",
+          "hashAnterior": null
+        },
+        "orden": {
+          "createdAt": "2026-08-20T14:32:05.123Z",
+          "paymentMethod": "EFECTIVO",
+          "subtotal": 30000,
+          "total": 30000,
+          "discountAmount": 0,
+          "items": [
+            {
+              "productId": "COMBO|2",
+              "quantity": 1,
+              "unitPrice": 15000,
+              "totalPrice": 15000
+            },
+            {
+              "productId": "RUTA\\SUB:1\nsegunda\rlinea",
+              "quantity": 1,
+              "unitPrice": 15000,
+              "totalPrice": 15000
+            }
+          ],
+          "payments": [
+            {
+              "method": "EFECTIVO",
+              "amount": 30000
+            }
+          ]
+        }
+      },
+      "canonica": "v2\nterminal:7b3c1f9a-2e44-4d18-9c05-8a1f6d2b3e77\nepoch:1\nseq:9\ntipo:order_created\nref:a1b2c3d4-0000-4000-8000-000000000009\nocurrido:2026-08-20T14:32:05.123Z\nmedio:EFECTIVO\nsubtotal:30000.00\ndescuento:0.00\ntotal:30000.00\nlineas:2\n  0:COMBO\\p2|1|15000.00|15000.00\n  1:RUTA\\\\SUB\\c1\\nsegunda\\rlinea|1|15000.00|15000.00\npagos:1\n  0:EFECTIVO|30000.00\nanterior:\n",
+      "hash": "63046a62fd97ab586af91d6ebf28978d500b24075e7b3c4de24effda4a4f9474"
+    },
+    {
+      "nombre": "texto-unicode-nfc",
+      "porQue": "Forma COMPUESTA: \"é\" es un solo punto de código (U+00E9). Es lo que produce un teclado de Windows o Android.",
+      "entrada": {
+        "identidad": {
+          "terminalId": "7b3c1f9a-2e44-4d18-9c05-8a1f6d2b3e77",
+          "epoch": 1,
+          "seq": 10,
+          "tipo": "order_created",
+          "ref": "a1b2c3d4-0000-4000-8000-000000000010",
+          "hashAnterior": null
+        },
+        "orden": {
+          "createdAt": "2026-08-20T14:32:05.123Z",
+          "paymentMethod": "EFECTIVO",
+          "subtotal": 8000,
+          "total": 8000,
+          "discountAmount": 0,
+          "items": [
+            {
+              "productId": "Café con azúcar",
+              "quantity": 1,
+              "unitPrice": 8000,
+              "totalPrice": 8000
+            }
+          ],
+          "payments": [
+            {
+              "method": "EFECTIVO",
+              "amount": 8000
+            }
+          ]
+        }
+      },
+      "canonica": "v2\nterminal:7b3c1f9a-2e44-4d18-9c05-8a1f6d2b3e77\nepoch:1\nseq:10\ntipo:order_created\nref:a1b2c3d4-0000-4000-8000-000000000010\nocurrido:2026-08-20T14:32:05.123Z\nmedio:EFECTIVO\nsubtotal:8000.00\ndescuento:0.00\ntotal:8000.00\nlineas:1\n  0:Café con azúcar|1|8000.00|8000.00\npagos:1\n  0:EFECTIVO|8000.00\nanterior:\n",
+      "hash": "45a025dbf7402fc180f00bfa181d0e5cda63e2b982ca62fcc2f07b305c3a285b"
+    },
+    {
+      "nombre": "texto-unicode-nfd",
+      "porQue": "Forma DESCOMPUESTA: \"é\" son dos puntos de código (e + U+0301). Es lo que produce macOS/iOS. Se ve idéntico en pantalla, `===` lo da distinto, y son EL MISMO HECHO. Debe dar el MISMO HASH que `texto-unicode-nfc`. Sin normalizar a NFC, la misma venta hasheada desde una tableta y desde un PC daría dos hashes: la cadena se convertiría en un generador de falsos positivos, que es peor que no tenerla — desconfiar de datos correctos entrena a ignorar la alarma.",
+      "entrada": {
+        "identidad": {
+          "terminalId": "7b3c1f9a-2e44-4d18-9c05-8a1f6d2b3e77",
+          "epoch": 1,
+          "seq": 10,
+          "tipo": "order_created",
+          "ref": "a1b2c3d4-0000-4000-8000-000000000010",
+          "hashAnterior": null
+        },
+        "orden": {
+          "createdAt": "2026-08-20T14:32:05.123Z",
+          "paymentMethod": "EFECTIVO",
+          "subtotal": 8000,
+          "total": 8000,
+          "discountAmount": 0,
+          "items": [
+            {
+              "productId": "Café con azúcar",
+              "quantity": 1,
+              "unitPrice": 8000,
+              "totalPrice": 8000
+            }
+          ],
+          "payments": [
+            {
+              "method": "EFECTIVO",
+              "amount": 8000
+            }
+          ]
+        }
+      },
+      "canonica": "v2\nterminal:7b3c1f9a-2e44-4d18-9c05-8a1f6d2b3e77\nepoch:1\nseq:10\ntipo:order_created\nref:a1b2c3d4-0000-4000-8000-000000000010\nocurrido:2026-08-20T14:32:05.123Z\nmedio:EFECTIVO\nsubtotal:8000.00\ndescuento:0.00\ntotal:8000.00\nlineas:1\n  0:Café con azúcar|1|8000.00|8000.00\npagos:1\n  0:EFECTIVO|8000.00\nanterior:\n",
+      "hash": "45a025dbf7402fc180f00bfa181d0e5cda63e2b982ca62fcc2f07b305c3a285b",
+      "mismoHashQue": "texto-unicode-nfc"
+    },
+    {
+      "nombre": "texto-cadena-vacia",
+      "porQue": "LÍMITE CONOCIDO DEL FORMATO, documentado a propósito. Para los DECIMALES, ausente y cero se distinguen (\"\" contra \"0.00\"). Para los TEXTOS no: la cadena vacía y el campo ausente serializan los dos como vacío, así que este caso da el MISMO HASH que `texto-campo-ausente`. Se acepta porque para un texto la distinción no corresponde a hechos económicos distintos —un medio de pago vacío y uno ausente son igual de inservibles— pero queda fijado como vector para que nadie lo \"arregle\" sin subir la versión canónica.",
+      "entrada": {
+        "identidad": {
+          "terminalId": "7b3c1f9a-2e44-4d18-9c05-8a1f6d2b3e77",
+          "epoch": 1,
+          "seq": 11,
+          "tipo": "order_created",
+          "ref": "a1b2c3d4-0000-4000-8000-000000000011",
+          "hashAnterior": null
+        },
+        "orden": {
+          "createdAt": "2026-08-20T14:32:05.123Z",
+          "paymentMethod": "",
+          "subtotal": 5000,
+          "total": 5000,
+          "discountAmount": 0,
+          "items": [
+            {
+              "productId": "X",
+              "quantity": 1,
+              "unitPrice": 5000,
+              "totalPrice": 5000
+            }
+          ],
+          "payments": []
+        }
+      },
+      "canonica": "v2\nterminal:7b3c1f9a-2e44-4d18-9c05-8a1f6d2b3e77\nepoch:1\nseq:11\ntipo:order_created\nref:a1b2c3d4-0000-4000-8000-000000000011\nocurrido:2026-08-20T14:32:05.123Z\nmedio:\nsubtotal:5000.00\ndescuento:0.00\ntotal:5000.00\nlineas:1\n  0:X|1|5000.00|5000.00\npagos:0\nanterior:\n",
+      "hash": "772c67b155583ff342feb6e6b4bbe4dd00844cee648d8b85e24c0629cb635073"
+    },
+    {
+      "nombre": "texto-campo-ausente",
+      "porQue": "El par del anterior: `paymentMethod` ausente en vez de vacío. Mismo hash. Ver `texto-cadena-vacia` para por qué se acepta.",
+      "entrada": {
+        "identidad": {
+          "terminalId": "7b3c1f9a-2e44-4d18-9c05-8a1f6d2b3e77",
+          "epoch": 1,
+          "seq": 11,
+          "tipo": "order_created",
+          "ref": "a1b2c3d4-0000-4000-8000-000000000011",
+          "hashAnterior": null
+        },
+        "orden": {
+          "createdAt": "2026-08-20T14:32:05.123Z",
+          "subtotal": 5000,
+          "total": 5000,
+          "discountAmount": 0,
+          "items": [
+            {
+              "productId": "X",
+              "quantity": 1,
+              "unitPrice": 5000,
+              "totalPrice": 5000
+            }
+          ],
+          "payments": []
+        }
+      },
+      "canonica": "v2\nterminal:7b3c1f9a-2e44-4d18-9c05-8a1f6d2b3e77\nepoch:1\nseq:11\ntipo:order_created\nref:a1b2c3d4-0000-4000-8000-000000000011\nocurrido:2026-08-20T14:32:05.123Z\nmedio:\nsubtotal:5000.00\ndescuento:0.00\ntotal:5000.00\nlineas:1\n  0:X|1|5000.00|5000.00\npagos:0\nanterior:\n",
+      "hash": "772c67b155583ff342feb6e6b4bbe4dd00844cee648d8b85e24c0629cb635073",
+      "mismoHashQue": "texto-cadena-vacia"
+    },
+    {
+      "nombre": "sin-lineas-ni-pagos",
+      "porQue": "Listas vacías. El contador debe salir \"lineas:0\" y \"pagos:0\", no omitirse: si una implementación se saltara la línea del contador cuando la lista está vacía, la gramática dejaría de ser posicional y un evento sin líneas colisionaría con otro sin pagos.",
+      "entrada": {
+        "identidad": {
+          "terminalId": "7b3c1f9a-2e44-4d18-9c05-8a1f6d2b3e77",
+          "epoch": 1,
+          "seq": 12,
+          "tipo": "order_voided",
+          "ref": "a1b2c3d4-0000-4000-8000-000000000012",
+          "hashAnterior": null
+        },
+        "orden": {
+          "createdAt": "2026-08-20T23:59:59.999Z",
+          "paymentMethod": "ANULADA",
+          "subtotal": 0,
+          "total": 0,
+          "discountAmount": 0,
+          "items": [],
+          "payments": []
+        }
+      },
+      "canonica": "v2\nterminal:7b3c1f9a-2e44-4d18-9c05-8a1f6d2b3e77\nepoch:1\nseq:12\ntipo:order_voided\nref:a1b2c3d4-0000-4000-8000-000000000012\nocurrido:2026-08-20T23:59:59.999Z\nmedio:ANULADA\nsubtotal:0.00\ndescuento:0.00\ntotal:0.00\nlineas:0\npagos:0\nanterior:\n",
+      "hash": "2fd45fcf3a46f56eea503ff88dbbbe2990187b09e8795122e2482fc6aa346caf"
+    }
+  ]
+}
