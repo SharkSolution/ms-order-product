@@ -65,7 +65,31 @@ public final class WaiterDtos {
              * <p>En modo Restaurante da lo mismo lo que llegue: una orden con
              * cuenta de mesa nunca ocupa rastreador.
              */
-            Boolean skipPagerCheck
+            Boolean skipPagerCheck,
+            /**
+             * UUID del dispositivo, generado por la app en su primer arranque y
+             * guardado en {@code shared_preferences}.
+             *
+             * <p><b>Opcional a propósito.</b> Sin él la orden se registra igual,
+             * con {@code ocurrido_en} nulo y sin cadena — lo mismo que hoy, no
+             * peor. Aunque se actualicen todos los dispositivos el mismo día, la
+             * ronda dura horas y ningún mesero puede quedarse sin poder tomar un
+             * pedido a mitad.
+             *
+             * <p>Que eso no es teórico está medido: en los últimos 90 días
+             * llegaron 38 órdenes con {@code NEQUI}, un medio retirado en
+             * N2/6.6, desde APKs que nadie ha podido actualizar.
+             */
+            String terminalId,
+            /**
+             * Cuándo ocurrió la venta según el reloj del dispositivo, en ISO-8601.
+             *
+             * <p>Es el mismo campo que el POS manda como {@code createdAt} y que
+             * V36 mapea a {@code orders.ocurrido_en}. Nulo si el cliente no lo
+             * declara: un nulo honesto vale más que la hora del servidor
+             * disfrazada de hora del dispositivo.
+             */
+            String ocurridoEn
     ) {
 
         /**
