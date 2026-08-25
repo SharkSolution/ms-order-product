@@ -81,7 +81,25 @@ public class AuthService {
     public record BusinessProfile(String tenantId, String name, String nit,
                                   String address, String phone, String ticketFooter) {}
 
-    /** Login por credenciales de usuario; el tenant sale de su cuenta. */
+    /**
+     * Login por credenciales de usuario; el tenant sale de su cuenta.
+     *
+     * <h3>Por qué es {@code @Transactional}</h3>
+     *
+     * V40 cierra la política de {@code tenant_modules}, que se lee aquí abajo en
+     * {@code effectiveModulesFor}. Para ese momento el negocio <b>ya se conoce</b>
+     * —lo acaba de devolver {@code findTenant}— así que no hace falta ninguna
+     * función privilegiada: basta con fijarlo. Pero fijarlo solo sirve dentro de
+     * una transacción: con el pool, cada sentencia suelta toma su propia conexión
+     * y {@code TenantAwareDataSource} la reinicia a cadena vacía.
+     *
+     * <p>El coste: la transacción abarca también el {@code encoder.matches}, que
+     * es BCrypt y tarda del orden de 100 ms con una conexión retenida. Se acepta
+     * porque es el mismo intercambio que ya hace {@code register}, y porque el
+     * volumen de logins de un local es de unos pocos al día. Si algún día pesa,
+     * lo que toca es acotar la transacción a la lectura de módulos, no quitarla.
+     */
+    @Transactional
     public AuthResponse login(String email, String password) {
         if (isBlank(email) || isBlank(password)) {
             throw new AuthException(400, "Email y contraseña son requeridos");
@@ -104,6 +122,12 @@ public class AuthService {
         if (!"active".equals(tenant.status())) {
             throw new AuthException(403, "El negocio está suspendido");
         }
+        // V40 — a partir de aquí el negocio se conoce, así que `tenant_modules`
+        // se lee por RLS normal. Sin esta línea la política cerrada devolvería
+        // CERO overrides y el login no fallaría: emitiría un JWT con los módulos
+        // del plan a secas. Un negocio con módulos regalados o revocados los
+        // perdería en cada login, sin un solo error en ninguna parte.
+        repo.fijarNegocioEnLaTransaccion(tenant.id());
         List<String> modules = effectiveModulesFor(tenant.id(), tenant.plan());
         String token = issueToken(tenant.id(), user.email(), user.rol(), modules);
         return new AuthResponse(token, tenant.id(), tenant.name(), tenant.plan(),
@@ -231,10 +255,21 @@ public class AuthService {
     public record ModuleConfig(String plan, List<String> planModules,
                                Map<String, Boolean> overrides, List<String> effectiveModules) {}
 
-    /** Configuración de módulos del tenant (plan + overrides + efectivos). Para el panel. */
+    /**
+     * Configuración de módulos del tenant (plan + overrides + efectivos). Para el panel.
+     *
+     * <p>{@code @Transactional} + fijar el negocio por la misma razón que en el
+     * login, y con un llamador que lo necesita de verdad:
+     * {@code /admin/tenants/{id}/modules} (`SuperAdminService:78`) es una ruta de
+     * super-admin, exenta del filtro de negocio, que consulta el negocio de OTRO.
+     * El llamador de {@code /account/modules} ya trae el suyo en el contexto, así
+     * que ahí fijarlo es un no-op.
+     */
+    @Transactional
     public ModuleConfig getModuleConfig(String tenantId) {
         var tenant = repo.findTenant(tenantId)
                 .orElseThrow(() -> new AuthException(404, "Negocio no encontrado"));
+        repo.fijarNegocioEnLaTransaccion(tenantId);
         Map<String, Boolean> overrides = new HashMap<>();
         for (AuthRepository.ModuleOverride o : repo.getOverrides(tenantId)) {
             overrides.put(o.module(), o.enabled());
@@ -249,7 +284,20 @@ public class AuthService {
      * resultante. Los cambios aplican al PRÓXIMO login del usuario (el JWT lleva los
      * módulos). Ver docs/160.
      */
+    @Transactional
     public ModuleConfig setModuleOverrides(String tenantId, Map<String, Boolean> overrides) {
+        // 🔴 ESTA ES LA LÍNEA QUE TIENE QUE IR CON V40 EN EL MISMO CAMBIO.
+        //
+        // `/admin/tenants/{id}/modules` (SuperAdminController:100) es una ruta de
+        // super-admin: está exenta del TenantContextFilter (:51), así que la
+        // conexión sale con app.tenant_id = ''. Con la política de
+        // `tenant_modules` cerrada y sin esta línea, el UPSERT y el DELETE de
+        // abajo afectarían a CERO filas y devolverían 200 igual.
+        //
+        // El KAM regalaría un módulo, vería la pantalla confirmar el cambio, y el
+        // negocio no lo tendría. Separar esta línea de la migración habría sido
+        // fabricar exactamente el fallo que la migración viene a eliminar.
+        repo.fijarNegocioEnLaTransaccion(tenantId);
         if (overrides != null) {
             for (Map.Entry<String, Boolean> e : overrides.entrySet()) {
                 if (!PlanCatalog.isKnownModule(e.getKey())) {

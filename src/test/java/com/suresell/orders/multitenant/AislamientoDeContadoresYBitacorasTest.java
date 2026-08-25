@@ -1,7 +1,6 @@
 package com.suresell.orders.multitenant;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -240,35 +239,41 @@ class AislamientoDeContadoresYBitacorasTest {
     }
 
     @Nested
-    @DisplayName("La cuarta tabla")
+    @DisplayName("La cuarta tabla — cerrada en V40")
     class LaCuartaTabla {
 
         @Test
-        @DisplayName("tenant_modules sigue legible SIN negocio en sesión, porque el login la lee así")
-        void tenantModulesNoSeCierraSinArreglarElLoginPrimero() throws SQLException {
-            // Guarda de regresión, no una celebración del agujero.
+        @DisplayName("tenant_modules ya NO es legible sin negocio en sesión")
+        void tenantModulesQuedoCerradaEnV40() throws SQLException {
+            // Este caso afirmaba lo CONTRARIO hasta V40, y era deliberado: era una
+            // guarda para que nadie cerrara la política sin arreglar antes el
+            // login, que la lee (AuthService.login -> effectiveModulesFor ->
+            // AuthRepository.getOverrides) con la conexión en app.tenant_id = ''.
+            // Cerrarla a ciegas no habría dado error: habría devuelto cero
+            // overrides y el JWT habría salido con los módulos del plan a secas.
             //
-            // AuthService.login:103 → effectiveModulesFor:206 → AuthRepository:116
-            // consulta tenant_modules durante /auth/login, y /auth/** está exento
-            // del filtro de negocio (TenantContextFilter:50), así que la conexión
-            // sale con app.tenant_id = ''. Si alguien cierra esta política con el
-            // patrón de V38, el login NO fallará: devolverá cero overrides y el
-            // JWT saldrá con los módulos del plan a secas. Nadie se enteraría.
+            // La guarda hizo su trabajo: se puso roja al cerrar la política en
+            // V40 y obligó a comprobar que el login estaba resuelto. Lo está, y
+            // por la vía barata —`set_config` dentro de la transacción del
+            // login— y no con una función privilegiada, que aquí habría sido
+            // ampliar superficie sin motivo: en ese punto el negocio ya se conoce.
             //
-            // Si este test se pone rojo, la política se cerró. Antes de borrarlo
-            // hay que haber movido esa lectura a una función SECURITY DEFINER
-            // acotada, que es lo que se hace junto con `users`.
+            // Lo que sostiene ahora la parte del login es
+            // ModulosConLaPoliticaCerradaTest, que comprueba con un negocio que
+            // TIENE overrides que el login se los sigue devolviendo. Con uno
+            // limpio, "se aplican" y "se perdieron" darían la misma lista.
             try (Connection c = conexionDueno()) {
                 ejecutar(c, "INSERT INTO tenant_modules (tenant_id, module, enabled) "
                         + "VALUES ('" + ALFA + "', 'valeras', true) ON CONFLICT DO NOTHING");
             }
             try (Connection c = conexionApp()) {
                 fijarNegocio(c, "");
-                int visibles = contar(c, "SELECT count(*) FROM tenant_modules "
-                        + "WHERE tenant_id = '" + ALFA + "'");
-                assertFalse(visibles == 0,
-                        "tenant_modules dejó de ser legible sin negocio en sesión: "
-                                + "el login perdería los overrides en silencio");
+                assertEquals(0, contar(c, "SELECT count(*) FROM tenant_modules"),
+                        "tenant_modules sigue siendo legible sin negocio en sesión");
+                fijarNegocio(c, ALFA);
+                assertEquals(0, contar(c, "SELECT count(*) FROM tenant_modules "
+                                + "WHERE tenant_id <> '" + ALFA + "'"),
+                        "se ven overrides de otro negocio");
             }
         }
     }
