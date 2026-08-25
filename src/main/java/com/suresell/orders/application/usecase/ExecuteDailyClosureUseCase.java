@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.suresell.orders.application.dto.request.ExecuteClosureRequest;
 import com.suresell.orders.application.dto.responses.CashierClosureResponse;
 import com.suresell.orders.domain.model.DailyClosure;
+import com.suresell.orders.domain.model.ResultadoQr;
 import com.suresell.orders.domain.model.SyncOutbox;
 import com.suresell.orders.domain.port.out.SyncOutboxRepositoryPort;
 import com.suresell.orders.domain.service.CashflowCalculator;
@@ -14,10 +15,6 @@ import com.suresell.orders.infrastructure.persistence.OrderRepository;
 import lombok.extern.log4j.Log4j2;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.client.RestTemplate;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.ResponseEntity;
-import com.fasterxml.jackson.databind.JsonNode;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -43,13 +40,16 @@ public class ExecuteDailyClosureUseCase {
     private final com.suresell.orders.infrastructure.persistence.OrderPaymentRepository orderPaymentRepository;
     // N3/Inc.4: el cierre se bloquea si quedan mesas sin cobrar.
     private final TableSessionService tableSessionService;
+    // V34: resuelve el QR contra ms-core-app diciendo SIEMPRE de dónde salió.
+    private final ConciliadorDeQr conciliadorDeQr;
 
     public ExecuteDailyClosureUseCase(OrderRepository orderRepository, DailyClosureRepository closureRepository,
                                     CashflowCalculator cashflowCalculator, ObjectMapper objectMapper,
                                     SyncOutboxRepositoryPort syncOutboxRepositoryPort,
                                     DailyPaymentRecordService dailyPaymentRecordService,
                                     com.suresell.orders.infrastructure.persistence.OrderPaymentRepository orderPaymentRepository,
-                                    TableSessionService tableSessionService) {
+                                    TableSessionService tableSessionService,
+                                    ConciliadorDeQr conciliadorDeQr) {
         this.orderRepository = orderRepository;
         this.closureRepository = closureRepository;
         this.cashflowCalculator = cashflowCalculator;
@@ -58,12 +58,8 @@ public class ExecuteDailyClosureUseCase {
         this.dailyPaymentRecordService = dailyPaymentRecordService;
         this.orderPaymentRepository = orderPaymentRepository;
         this.tableSessionService = tableSessionService;
+        this.conciliadorDeQr = conciliadorDeQr;
     }
-
-    @Value("${sync.cloud.core-url:http://localhost:8083/api/core}")
-    private String coreApiUrl;
-
-    private final RestTemplate restTemplate = new RestTemplate();
 
     @Transactional
     public CashierClosureResponse execute(ExecuteClosureRequest request, String userName) {
@@ -134,9 +130,20 @@ public class ExecuteDailyClosureUseCase {
 
         expected.put("CASH", trueExpectedCash);
 
-        // Obtener el valor QR registrado por admin desde ms-core-app
-        BigDecimal countedQr = getQrAmountFromCoreApp(closingTime.toLocalDate(), request.countedQr());
-        log.info("Valor QR a usar en cierre: {}", countedQr);
+        // El valor de QR viaja con su procedencia (V34, reglas 5 y 6 de
+        // LINEAMIENTOS): conciliado contra ms-core-app, tecleado por el cajero
+        // porque no había nada registrado, o degradado por un fallo de
+        // integración. Los tres casos completan el cierre; lo que cambia es lo
+        // que queda escrito en la fila.
+        // El QR del POS: la suma de las ventas del dia por ese medio. Ya esta
+        // calculada arriba, en `expected` — es el unico de los tres hechos que
+        // existe siempre, porque sale de las ventas mismas.
+        BigDecimal qrDelPos = expected.getOrDefault("QR", BigDecimal.ZERO);
+        ResultadoQr resultadoQr = conciliadorDeQr.resolver(
+                closingTime.toLocalDate(), request.countedQr(), qrDelPos);
+        BigDecimal countedQr = resultadoQr.monto();
+        log.info("Valor QR a usar en cierre: {} (fuente={}, confianza={})",
+                countedQr, resultadoQr.fuente(), resultadoQr.confianza());
 
         BigDecimal diffCash = calculatedTotalCash.subtract(trueExpectedCash);
         BigDecimal diffCard = request.countedCard().subtract(expected.getOrDefault("CARD", BigDecimal.ZERO));
@@ -163,7 +170,7 @@ public class ExecuteDailyClosureUseCase {
         BigDecimal roundingAdjustment = tableSessionService.ajustePorRedondeoEntre(openingTime, closingTime);
 
         DailyClosure savedClosure = saveClosureAudit(request, expected, totalDifference, openingTime, closingTime,
-                userName, calculatedTotalCash, calculatedBase, diffCash, diffCard, diffNequi, diffQr, previousBase, pureSales, countedQr, totalPettyCashExpenses);
+                userName, calculatedTotalCash, calculatedBase, diffCash, diffCard, diffNequi, diffQr, previousBase, pureSales, resultadoQr, totalPettyCashExpenses);
 
         saveClosureToOutbox(savedClosure);
 
@@ -198,23 +205,6 @@ public class ExecuteDailyClosureUseCase {
         return map;
     }
 
-    private BigDecimal getQrAmountFromCoreApp(LocalDate date, BigDecimal fallbackManualQr) {
-        try {
-            String url = coreApiUrl + "/qr-payments/by-date?date=" + date.toString();
-            log.info("Consultando pagos QR en ms-core-app: {}", url);
-            ResponseEntity<JsonNode> response = restTemplate.getForEntity(url, JsonNode.class);
-            if (response.getStatusCode().is2xxSuccessful() && response.getBody() != null) {
-                BigDecimal qrAmount = new BigDecimal(response.getBody().get("amount").asText());
-                log.info("Valor QR obtenido exitosamente desde ms-core-app: {}", qrAmount);
-                return qrAmount;
-            }
-        } catch (Exception e) {
-            log.warn("Error al consultar pago QR en ms-core-app (posible falta de internet o registro no existe): {}", e.getMessage());
-        }
-        log.info("Usando valor QR manual del cajero como fallback: {}", fallbackManualQr);
-        return fallbackManualQr != null ? fallbackManualQr : BigDecimal.ZERO;
-    }
-
     private LocalDateTime getOpeningTime(String sellerId) {
         return closureRepository.findLastClosingTimeByUser(sellerId)
                 .orElse(ZonaHoraria.hoy().atStartOfDay());
@@ -234,7 +224,7 @@ public class ExecuteDailyClosureUseCase {
                                   BigDecimal diffQr,
                                   BigDecimal previousBase,
                                   BigDecimal pureSales,
-                                  BigDecimal countedQr,
+                                  ResultadoQr resultadoQr,
                                   BigDecimal pettyCashExpenses
                                           ) {
 
@@ -270,7 +260,12 @@ public class ExecuteDailyClosureUseCase {
 
         entity.setTotalCountedCash(calculatedTotalCash != null ? calculatedTotalCash : BigDecimal.ZERO);
         entity.setTotalCountedCard(request.countedCard() != null ? request.countedCard() : BigDecimal.ZERO);
-        entity.setTotalCountedQr(countedQr != null ? countedQr : BigDecimal.ZERO);
+        entity.setTotalCountedQr(resultadoQr.monto());
+        // Reglas 5 y 6: el monto no viaja solo; viaja con su fuente y su
+        // confianza. Sin esto, un QR conciliado y uno degradado tras un 401 se
+        // ven idénticos en la base — que es como el fallo del 2026-07-30 duró
+        // tres semanas sin que nadie pudiera detectarlo.
+        entity.registrarProcedenciaDelQr(resultadoQr);
 
         BigDecimal totalCounted = entity.getTotalCountedCash()
                 .add(entity.getTotalCountedCard())

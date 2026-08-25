@@ -114,6 +114,59 @@ public class DailyClosure implements Persistable<UUID>, com.suresell.orders.mult
     // así que reabrir un cierre viejo da siempre el mismo número, y no hay un
     // total copiado que pueda quedar desincronizado del detalle que lo explica.
 
+    // ------------------------------------------------------------------
+    // V34 — Procedencia y confianza del monto de QR (reglas 5 y 6 de
+    // LINEAMIENTOS_DESARROLLO_DATA_FIRST).
+    //
+    // `totalCountedQr` es un número; estos cuatro campos dicen de dónde salió y
+    // qué tan fiable es. Sin ellos, un QR conciliado contra el registro del
+    // administrador y uno cuadrado a mano tras un 401 se veían idénticos en la
+    // base — que es como el fallo del 2026-07-30 pasó tres semanas inadvertido.
+    //
+    // NULL en los cierres anteriores a V34: no son reclasificables y no se les
+    // inventa una fuente.
+    // ------------------------------------------------------------------
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "qr_fuente")
+    private FuenteQr qrFuente;
+
+    @Column(name = "qr_confianza")
+    private Short qrConfianza;
+
+    @Column(name = "qr_capturado_en")
+    private java.time.OffsetDateTime qrCapturadoEn;
+
+    /** Mensaje técnico del fallo. Campo de diagnóstico, NO analizable. */
+    @Column(name = "qr_detalle", columnDefinition = "TEXT")
+    private String qrDetalle;
+
+    // Los TRES hechos del QR, cada uno en su columna. Ninguno se destruye para
+    // producir otro; el que manda en el cuadre sigue siendo `totalCountedQr`.
+
+    /** Suma de las ventas del día por QR. El único que existe siempre. */
+    @Column(name = "qr_pos", precision = 15, scale = 2)
+    private BigDecimal qrPos;
+
+    /** Lo que tecleó el cajero. */
+    @Column(name = "qr_manual_cajero", precision = 15, scale = 2)
+    private BigDecimal qrManualCajero;
+
+    /** Lo que devolvió `ms-core-app`, si devolvió algo. */
+    @Column(name = "qr_conciliado_core", precision = 15, scale = 2)
+    private BigDecimal qrConciliadoCore;
+
+    /** Copia al cierre la procedencia del monto de QR, en un solo sitio. */
+    public void registrarProcedenciaDelQr(ResultadoQr resultado) {
+        this.qrFuente = resultado.fuente();
+        this.qrConfianza = resultado.confianza();
+        this.qrDetalle = resultado.detalle();
+        this.qrCapturadoEn = java.time.OffsetDateTime.now(BOGOTA_ZONE);
+        this.qrPos = resultado.qrPos();
+        this.qrManualCajero = resultado.qrManual();
+        this.qrConciliadoCore = resultado.qrConciliado();
+    }
+
     //Campos para manter guardado offline
 
     @Transient
