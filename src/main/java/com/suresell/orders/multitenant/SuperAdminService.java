@@ -233,7 +233,26 @@ public class SuperAdminService {
      * Va por JdbcTemplate con `set_config` explícito porque `sites` tiene RLS
      * FORCE y el KAM es cross-tenant: sin fijar el tenant en la sesión no vería
      * ninguna fila. El `true` del tercer parámetro lo acota a la transacción.
+     *
+     * <h3>Le faltaba la transacción, y por eso no devolvía nada</h3>
+     *
+     * El {@code true} acota el {@code set_config} <b>a la transacción</b>, así
+     * que sin {@code @Transactional} este método no tenía ninguna: en autocommit
+     * cada sentencia es su propia transacción, el valor se descartaba antes del
+     * {@code SELECT} de la línea siguiente, y encima el {@code JdbcTemplate}
+     * tomaba otra conexión del pool que {@code TenantAwareDataSource} reinicia a
+     * cadena vacía.
+     *
+     * <p>Medido contra Staging el 2026-08-25, con un JWT de super-admin real:
+     * {@code GET /admin/tenants/shark-burger/sites} devolvía <b>200 con lista
+     * vacía</b>, teniendo ese negocio su sede PRINCIPAL. Un 200 con cero sedes y
+     * "este negocio no tiene sedes" son la misma pantalla.
+     *
+     * <p>{@code setSiteMode}, justo debajo, sí llevaba la anotación desde el
+     * principio — que es lo que hace que ese sí funcione. Mismo código, misma
+     * línea, resultado opuesto.
      */
+    @org.springframework.transaction.annotation.Transactional(readOnly = true)
     public java.util.List<Map<String, Object>> getSites(String tenantId) {
         jdbc.queryForObject("SELECT set_config('app.tenant_id', ?, true)", String.class, tenantId);
         return jdbc.queryForList(
