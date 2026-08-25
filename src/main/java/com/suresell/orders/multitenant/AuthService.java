@@ -27,6 +27,7 @@ import java.util.Set;
  * alta self-service de un negocio. Emite el JWT de tenant que valida
  * {@link JwtTenantResolver}. SOLO perfil `cloud`. Ver docs/110-plan-auth-real.md.
  */
+@lombok.extern.log4j.Log4j2
 @Service
 @Profile("cloud")
 public class AuthService {
@@ -310,7 +311,25 @@ public class AuthService {
         return new ForgotResponse(true, exposed);
     }
 
-    /** Aplica la nueva contraseña usando el token del email. Un solo uso. */
+    /**
+     * Aplica la nueva contraseña usando el token del email. Un solo uso.
+     *
+     * <h3>Por qué es {@code @Transactional}</h3>
+     *
+     * Antes eran dos sentencias sueltas: primero cambiar el hash, después marcar
+     * el token. Si la segunda fallaba —caída de conexión, timeout del pool—
+     * <b>la contraseña quedaba cambiada y el enlace seguía sirviendo su hora
+     * completa</b>. Un enlace de un solo uso que se puede usar dos veces no es
+     * de un solo uso.
+     *
+     * <p>Y las dos comprueban ahora cuántas filas tocaron. Un {@code UPDATE} que
+     * cambia cero filas no lanza nada: devuelve 0 y el método respondía
+     * {@code ok}. Ese es exactamente el modo de fallo que aparecerá en cuanto
+     * {@code users} tenga su política cerrada —la fila deja de ser visible y el
+     * {@code UPDATE} no toca nada— así que comprobarlo no es defensivo, es el
+     * arreglo.
+     */
+    @Transactional
     public void resetPassword(String token, String newPassword) {
         if (isBlank(token) || isBlank(newPassword)) {
             throw new AuthException(400, "Token y nueva contraseña son requeridos");
@@ -319,10 +338,40 @@ public class AuthService {
             throw new AuthException(400, "La contraseña debe tener al menos 6 caracteres");
         }
         String hash = sha256(token);
-        var reset = repo.findValidReset(hash)
-                .orElseThrow(() -> new AuthException(400, "Enlace inválido o expirado"));
-        repo.updatePasswordHash(reset.email(), reset.tenantId(), encoder.encode(newPassword));
-        repo.markResetUsed(hash);
+        var consulta = repo.buscarReset(hash);
+
+        if (consulta.estado() != EstadoDelToken.valido) {
+            // El mensaje al usuario sigue siendo ambiguo A PROPÓSITO: distinguir
+            // los casos en la respuesta HTTP convertiría esto en un oráculo para
+            // averiguar qué tokens existen. El log sí distingue, que es donde
+            // hace falta y donde no lo ve nadie de fuera.
+            //
+            // Se registra el prefijo del HASH, nunca el token: el hash ya está en
+            // la base, así que no revela nada nuevo y permite encontrar la fila.
+            log.warn("Reset rechazado ({}): token con hash {}…", consulta.estado(),
+                    hash.substring(0, Math.min(8, hash.length())));
+            throw new AuthException(400, "Enlace inválido o expirado");
+        }
+
+        int cambiadas = repo.updatePasswordHash(
+                consulta.email(), consulta.tenantId(), encoder.encode(newPassword));
+        if (cambiadas != 1) {
+            // Revierte la transacción entera. Responder ok con cero filas
+            // cambiadas sería decirle al usuario que su contraseña es otra
+            // cuando sigue siendo la misma.
+            throw new AuthException(500,
+                    "No se pudo aplicar la nueva contraseña; inténtalo de nuevo");
+        }
+
+        int marcadas = repo.markResetUsed(hash);
+        if (marcadas != 1) {
+            // Si el token no se puede marcar, la contraseña NO se cambia: entran
+            // o no entran las dos cosas. Un enlace reutilizable es peor que un
+            // reset que hay que repetir.
+            throw new AuthException(500,
+                    "No se pudo invalidar el enlace; la contraseña no se cambió");
+        }
+        log.info("Reset completado para el negocio {}", consulta.tenantId());
     }
 
     private String randomToken() {
