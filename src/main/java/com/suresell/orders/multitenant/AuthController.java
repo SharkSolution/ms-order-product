@@ -3,7 +3,9 @@ package com.suresell.orders.multitenant;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.context.annotation.Profile;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -27,10 +29,43 @@ public class AuthController {
 
     private final AuthService auth;
     private final RegisterRateLimiter rateLimiter;
+    private final CompuertaDeVersion compuerta;
 
-    public AuthController(AuthService auth, RegisterRateLimiter rateLimiter) {
+    /** Cabeceras con las que una app declara quién es y qué versión trae. */
+    public static final String CABECERA_APP = "X-App-Id";
+    public static final String CABECERA_VERSION = "X-App-Version";
+
+    public AuthController(AuthService auth, RegisterRateLimiter rateLimiter,
+                          CompuertaDeVersion compuerta) {
         this.auth = auth;
         this.rateLimiter = rateLimiter;
+        this.compuerta = compuerta;
+    }
+
+    /**
+     * Consulta de la versión mínima. La llaman las apps <b>al arrancar</b>, sin
+     * credenciales.
+     *
+     * <p>Hace falta además de la comprobación del login porque las apps guardan
+     * el token: un mesero que nunca cierra sesión no vuelve a pasar por
+     * {@code /auth/login} en 12 horas, y hasta entonces la compuerta no lo
+     * tocaría.
+     *
+     * <p>Cuelga de {@code /auth/} a propósito: esa ruta ya está exenta del
+     * filtro de negocio ({@code TenantContextFilter:50}), así que no hace falta
+     * abrir un camino público nuevo.
+     *
+     * <p><b>Nunca devuelve error.</b> Si algo va mal responde
+     * {@code bloquear:false} — ver la cabecera de {@link CompuertaDeVersion}.
+     */
+    @GetMapping("/auth/version-minima")
+    public ResponseEntity<?> versionMinima(
+            @RequestParam(name = "app", required = false) String app,
+            @RequestParam(name = "version", required = false) String version) {
+        CompuertaDeVersion.Veredicto v = compuerta.evaluar(app, version);
+        return ResponseEntity.ok(Map.of(
+                "bloquear", v.bloquear(),
+                "minima", v.minima() == null ? "" : v.minima()));
     }
 
     /**
@@ -42,6 +77,22 @@ public class AuthController {
      */
     @PostMapping("/auth/login")
     public ResponseEntity<?> login(@RequestBody LoginRequest req, HttpServletRequest http) {
+        // La compuerta de versión va ANTES del cupo y de las credenciales: a
+        // quien tiene que actualizar hay que decírselo aunque se haya
+        // equivocado de clave. No revela nada — la respuesta es la misma exista
+        // o no la cuenta.
+        CompuertaDeVersion.Veredicto veredicto = compuerta.evaluar(
+                http.getHeader(CABECERA_APP), http.getHeader(CABECERA_VERSION));
+        if (veredicto.bloquear()) {
+            // 426 Upgrade Required. Es el código exacto y ningún cliente viejo
+            // lo recibe: los viejos no mandan la cabecera, así que nunca se
+            // bloquean.
+            return ResponseEntity.status(426).body(Map.of(
+                    "error", "ACTUALIZACION_REQUERIDA",
+                    "message", "Esta versión de la aplicación ya no se puede usar. "
+                            + "Actualízala desde Google Play para seguir trabajando.",
+                    "minima", veredicto.minima() == null ? "" : veredicto.minima()));
+        }
         String ip = clientIp(http);
         try {
             rateLimiter.verificarCupo(RegisterRateLimiter.Bucket.LOGIN, ip);

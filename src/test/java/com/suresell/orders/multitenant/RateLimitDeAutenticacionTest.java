@@ -60,7 +60,7 @@ class RateLimitDeAutenticacionTest {
             AuthService auth = mock(AuthService.class);
             when(auth.login(anyString(), anyString()))
                     .thenThrow(new AuthException(401, "Credenciales inválidas"));
-            AuthController controller = new AuthController(auth, new RegisterRateLimiter());
+            AuthController controller = new AuthController(auth, new RegisterRateLimiter(), new CompuertaDeVersion());
             var req = new AuthController.LoginRequest("admin@negocio.co", "clave-mala");
             var http = peticionDesde(IP);
 
@@ -87,7 +87,7 @@ class RateLimitDeAutenticacionTest {
         void elExitoNoGastaCupo() {
             AuthService auth = mock(AuthService.class);
             when(auth.login(anyString(), anyString())).thenReturn(respuestaOk());
-            AuthController controller = new AuthController(auth, new RegisterRateLimiter());
+            AuthController controller = new AuthController(auth, new RegisterRateLimiter(), new CompuertaDeVersion());
             var req = new AuthController.LoginRequest("admin@negocio.co", "clave-buena");
             var http = peticionDesde(IP);
 
@@ -102,7 +102,7 @@ class RateLimitDeAutenticacionTest {
         @DisplayName("acertar la clave borra los fallos acumulados")
         void elExitoLimpiaLosFallosPrevios() {
             AuthService auth = mock(AuthService.class);
-            AuthController controller = new AuthController(auth, new RegisterRateLimiter());
+            AuthController controller = new AuthController(auth, new RegisterRateLimiter(), new CompuertaDeVersion());
             var http = peticionDesde(IP);
             var mala = new AuthController.LoginRequest("admin@negocio.co", "mala");
             var buena = new AuthController.LoginRequest("admin@negocio.co", "buena");
@@ -132,7 +132,7 @@ class RateLimitDeAutenticacionTest {
             AuthService auth = mock(AuthService.class);
             when(auth.login(anyString(), anyString()))
                     .thenThrow(new AuthException(401, "Credenciales inválidas"));
-            AuthController controller = new AuthController(auth, new RegisterRateLimiter());
+            AuthController controller = new AuthController(auth, new RegisterRateLimiter(), new CompuertaDeVersion());
             var req = new AuthController.LoginRequest("admin@negocio.co", "mala");
 
             var atacante = peticionDesde("6.6.6.6");
@@ -158,7 +158,7 @@ class RateLimitDeAutenticacionTest {
             AuthService auth = mock(AuthService.class);
             when(auth.forgotPassword(anyString()))
                     .thenReturn(new AuthService.ForgotResponse(true, null));
-            AuthController controller = new AuthController(auth, new RegisterRateLimiter());
+            AuthController controller = new AuthController(auth, new RegisterRateLimiter(), new CompuertaDeVersion());
             var req = new AuthController.ForgotRequest("victima@negocio.co");
             var http = peticionDesde(IP);
 
@@ -181,7 +181,7 @@ class RateLimitDeAutenticacionTest {
             AuthService auth = mock(AuthService.class);
             when(auth.forgotPassword(anyString()))
                     .thenReturn(new AuthService.ForgotResponse(true, null));
-            AuthController controller = new AuthController(auth, new RegisterRateLimiter());
+            AuthController controller = new AuthController(auth, new RegisterRateLimiter(), new CompuertaDeVersion());
             var http = peticionDesde(IP);
 
             // Emails distintos en cada intento: así es como se enumera. El cupo
@@ -205,7 +205,7 @@ class RateLimitDeAutenticacionTest {
         @DisplayName("tras agotar el cupo responde 429 y deja de probar tokens")
         void bloqueaTrasElCupo() {
             AuthService auth = mock(AuthService.class);
-            AuthController controller = new AuthController(auth, new RegisterRateLimiter());
+            AuthController controller = new AuthController(auth, new RegisterRateLimiter(), new CompuertaDeVersion());
             var req = new AuthController.ResetRequest("token-a-probar", "ClaveNueva123");
             var http = peticionDesde(IP);
 
@@ -226,7 +226,7 @@ class RateLimitDeAutenticacionTest {
             AuthService auth = mock(AuthService.class);
             when(auth.forgotPassword(anyString()))
                     .thenReturn(new AuthService.ForgotResponse(true, null));
-            AuthController controller = new AuthController(auth, new RegisterRateLimiter());
+            AuthController controller = new AuthController(auth, new RegisterRateLimiter(), new CompuertaDeVersion());
             var http = peticionDesde(IP);
 
             // Agotar el cupo pidiendo enlaces...
