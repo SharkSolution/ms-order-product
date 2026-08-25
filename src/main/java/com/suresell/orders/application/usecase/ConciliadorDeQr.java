@@ -140,22 +140,45 @@ public class ConciliadorDeQr {
 
             BigDecimal deCore = new BigDecimal(monto.asText());
 
-            // ⚠️ LA REGLA DURA. Un cero del externo con dinero contado por el
-            // cajero NO es una conciliacion: es que no hay registro externo.
+            // ⚠️ LA CUENTA DEL CAJERO MANDA. SIEMPRE.
             //
-            // No es una hipotesis: `qr_payments` tiene TRES filas en toda su
-            // historia. Tomar ese cero por bueno habria hecho que cada cierre
-            // reportara cero esperado en QR cuando el negocio recibe del orden de
-            // $460.000 diarios por ese medio — el arreglo peor que el defecto.
-            if (deCore.compareTo(BigDecimal.ZERO) == 0 && esPositivo(valorDelCajero)) {
-                log.warn("Cierre: ms-core-app reporta 0 en QR para {} pero el cajero conto {}. "
-                        + "Se usa el del cajero; el cierre queda como sin_registro_externo.",
-                        fecha, valorDelCajero);
-                return ResultadoQr.sinRegistroExterno(valorDelCajero, valorDelPos, deCore);
+            // Antes esto tenía dos ramas: una regla dura para el caso de que
+            // `ms-core-app` respondiera cero, y por defecto el valor de core
+            // sustituyendo al del cajero. Esa segunda rama es el defecto: bastaba
+            // que core respondiera un monto distinto de cero para que el total
+            // del cierre dejara de ser lo que el cajero contó.
+            //
+            // El caso parcial es el que nadie cubría. Si alguien registra
+            // $200.000 en `qr_payments` de un día de $600.000 reales, el cierre
+            // mostraba un faltante de $400.000 que no existe. Y hay antecedente:
+            // entre mayo y junio se registraron tres agregados MENSUALES en esa
+            // tabla y después se dejó de hacer. Esa tabla no es un registro
+            // transaccional y no puede gobernar un cuadre de caja.
+            //
+            // Así que el arreglo es quitar la rama, no añadir un umbral: no hay
+            // diferencia "aceptable" a partir de la cual core deba mandar, porque
+            // el problema no es el tamaño de la diferencia sino que la fuente no
+            // es fiable para esto.
+            //
+            // `qr_conciliado_core` SE SIGUE GUARDANDO. Pierde la autoridad, no la
+            // existencia: junto con `qr_pos` es la métrica de control interno que
+            // permite ver si el registro del administrador va al día.
+            if (esPositivo(valorDelCajero)) {
+                if (deCore.compareTo(valorDelCajero) != 0) {
+                    log.warn("Cierre {}: ms-core-app reporta {} en QR y el cajero contó {}. "
+                            + "Manda el del cajero; el conciliado queda guardado como información.",
+                            fecha, deCore, valorDelCajero);
+                }
+                return ResultadoQr.manualConConciliado(valorDelCajero, valorDelPos, deCore);
             }
 
+            // Sin cuenta del cajero no hay nada a lo que el conciliado pueda
+            // sobreponerse, así que aquí sí es la mejor fuente disponible. El
+            // caso de los dos en cero cae aquí y es una conciliación legítima:
+            // core dice que no hubo QR y el cajero tampoco contó nada.
             ResultadoQr conciliado = ResultadoQr.conciliado(deCore, valorDelPos, valorDelCajero);
-            log.info("Cierre: QR conciliado contra ms-core-app = {}", conciliado.monto());
+            log.info("Cierre {}: sin cuenta del cajero; QR conciliado contra ms-core-app = {}",
+                    fecha, conciliado.monto());
             return conciliado;
 
         } catch (HttpClientErrorException.NotFound e) {

@@ -58,6 +58,11 @@ public record ResultadoQr(BigDecimal monto, FuenteQr fuente, short confianza, St
      * los datos revelaron —`qr_payments` con tres filas en toda su historia— y
      * el que la primera versión de V34 habría convertido en trece cierres con
      * cero esperado en QR.
+     *
+     * <p>⚠️ <b>Ya no se invoca.</b> Ese caso lo cubre ahora
+     * {@link #manualConConciliado}, que es la regla general de la que este era
+     * una excepción. Se conserva porque hay cierres históricos con esta fuente
+     * y porque borrarlo no arregla nada. Ver {@link FuenteQr#sin_registro_externo}.
      */
     public static ResultadoQr sinRegistroExterno(BigDecimal delCajero, BigDecimal delPos,
                                                  BigDecimal loQueDijoCore) {
@@ -87,6 +92,28 @@ public record ResultadoQr(BigDecimal monto, FuenteQr fuente, short confianza, St
     public static ResultadoQr manual(BigDecimal montoDelCajero, BigDecimal delPos) {
         return new ResultadoQr(normalizar(montoDelCajero), FuenteQr.manual_cajero,
                 CONFIANZA_SIN_CONCILIAR, null, delPos, montoDelCajero, null);
+    }
+
+    /**
+     * `ms-core-app` respondió, y el cajero también contó. <b>Manda el cajero.</b>
+     *
+     * <p>Lo que devuelve core se guarda en {@code qrConciliado} y no se usa para
+     * nada más. Es información de control —junto con {@code qrPos} dice si el
+     * registro del administrador va al día— pero no gobierna el cuadre: la tabla
+     * `qr_payments` recibió tres agregados mensuales entre mayo y junio y después
+     * nadie la volvió a alimentar. Un registro así no puede decidir si a una caja
+     * le falta dinero.
+     *
+     * <p>La confianza es 0 y la fuente es {@code manual_cajero} porque eso es lo
+     * que de verdad pasó: el número lo tecleó una persona. Marcarlo como
+     * conciliado por el hecho de que exista un valor externo al lado sería
+     * afirmar una verificación que no se hizo — el total no se comprobó contra
+     * nada, se eligió.
+     */
+    public static ResultadoQr manualConConciliado(BigDecimal montoDelCajero, BigDecimal delPos,
+                                                  BigDecimal loQueDijoCore) {
+        return new ResultadoQr(normalizar(montoDelCajero), FuenteQr.manual_cajero,
+                CONFIANZA_SIN_CONCILIAR, null, delPos, montoDelCajero, loQueDijoCore);
     }
 
     /**

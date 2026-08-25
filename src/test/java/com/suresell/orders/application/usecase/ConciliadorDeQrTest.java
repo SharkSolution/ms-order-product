@@ -70,39 +70,69 @@ class ConciliadorDeQrTest {
 
     // =====================================================================
     @Nested
-    @DisplayName("Conciliación correcta")
+    @DisplayName("Precedencia: la cuenta del cajero manda")
     class Conciliacion {
 
         @Test
-        @DisplayName("usa el monto de ms-core-app y lo marca como conciliado con confianza 2")
-        void conciliaContraCore() {
+        @DisplayName("🔴 core reporta MÁS que el cajero: el total sigue siendo el del cajero")
+        void elConciliadoNoSustituyeAlCajero() {
+            // El caso que el arreglo viene a cerrar. Antes core mandaba con solo
+            // ser distinto de cero, así que el total del cierre dejaba de ser lo
+            // que el cajero contó y aparecía un faltante inventado.
             servidor.expect(requestTo(urlEsperada()))
                     .andRespond(withSuccess("{\"amount\": 275000, \"paymentDate\": \"2026-08-20\"}",
                             MediaType.APPLICATION_JSON));
 
             ResultadoQr r = conciliador().resolver(FECHA, VALOR_DEL_CAJERO, QR_DEL_POS);
 
-            // El monto que manda es el de core, NO el del cajero.
-            assertThat(r.monto()).isEqualByComparingTo("275000");
-            assertThat(r.fuente()).isEqualTo(FuenteQr.conciliado_core);
-            assertThat(r.confianza()).isEqualTo(ResultadoQr.CONFIANZA_CONCILIADO);
-            assertThat(r.confianza()).isEqualTo((short) 2);
+            assertThat(r.monto())
+                    .as("el total del cierre es SIEMPRE la cuenta del cajero")
+                    .isEqualByComparingTo(VALOR_DEL_CAJERO);
+            assertThat(r.fuente()).isEqualTo(FuenteQr.manual_cajero);
+            assertThat(r.confianza()).isEqualTo(ResultadoQr.CONFIANZA_SIN_CONCILIAR);
+            assertThat(r.confianza()).isEqualTo((short) 0);
             assertThat(r.detalle()).isNull();
-            // Los tres hechos, cada uno en su sitio.
-            assertThat(r.qrConciliado()).isEqualByComparingTo("275000");
+            // El conciliado NO se pierde: pierde la autoridad, no la existencia.
+            assertThat(r.qrConciliado())
+                    .as("lo que dijo core se sigue guardando como información de control")
+                    .isEqualByComparingTo("275000");
             assertThat(r.qrManual()).isEqualByComparingTo(VALOR_DEL_CAJERO);
             assertThat(r.qrPos()).isEqualByComparingTo(QR_DEL_POS);
             servidor.verify();
         }
 
         @Test
-        @DisplayName("🔴 core dice 0 pero el cajero contó dinero: NO se convierte en un total de 0")
+        @DisplayName("🔴 el caso PARCIAL: core reporta menos, y no aparece un faltante que no existe")
+        void elRegistroParcialNoInventaUnFaltante() {
+            // El escenario concreto del encargo: alguien registra $200.000 de un
+            // día de $600.000 reales. Con la precedencia vieja el cierre mostraba
+            // un faltante de $400.000. Lo que hace este test distinto del
+            // anterior es que aquí se comprueba el NÚMERO de la diferencia, no
+            // solo la fuente: es dinero, y un faltante inventado se reclama a un
+            // cajero.
+            BigDecimal contadoPorElCajero = new BigDecimal("600000");
+            BigDecimal registradoEnCore = new BigDecimal("200000");
+            servidor.expect(requestTo(urlEsperada()))
+                    .andRespond(withSuccess("{\"amount\": 200000}", MediaType.APPLICATION_JSON));
+
+            ResultadoQr r = conciliador().resolver(FECHA, contadoPorElCajero, contadoPorElCajero);
+
+            assertThat(r.monto()).isEqualByComparingTo(contadoPorElCajero);
+            assertThat(r.monto().subtract(contadoPorElCajero))
+                    .as("faltante aparente contra lo que el POS vendió por QR")
+                    .isEqualByComparingTo("0");
+            assertThat(r.fuente()).isEqualTo(FuenteQr.manual_cajero);
+            assertThat(r.qrConciliado()).isEqualByComparingTo(registradoEnCore);
+        }
+
+        @Test
+        @DisplayName("core dice 0 pero el cajero contó dinero: manda el cajero")
         void ceroDelExternoConDineroContado() {
-            // ESTE es el test que salva el arreglo. `qr_payments` tiene TRES
-            // filas en toda su historia, asi que "el externo dice cero" es la
-            // respuesta NORMAL, no una anomalia. Tomarla por conciliacion buena
-            // habria hecho que cada cierre reportara cero esperado en QR cuando
-            // el negocio recibe del orden de $460.000 diarios por ese medio.
+            // Este caso ya estaba cubierto por la regla dura. Ahora lo cubre la
+            // regla general, y por eso deja de ser un caso especial: lo único
+            // que cambia respecto a antes es la etiqueta —`manual_cajero` en vez
+            // de `sin_registro_externo`—, porque el total salió del teclado del
+            // cajero en los dos casos y eso es lo que hay que poder leer.
             servidor.expect(requestTo(urlEsperada()))
                     .andRespond(withSuccess("{\"amount\": 0}", MediaType.APPLICATION_JSON));
 
@@ -111,7 +141,7 @@ class ConciliadorDeQrTest {
             assertThat(r.monto())
                     .as("el total usa el del cajero, JAMAS el cero del externo")
                     .isEqualByComparingTo(VALOR_DEL_CAJERO);
-            assertThat(r.fuente()).isEqualTo(FuenteQr.sin_registro_externo);
+            assertThat(r.fuente()).isEqualTo(FuenteQr.manual_cajero);
             assertThat(r.confianza()).isEqualTo((short) 0);
             // Y los tres hechos quedan guardados, ninguno destruido.
             assertThat(r.qrConciliado()).isEqualByComparingTo("0");
@@ -120,7 +150,7 @@ class ConciliadorDeQrTest {
         }
 
         @Test
-        @DisplayName("core dice 0 y el cajero tampoco contó nada: eso sí es conciliado")
+        @DisplayName("los dos en cero: eso sí es una conciliación, y ahí sí confianza 2")
         void ceroDelExternoSinDineroContado() {
             servidor.expect(requestTo(urlEsperada()))
                     .andRespond(withSuccess("{\"amount\": 0}", MediaType.APPLICATION_JSON));
@@ -129,7 +159,25 @@ class ConciliadorDeQrTest {
 
             // Dos fuentes coinciden en que no hubo QR: eso es una conciliacion.
             assertThat(r.fuente()).isEqualTo(FuenteQr.conciliado_core);
+            assertThat(r.confianza()).isEqualTo(ResultadoQr.CONFIANZA_CONCILIADO);
             assertThat(r.monto()).isEqualByComparingTo("0");
+        }
+
+        @Test
+        @DisplayName("sin cuenta del cajero, el conciliado sí manda: no hay nada a lo que sobreponerse")
+        void sinCuentaDelCajeroElConciliadoSigueValiendo() {
+            // El límite de la regla. "El conciliado no manda nunca" significa
+            // "no sustituye a la cuenta del cajero". Si el cajero no contó, el
+            // registro externo es la mejor fuente que hay y descartarlo sería
+            // perder dinero del cierre, que es el mismo error al revés.
+            servidor.expect(requestTo(urlEsperada()))
+                    .andRespond(withSuccess("{\"amount\": 275000}", MediaType.APPLICATION_JSON));
+
+            ResultadoQr r = conciliador().resolver(FECHA, BigDecimal.ZERO, QR_DEL_POS);
+
+            assertThat(r.monto()).isEqualByComparingTo("275000");
+            assertThat(r.fuente()).isEqualTo(FuenteQr.conciliado_core);
+            assertThat(r.confianza()).isEqualTo(ResultadoQr.CONFIANZA_CONCILIADO);
         }
     }
 

@@ -54,6 +54,16 @@ public enum FuenteQr {
      *
      * <p>Confianza 0 y el total sigue usando el manual. La regla la sostiene la
      * base: `ck_daily_closures_qr_cero_externo`.
+     *
+     * <p>⚠️ <b>Ya no se emite.</b> Desde que la cuenta del cajero manda siempre
+     * —{@code ConciliadorDeQr.resolver}—, este caso y el de "core respondió un
+     * monto distinto" se registran igual: {@link #manual_cajero}, porque en los
+     * dos el total salió del teclado del cajero y eso es lo que hay que poder
+     * leer en la fila. Lo que dijo core sigue guardándose en
+     * `qr_conciliado_core`, así que el caso se puede reconstruir.
+     *
+     * <p>El valor <b>no se elimina</b>: hay cierres históricos con esta fuente y
+     * el CHECK de la base lo sigue admitiendo.
      */
     sin_registro_externo,
 
