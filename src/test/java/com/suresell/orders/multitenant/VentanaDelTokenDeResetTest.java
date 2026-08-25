@@ -78,7 +78,7 @@ class VentanaDelTokenDeResetTest {
         Instant expira = Instant.now().plus(TTL_MINUTOS, ChronoUnit.MINUTES);
         insertar("token-recien-creado", expira);
 
-        assertTrue(repo.findValidReset("token-recien-creado").isPresent(),
+        assertEquals(EstadoDelToken.valido, repo.buscarReset("token-recien-creado").estado(),
                 "el token acaba de emitirse y la base ya lo da por vencido: "
                         + "el reloj del cálculo y el de la comparación no coinciden");
     }
@@ -90,8 +90,8 @@ class VentanaDelTokenDeResetTest {
         Instant expira = Instant.now().minus(1, ChronoUnit.HOURS);
         insertar("token-de-hace-dos-horas", expira);
 
-        assertTrue(repo.findValidReset("token-de-hace-dos-horas").isEmpty(),
-                "un token caducado hace una hora sigue aceptándose");
+        assertEquals(EstadoDelToken.vencido, repo.buscarReset("token-de-hace-dos-horas").estado(),
+                "un token caducado hace una hora no se reporta como vencido");
     }
 
     @Test
@@ -142,8 +142,8 @@ class VentanaDelTokenDeResetTest {
         insertar("primer-enlace-del-mismo-usuario", expira);
         insertar("segundo-enlace-del-mismo-usuario", expira);
 
-        assertTrue(repo.findValidReset("primer-enlace-del-mismo-usuario").isPresent(),
+        assertEquals(EstadoDelToken.valido, repo.buscarReset("primer-enlace-del-mismo-usuario").estado(),
                 "el primer enlace dejó de valer al pedir el segundo");
-        assertTrue(repo.findValidReset("segundo-enlace-del-mismo-usuario").isPresent());
+        assertEquals(EstadoDelToken.valido, repo.buscarReset("segundo-enlace-del-mismo-usuario").estado());
     }
 }
