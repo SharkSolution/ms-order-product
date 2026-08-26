@@ -67,6 +67,8 @@ public class WaiterService {
     /** T2 — encadenado del lado del servidor para el camino del mesero. */
     private final CadenaDelServidor cadena;
     private final RegistroDeTerminales registroDeTerminales;
+    /** El mismo evaluador que usa el camino del POS: un solo criterio. */
+    private final CorduraDelRelojDelDispositivo corduraDelReloj;
 
     public WaiterService(WaiterRepository waiterRepository,
                          WaiterSessionRepository sessionRepository,
@@ -79,9 +81,11 @@ public class WaiterService {
                          TableSessionService tableSessionService,
                          PinDeMeseroService pinService,
                          CadenaDelServidor cadena,
-                         RegistroDeTerminales registroDeTerminales) {
+                         RegistroDeTerminales registroDeTerminales,
+                         CorduraDelRelojDelDispositivo corduraDelReloj) {
         this.cadena = cadena;
         this.registroDeTerminales = registroDeTerminales;
+        this.corduraDelReloj = corduraDelReloj;
         this.waiterRepository = waiterRepository;
         this.sessionRepository = sessionRepository;
         this.pinService = pinService;
@@ -412,9 +416,20 @@ public class WaiterService {
                     terminal, ocurrido, created,
                     com.suresell.orders.multitenant.TenantContext.get());
             if (eslabon != null) {
+                // El veredicto del reloj se recalcula porque la orden nació sin
+                // fecha del dispositivo —y por tanto como `sin_fecha`— y aquí se
+                // le está poniendo una. Dejarlo como estaba viola
+                // ck_orders_reloj_coherente (V36:315) y la base rechaza el
+                // UPDATE entero. Se usa el MISMO evaluador que el camino del
+                // POS: un solo criterio para los dos.
+                java.time.OffsetDateTime ocurridoOffset = ocurrido == null ? null
+                        : java.time.OffsetDateTime.ofInstant(ocurrido, java.time.ZoneOffset.UTC);
+                String veredicto = corduraDelReloj.evaluarYRegistrar(
+                        ocurridoOffset, java.time.OffsetDateTime.now(), terminal).name();
                 cadena.sellar(created.getUuidId(),
                         com.suresell.orders.multitenant.TenantContext.get(),
-                        eslabon, terminal, ocurrido);
+                        eslabon, terminal, ocurrido, veredicto);
+                created.setRelojVeredicto(veredicto);
                 created.setTerminalId(terminal);
                 created.setEpoch(CadenaDelServidor.EPOCH_DEL_SERVIDOR);
                 created.setSeq(eslabon.seq());

@@ -164,6 +164,56 @@ class MedioDePagoObligatorioTest {
     }
 
     @Test
+    @DisplayName("🔴 una orden de mesero CON terminal se encadena y queda coherente")
+    void laOrdenConTerminalSeEncadena() throws Exception {
+        // Este caso existe por un fallo real: la primera version de `sellar`
+        // ponia `ocurrido_en` sin recalcular `reloj_veredicto`, la orden nacia
+        // como `sin_fecha`, y ck_orders_reloj_coherente (V36:315) tumbaba el
+        // UPDATE. Resultado: 500 en TODA orden con terminal.
+        //
+        // Se escapo hasta Staging porque ningun test creaba una orden de mesero
+        // con terminal contra un Postgres real. Ahora si.
+        String terminal = "7b3c1f9a-2e44-4d18-9c05-8a1f6d2b3e77";
+        for (int i = 1; i <= 2; i++) {
+            int estado = mockMvc.perform(post("/api/waiter/mobile/orders")
+                            .header("Authorization", bearer())
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"pagerColor\":\"MESA\",\"pagerNumber\":\"" + i + "\","
+                                    + "\"paymentMethod\":\"CASH\","
+                                    + "\"items\":[{\"productId\":\"P-M\",\"quantity\":1,"
+                                    + "\"unitPrice\":10000}],"
+                                    + "\"idempotencyKey\":\"cadena-" + i + "\","
+                                    + "\"terminalId\":\"" + terminal + "\","
+                                    + "\"ocurridoEn\":\"2026-08-25T15:0" + i + ":00.000Z\"}"))
+                    .andReturn().getResponse().getStatus();
+            assertEquals(201, estado, "la orden " + i + " con terminal fallo");
+        }
+
+        try (Connection c = DriverManager.getConnection(
+                     PG.getJdbcUrl(), PG.getUsername(), PG.getPassword());
+             Statement s = c.createStatement();
+             ResultSet rs = s.executeQuery(
+                     "SELECT idempotency_key, seq, hash_anterior, hash_propio, "
+                             + "cadena_origen, reloj_veredicto "
+                             + "FROM orders WHERE idempotency_key LIKE 'cadena-%' "
+                             + "ORDER BY seq")) {
+            rs.next();
+            assertEquals(1L, rs.getLong("seq"));
+            assertEquals(null, rs.getString("hash_anterior"), "la primera no encadena a nada");
+            String hashPrimera = rs.getString("hash_propio");
+            assertEquals(64, hashPrimera.length());
+            assertEquals("servidor", rs.getString("cadena_origen"));
+            assertEquals("creible", rs.getString("reloj_veredicto"),
+                    "con ocurrido_en puesto, el veredicto NO puede seguir siendo sin_fecha");
+
+            rs.next();
+            assertEquals(2L, rs.getLong("seq"), "el seq no incremento");
+            assertEquals(hashPrimera, rs.getString("hash_anterior"),
+                    "la segunda no apunta a la primera: la cadena esta rota");
+        }
+    }
+
+    @Test
     @DisplayName("NEQUI de un APK viejo se sigue aceptando y se normaliza a QR")
     void elClienteViejoSigueVendiendo() throws Exception {
         // Nequi se retiró en N2/6.6, pero en los últimos 90 días llegaron 38

@@ -65,7 +65,8 @@ class WaiterServiceTest {
                 siteService, tableSessionService, new PinDeMeseroService(waiterRepository),
                 // Sin terminalId en el DTO, la cadena no se toca: estos tests
                 // ejercen el CONTRATO VIEJO, que es lo que hay que preservar.
-                mock(CadenaDelServidor.class), mock(RegistroDeTerminales.class));
+                mock(CadenaDelServidor.class), mock(RegistroDeTerminales.class),
+                mock(CorduraDelRelojDelDispositivo.class));
         // Sin ordenes MIXED, no hay splits que repartir.
         when(orderPaymentRepository.sumSplitsByWaiterSession(any())).thenReturn(java.util.List.of());
         when(sessionRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));

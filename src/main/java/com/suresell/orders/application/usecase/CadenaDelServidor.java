@@ -161,18 +161,41 @@ public class CadenaDelServidor {
                 List.of());
     }
 
-    /** Escribe el eslabón en la fila. Se hace aparte del INSERT porque el hash
-     *  necesita el {@code idempotencyKey} y los importes ya calculados. */
+    /**
+     * Escribe el eslabón en la fila. Se hace aparte del INSERT porque el hash
+     * necesita el {@code idempotencyKey} y los importes ya calculados.
+     *
+     * <p><b>Actualiza también {@code reloj_veredicto}, y no es opcional.</b> La
+     * orden se insertó sin fecha del dispositivo, así que nació con
+     * {@code sin_fecha}. Al poner {@code ocurrido_en} aquí, ese veredicto pasa a
+     * ser falso, y {@code ck_orders_reloj_coherente} (V36:315) lo rechaza:
+     *
+     * <pre>
+     *   CHECK (reloj_veredicto IS NULL
+     *          OR (ocurrido_en IS NULL     AND reloj_veredicto =  'sin_fecha')
+     *          OR (ocurrido_en IS NOT NULL AND reloj_veredicto &lt;&gt; 'sin_fecha'))
+     * </pre>
+     *
+     * <p>La primera versión de este método no lo actualizaba y la base tumbó
+     * TODAS las órdenes con terminal con un 500. Fue la restricción haciendo
+     * exactamente su trabajo: la incoherencia se detectó al escribir, no meses
+     * después leyendo.
+     *
+     * @param veredicto qué dice el reloj del dispositivo, ya evaluado por
+     *                  {@code CorduraDelRelojDelDispositivo}. Nunca
+     *                  {@code sin_fecha} si {@code ocurrido} no es nulo
+     */
     public void sellar(UUID uuidOrden, String tenantId, Eslabon eslabon, UUID terminalId,
-                       Instant ocurrido) {
+                       Instant ocurrido, String veredicto) {
         jdbc.update(
                 "UPDATE orders SET terminal_id = ?, epoch = ?, seq = ?, "
                         + "hash_anterior = ?, hash_propio = ?, cadena_origen = ?, "
-                        + "ocurrido_en = ? "
+                        + "ocurrido_en = ?, reloj_veredicto = ? "
                         + "WHERE uuid_id = ? AND tenant_id = ?",
                 terminalId, EPOCH_DEL_SERVIDOR, eslabon.seq(),
                 eslabon.hashAnterior(), eslabon.hashPropio(), ORIGEN_SERVIDOR,
                 ocurrido == null ? null : java.sql.Timestamp.from(ocurrido),
+                veredicto,
                 uuidOrden, tenantId);
     }
 
