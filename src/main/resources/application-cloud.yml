@@ -33,6 +33,34 @@ spring:
     hikari:
       maximum-pool-size: ${DB_POOL_SIZE:10}
       minimum-idle: 1
+      # ── Conexiones ociosas: el pooler las cierra y Hikari no se enteraba ──
+      #
+      # Medido en Producción el 2026-08-25 a las 22:11, tras unas horas sin
+      # tráfico (local cerrado):
+      #
+      #   HikariPool-1 - Connection is not available, request timed out after
+      #   30048ms (total=9, active=0, idle=9, waiting=0)
+      #   Caused by: PSQLException: This connection has been closed. (08003)
+      #
+      # Nueve conexiones ociosas y las nueve MUERTAS. El pooler de Supabase las
+      # había cerrado por inactividad; Hikari las seguía entregando, la petición
+      # esperaba 30 s y el login devolvía 500. Al reintentar se recupera —Hikari
+      # desaloja las muertas— pero el primer usuario del día se come el fallo.
+      #
+      # Nunca se notó porque en horario de servicio hay tráfico constante y las
+      # conexiones no llegan a estar ociosas tanto tiempo. Se ve justo cuando
+      # más duele: la PRIMERA venta de la mañana.
+      #
+      # `max-lifetime` retira cada conexión a los 15 minutos, muy por debajo de
+      # cualquier corte del pooler, así que ninguna llega a morirse en el pool.
+      # `keepalive-time` además las pulsa cada 2 minutos y desaloja la que ya no
+      # responda. Las dos, porque la primera evita el problema y la segunda lo
+      # detecta si aun así ocurre.
+      #
+      # No se toca `connection-timeout`: bajarlo haría fallar antes bajo carga
+      # real, que es un problema distinto y peor.
+      max-lifetime: 900000
+      keepalive-time: 120000
   jpa:
     properties:
       hibernate:
