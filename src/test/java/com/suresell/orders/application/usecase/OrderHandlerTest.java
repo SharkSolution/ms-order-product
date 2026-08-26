@@ -1,5 +1,6 @@
 package com.suresell.orders.application.usecase;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -227,8 +228,10 @@ class OrderHandlerTest {
      */
     @org.junit.jupiter.params.ParameterizedTest
     @org.junit.jupiter.params.provider.CsvSource({
+            // "Nequi, QR" salió de aquí: desde la retirada de N2/6.6 se
+            // RECHAZA en vez de normalizarse. Ver nequiSeRechazaConMensajePropio.
             "Efectivo, CASH", "EFECTIVO, CASH", "Tarjeta, CARD", "Datafono, CARD",
-            "Nequi, QR", "QR, QR", "CASH, CASH"})
+            "QR, QR", "CASH, CASH"})
     void aceptaLasEtiquetasEnEspanolQueMandaLaAppDeMeseros(String enviado, String esperado) {
         OrderRequestRecord request = OrderRequestRecord.sinProcedencia(
                 "AZUL", "16",
@@ -252,35 +255,26 @@ class OrderHandlerTest {
     }
 
     /**
-     * N2/6.6 + multipago — un APK viejo puede mandar un split NEQUI. Debe
-     * persistirse ya normalizado a QR: si quedara rotulado NEQUI, el cierre de
-     * caja lo sumaría en una categoría que ya no existe y el cuadre saldría mal.
+     * 🔴 Un split de multipago con NEQUI también se rechaza.
+     *
+     * <p>Antes se persistía normalizado a QR. Con la retirada, `NEQUI` deja de
+     * estar en `SPLIT_METHODS` y el pago mixto entero se rechaza — que es lo
+     * coherente: si el medio no existe, no existe ni suelto ni dentro de un
+     * reparto.
      */
     @Test
-    void multipagoConSplitNequiSePersistenNormalizadosYSigueSiendoMixto() {
-        OrderRequestRecord request = OrderRequestRecord.sinProcedencia(
+    void multipagoConSplitNequiSeRechaza() {
+        OrderRequestRecord request = new OrderRequestRecord(
                 "AZUL", "14",
                 List.of(new OrderItemRequestRecord("101", 1, BigDecimal.valueOf(10000), null, null)),
                 null, "MIXED",
                 List.of(new OrderRequestRecord.PaymentSplitRecord("CASH", BigDecimal.valueOf(4000)),
                         new OrderRequestRecord.PaymentSplitRecord("NEQUI", BigDecimal.valueOf(6000))),
-                null, null, null, null);
-        when(orderRepositoryPort.findOccupiedPagerOrder("AZUL", "14", OrderStatus.pagado))
-                .thenReturn(Optional.empty());
-        when(orderRepositoryPort.save(any(Order.class))).thenAnswer(invocation -> {
-            Order toSave = invocation.getArgument(0);
-            toSave.setIdOrder(504L);
-            return toSave;
-        });
-        when(orderRepositoryPort.findNumericIdByUuid(any(java.util.UUID.class)))
-                .thenReturn(Optional.of(504L));
-        when(syncOutboxRepositoryPort.save(any(SyncOutbox.class)))
-                .thenAnswer(invocation -> invocation.getArgument(0));
+                null, null, null, null, null, null, null, null, null, null);
 
-        Order created = orderHandler.createOrUpdateOrder(request);
-
-        // Sigue siendo MIXTO: son dos medios distintos (efectivo + transferencia).
-        assertEquals("MIXED", created.getPaymentMethod());
+        org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException.class,
+                () -> orderHandler.createOrUpdateOrder(request));
+        verify(orderRepositoryPort, org.mockito.Mockito.never()).save(any(Order.class));
     }
 
     /**
@@ -315,27 +309,36 @@ class OrderHandlerTest {
      * mandan. Rechazarlos con 400 tumbaría ventas en dispositivos que no
      * controlamos, así que se normaliza a QR en vez de fallar.
      */
+    /**
+     * 🔴 NEQUI se RECHAZA. Este test decía lo contrario.
+     *
+     * <p>Se normalizaba a QR "porque hay APKs viejos en campo y rechazarlos
+     * tumbaría ventas en dispositivos que no controlamos". Ese argumento
+     * caducó: la última orden con NEQUI en Producción es del <b>2026-07-23</b>,
+     * ninguna interfaz lo ofrece desde N2/6.6, y la ronda presencial deja a
+     * todos los dispositivos al día.
+     *
+     * <p>Y normalizar en silencio tenía un coste que no se veía: la venta
+     * quedaba como QR sin que nadie supiera que el cliente había mandado otra
+     * cosa, así que un APK viejo podía seguir en campo indefinidamente sin que
+     * ninguna señal lo delatara.
+     */
     @Test
-    void createOrUpdateOrderNormalizaNequiAQrEnVezDeRechazar() {
+    void nequiSeRechazaConMensajePropio() {
         OrderRequestRecord request = OrderRequestRecord.sinProcedencia(
                 "AZUL", "12",
                 List.of(new OrderItemRequestRecord("101", 1, BigDecimal.valueOf(5000), null, null)),
                 null, "NEQUI", null, null, null, null, null);
-        when(orderRepositoryPort.findOccupiedPagerOrder("AZUL", "12", OrderStatus.pagado))
-                .thenReturn(Optional.empty());
-        when(orderRepositoryPort.save(any(Order.class))).thenAnswer(invocation -> {
-            Order toSave = invocation.getArgument(0);
-            toSave.setIdOrder(503L);
-            return toSave;
-        });
-        when(orderRepositoryPort.findNumericIdByUuid(any(java.util.UUID.class)))
-                .thenReturn(Optional.of(503L));
-        when(syncOutboxRepositoryPort.save(any(SyncOutbox.class)))
-                .thenAnswer(invocation -> invocation.getArgument(0));
 
-        Order created = orderHandler.createOrUpdateOrder(request);
+        IllegalArgumentException e = org.junit.jupiter.api.Assertions.assertThrows(
+                IllegalArgumentException.class,
+                () -> orderHandler.createOrUpdateOrder(request));
 
-        assertEquals("QR", created.getPaymentMethod());
+        // El mensaje importa: quien lo reciba tiene que saber QUÉ pasa, no
+        // creer que escribió mal un medio de pago.
+        assertTrue(e.getMessage().contains("Nequi ya no es un medio de pago"),
+                "el mensaje no dice qué pasa: " + e.getMessage());
+        verify(orderRepositoryPort, org.mockito.Mockito.never()).save(any(Order.class));
     }
 
     /**

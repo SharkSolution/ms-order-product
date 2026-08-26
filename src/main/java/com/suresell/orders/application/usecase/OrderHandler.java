@@ -822,9 +822,21 @@ public class OrderHandler implements OrderPort {
             case "DATAFONO":
             case "DATÁFONO":
                 return "CARD";
-            // Nequi eliminado (N2/6.6): se contabiliza como transferencia QR.
-            case "NEQUI":
-                return "QR";
+            // ⚠️ NEQUI YA NO SE NORMALIZA: se RECHAZA (ver validatePaymentMethod).
+            //
+            // Se normalizaba a QR "porque hay APKs viejos en campo". Eso ya no
+            // aplica: la última orden con NEQUI en Producción es del
+            // 2026-07-23, ninguna interfaz lo ofrece desde N2/6.6, y la ronda
+            // presencial deja a todos los dispositivos al día.
+            //
+            // Normalizar en silencio tenía un coste: la venta quedaba como QR
+            // sin que nadie supiera que el cliente había mandado otra cosa, así
+            // que un APK viejo podía seguir en campo indefinidamente sin que
+            // ninguna señal lo delatara. Un 400 explícito lo hace visible.
+            //
+            // ⚠️ SECUENCIA: esto debe desplegarse DESPUÉS de la ronda. Antes,
+            // un dispositivo sin actualizar que aún mandara NEQUI dejaría de
+            // vender.  Ver RESUMEN-PRE-RONDA.md §secuencia.
             case "MIXTO":
                 return "MIXED";
             default:
@@ -833,7 +845,16 @@ public class OrderHandler implements OrderPort {
     }
 
     private void validatePaymentMethod(String paymentMethod) {
-        if (paymentMethod == null || !PAYMENT_METHODS.contains(normalizePaymentMethod(paymentMethod))) {
+        String normalizado = normalizePaymentMethod(paymentMethod);
+        if ("NEQUI".equals(normalizado)) {
+            // Mensaje propio y no el genérico: quien lo reciba tiene que saber
+            // QUÉ pasa —su aplicación está desactualizada— y no creer que
+            // escribió mal un medio de pago.
+            throw new IllegalArgumentException(
+                    "Nequi ya no es un medio de pago. Actualiza la aplicación "
+                            + "y cobra por QR.");
+        }
+        if (paymentMethod == null || !PAYMENT_METHODS.contains(normalizado)) {
             throw new IllegalArgumentException("Método de pago inválido. Debe ser: CASH, CARD o QR");
         }
     }

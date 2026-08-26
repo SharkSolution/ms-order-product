@@ -1,6 +1,7 @@
 package com.suresell.orders.multitenant;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 
 import io.jsonwebtoken.Jwts;
@@ -214,25 +215,46 @@ class MedioDePagoObligatorioTest {
     }
 
     @Test
-    @DisplayName("NEQUI de un APK viejo se sigue aceptando y se normaliza a QR")
-    void elClienteViejoSigueVendiendo() throws Exception {
-        // Nequi se retiró en N2/6.6, pero en los últimos 90 días llegaron 38
-        // órdenes con ese medio desde APKs que nadie ha podido actualizar.
-        // Rechazarlas tumbaría ventas en dispositivos que no controlamos.
-        int estado = mockMvc.perform(post("/api/waiter/mobile/orders")
-                        .header("Authorization", bearer())
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(cuerpo("\"paymentMethod\":\"NEQUI\",", "nequi-viejo-1")))
-                .andReturn().getResponse().getStatus();
-        assertEquals(201, estado, "un APK viejo dejó de poder vender");
-
-        try (Connection c = DriverManager.getConnection(
-                     PG.getJdbcUrl(), PG.getUsername(), PG.getPassword());
-             Statement s = c.createStatement();
-             ResultSet rs = s.executeQuery(
-                     "SELECT payment_method FROM orders WHERE idempotency_key='nequi-viejo-1'")) {
-            rs.next();
-            assertEquals("QR", rs.getString(1));
+    @DisplayName("🔴 NEQUI ya NO se acepta: 400 con un mensaje que dice qué pasa")
+    void nequiSeRechaza() throws Exception {
+        // Hasta ahora se normalizaba a QR en silencio "porque hay APKs viejos
+        // en campo". Eso ya no aplica: la última orden con NEQUI en Producción
+        // es del 2026-07-23 y ninguna interfaz lo ofrece desde N2/6.6.
+        //
+        // Normalizar en silencio tenía un coste: un APK viejo podía seguir
+        // vendiendo indefinidamente sin que ninguna señal lo delatara.
+        for (String ruta : new String[] {"/api/waiter/mobile/orders", "/orders/create"}) {
+            var res = mockMvc.perform(post(ruta)
+                            .header("Authorization", bearer())
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(cuerpo("\"paymentMethod\":\"NEQUI\",",
+                                    "nequi-" + ruta.hashCode())))
+                    .andReturn().getResponse();
+            assertEquals(400, res.getStatus(), ruta + ": NEQUI se sigue aceptando");
+            assertTrue(res.getContentAsString().contains("Nequi ya no es un medio de pago"),
+                    ruta + ": el mensaje no dice QUÉ pasa, y quien lo reciba creerá "
+                            + "que escribió mal el medio de pago. Vino: "
+                            + res.getContentAsString());
         }
+        assertEquals(0, ordenes(), "se rechazó pero quedó la fila");
+    }
+
+    @Test
+    @DisplayName("las etiquetas en español de APKs viejos SÍ se siguen aceptando")
+    void lasEtiquetasEnEspanolSiguenValiendo() throws Exception {
+        // El contraste que evita pasarse de frenada: EFECTIVO, TARJETA y
+        // DATAFONO se siguen normalizando. Rechazar NEQUI no es rechazar todo
+        // lo que manda un cliente viejo — solo el medio que ya no existe.
+        int n = 0;
+        for (String etiqueta : new String[] {"EFECTIVO", "TARJETA", "DATAFONO"}) {
+            int estado = mockMvc.perform(post("/api/waiter/mobile/orders")
+                            .header("Authorization", bearer())
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(cuerpo("\"paymentMethod\":\"" + etiqueta + "\",",
+                                    "etiqueta-" + n++)))
+                    .andReturn().getResponse().getStatus();
+            assertEquals(201, estado, etiqueta + " dejó de aceptarse");
+        }
+        assertEquals(3, ordenes());
     }
 }
