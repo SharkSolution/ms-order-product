@@ -85,6 +85,12 @@ public class OrderHandler implements OrderPort {
     // el del constructor, y meterlo en medio desplazaria todos los parametros
     // posteriores en cada punto de construccion.
     private final com.suresell.orders.multitenant.UsuarioDeLaPeticion usuarioDeLaPeticion;
+    /**
+     * Escribe la intención de descontar inventario en ESTA misma transacción.
+     * Nace apagado (`inventario.intenciones.enabled`), así que se despliega a
+     * oscuras. Ver la clase para por qué no es una llamada al otro servicio.
+     */
+    private final RegistroDeIntencionDeInventario registroDeIntencion;
     // N2/D2: en el perfil cloud este servicio ES la nube (no hay outbox saliente),
     // así que las órdenes nacen ya sincronizadas. Ver createOrUpdateOrder.
     @org.springframework.beans.factory.annotation.Value("${sync.cloud.enabled:false}")
@@ -301,6 +307,12 @@ public class OrderHandler implements OrderPort {
                 persistPaymentSplits(savedOrder, dto.payments());
             }
         }
+
+        // La venta y la intención de descontar inventario entran JUNTAS o no
+        // entra ninguna. Es lo que impide que exista una venta cuyo consumo de
+        // insumo se perdió — un desfase que nadie nota hasta el inventario
+        // físico de dentro de tres meses.
+        registroDeIntencion.registrar(savedOrder, items);
 
         saveOrderCreatedOutbox(savedOrder, tracking);
         linkCouponIfPresent(savedOrder);
