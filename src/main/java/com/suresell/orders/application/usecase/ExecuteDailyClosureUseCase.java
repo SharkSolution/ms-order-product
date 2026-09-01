@@ -23,6 +23,7 @@ import java.time.ZoneId;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 import java.util.UUID;
 
@@ -78,8 +79,53 @@ public class ExecuteDailyClosureUseCase {
         BigDecimal calculatedTotalCash = cashflowCalculator.calculateTotalCash(request.cashDetail());
         BigDecimal calculatedBase = cashflowCalculator.calculateBaseForNextDay(request.cashDetail());
 
+        // Un cierre con el formulario entero en ceros no es un cierre: es un
+        // envío accidental. Pasó en shark-burger el 2026-08-31 a las 09:30,
+        // antes de la primera venta del día (10:04), y dejó DOS daños que
+        // parecen fallos del sistema y no lo son:
+        //
+        //   1. El cierre de verdad, por la tarde, ya no cabía. El índice único
+        //      es (negocio, fecha): solo hay un cierre por día natural, y el
+        //      cupo se lo había quemado la fila basura. El mensaje que sale
+        //      —"la caja de hoy ya fue cerrada"— es correcto y engañoso a la vez.
+        //   2. La base del día siguiente quedó en 0 y se propagó, porque sale
+        //      del último cierre por `closing_time`.
+        //
+        // Se comprueba lo CONTADO y no las ventas: en la gaveta siempre hay al
+        // menos la base del día anterior, así que un conteo de cero en los tres
+        // medios a la vez no describe ninguna caja real. Y comprobar "no hubo
+        // ventas" dejaría pasar el mismo formulario vacío enviado por la tarde.
+        BigDecimal contadoTarjeta = request.countedCard() != null ? request.countedCard() : BigDecimal.ZERO;
+        BigDecimal contadoQr = request.countedQr() != null ? request.countedQr() : BigDecimal.ZERO;
+        if (calculatedTotalCash.signum() == 0 && contadoTarjeta.signum() == 0 && contadoQr.signum() == 0) {
+            throw new IllegalStateException(
+                    "El conteo está en ceros: no hay efectivo, ni tarjeta, ni QR. "
+                    + "Un cierre así no describe ninguna caja, y ocuparía el único "
+                    + "cierre que admite el día. Cuenta al menos la base que quedó "
+                    + "en la gaveta y vuelve a intentarlo.");
+        }
+
         LocalDateTime closingTime = LocalDateTime.now(BOGOTA_ZONE);
-        LocalDateTime openingTime = getOpeningTime(request.sellerId());
+
+        // La ventana del cierre y la base del día salen del MISMO cierre
+        // anterior. Antes no era así: la base venía de aquí abajo
+        // (`findFirstByOrderByClosingTimeDesc`) y la ventana de una consulta
+        // aparte por `sellerId`. Esa asimetría ERA el defecto — el POS mandaba
+        // `sellerId: 'Angie'` escrito a mano mientras los cierres se guardaban
+        // con `user_name = 'Cajero 1'`, así que la consulta no encontraba nunca
+        // nada y la ventana caía siempre en el `orElse(medianoche de hoy)`.
+        //
+        // Medido en producción el 2026-08-31: 103 de 104 cierres abrieron a las
+        // 00:00:00, y 0 filas tenían `user_name = 'Angie'`.
+        //
+        // Mientras se cierre todos los días, "desde medianoche" y "desde el
+        // cierre anterior" dan casi lo mismo y el defecto es invisible. En
+        // cuanto se salta un día, las ventas de ese día no entran en NINGÚN
+        // cierre: pasó el viernes 2026-08-28 con $1.920.600.
+        Optional<DailyClosure> cierreAnterior = closureRepository.findFirstByOrderByClosingTimeDesc();
+        LocalDateTime openingTime = cierreAnterior
+                .map(DailyClosure::getClosingTime)
+                .orElseGet(() -> ZonaHoraria.hoy().atStartOfDay());
 
         List<Object[]> totals = orderRepository.sumTotalsByPaymentMethodAndSeller(
                 openingTime,
@@ -109,7 +155,7 @@ public class ExecuteDailyClosureUseCase {
                 .add(expected.getOrDefault("CARD", BigDecimal.ZERO))
                 .add(expected.getOrDefault("QR", BigDecimal.ZERO));
 
-        BigDecimal previousBase = closureRepository.findFirstByOrderByClosingTimeDesc()
+        BigDecimal previousBase = cierreAnterior
                 .map(DailyClosure::getBaseBalanceForNextDay)
                 .orElse(BigDecimal.ZERO);
 
@@ -203,11 +249,6 @@ public class ExecuteDailyClosureUseCase {
             map.put(method, amount);
         }
         return map;
-    }
-
-    private LocalDateTime getOpeningTime(String sellerId) {
-        return closureRepository.findLastClosingTimeByUser(sellerId)
-                .orElse(ZonaHoraria.hoy().atStartOfDay());
     }
 
     private DailyClosure saveClosureAudit(ExecuteClosureRequest request,
