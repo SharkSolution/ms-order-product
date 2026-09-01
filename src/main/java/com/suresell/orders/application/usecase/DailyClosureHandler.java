@@ -40,15 +40,23 @@ implements DailyClosurePort {
     private static final ZoneId BOGOTA_ZONE = ZoneId.of("America/Bogota");
     @Transactional(readOnly=true)
     public ClosurePreviewResponse getClosurePreview() {
+        // La pantalla tiene que mirar EXACTAMENTE la misma ventana que mira el
+        // cierre al ejecutarse (`ExecuteDailyClosureUseCase`): desde que se
+        // cerró la caja por última vez. Si una arranca a medianoche y el otro
+        // en el cierre anterior, el cajero ve un número en la pantalla y el
+        // cierre calcula otro — y la diferencia aparece como un descuadre suyo.
+        Optional<DailyClosure> cierreAnterior = this.closureRepositoryPort.findLastClosure();
         LocalDateTime startOfDay = LocalDate.now(BOGOTA_ZONE).atStartOfDay();
+        LocalDateTime ventanaDesde = cierreAnterior
+                .map(DailyClosure::getClosingTime)
+                .orElse(startOfDay);
         LocalDateTime endOfDay = LocalDateTime.now(BOGOTA_ZONE).with(LocalTime.MAX);
-        List<Object[]> results = this.orderRepositoryPort.findTotalByPaymentMethodAndStatus(OrderStatus.pagado, startOfDay, endOfDay);
-        Optional<LocalDateTime> minCreatedAt = this.orderRepositoryPort.findMinCreatedAtByStatus(OrderStatus.pagado, startOfDay, endOfDay);
-        Integer countOrders = this.orderRepositoryPort.countByStatus(OrderStatus.pagado, startOfDay, endOfDay);
+        List<Object[]> results = this.orderRepositoryPort.findTotalByPaymentMethodAndStatus(OrderStatus.pagado, ventanaDesde, endOfDay);
+        Integer countOrders = this.orderRepositoryPort.countByStatus(OrderStatus.pagado, ventanaDesde, endOfDay);
         BigDecimal totalCash = BigDecimal.ZERO;
         BigDecimal totalCard = BigDecimal.ZERO;
         BigDecimal totalQr = BigDecimal.ZERO;
-        BigDecimal baseBalance = this.closureRepositoryPort.findLastClosure().map(DailyClosure::getBaseBalanceForNextDay).orElse(BigDecimal.ZERO);
+        BigDecimal baseBalance = cierreAnterior.map(DailyClosure::getBaseBalanceForNextDay).orElse(BigDecimal.ZERO);
         for (Object[] result : results) {
             String paymentMethod = (String)result[0];
             BigDecimal sumTotal = result[1] == null ? BigDecimal.ZERO : (BigDecimal) result[1];
@@ -79,7 +87,11 @@ implements DailyClosurePort {
         }
         BigDecimal totalExpected = totalCash.add(totalCard).add(totalQr);
         LocalDateTime currentTime = LocalDateTime.now(BOGOTA_ZONE);
-        LocalDateTime openingTime = minCreatedAt.orElse(startOfDay);
+        // "Turno iniciado" en la pantalla del POS. Antes era la hora de la
+        // PRIMERA VENTA del día, que no es cuando arrancó el turno: es cuando
+        // llegó el primer cliente. Ahora es el arranque real de la ventana, que
+        // es lo que el cierre va a cuadrar.
+        LocalDateTime openingTime = ventanaDesde;
         int totalOrders = countOrders != null ? countOrders : 0;
         return new ClosurePreviewResponse(
                 openingTime,
