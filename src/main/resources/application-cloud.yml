@@ -32,7 +32,56 @@ spring:
     password: ${DB_APP_PASSWORD:app_pw}
     hikari:
       maximum-pool-size: ${DB_POOL_SIZE:10}
-      minimum-idle: 1
+      minimum-idle: 2
+      # ── Conexiones ociosas: el pooler las cierra y Hikari no se enteraba ──
+      #
+      # Medido en Producción el 2026-08-25 a las 22:11, tras unas horas sin
+      # tráfico (local cerrado):
+      #
+      #   HikariPool-1 - Connection is not available, request timed out after
+      #   30048ms (total=9, active=0, idle=9, waiting=0)
+      #   Caused by: PSQLException: This connection has been closed. (08003)
+      #
+      # Nueve conexiones ociosas y las nueve MUERTAS. El pooler de Supabase las
+      # había cerrado por inactividad; Hikari las seguía entregando, la petición
+      # esperaba 30 s y el login devolvía 500. Al reintentar se recupera —Hikari
+      # desaloja las muertas— pero el primer usuario del día se come el fallo.
+      #
+      # Nunca se notó porque en horario de servicio hay tráfico constante y las
+      # conexiones no llegan a estar ociosas tanto tiempo. Se ve justo cuando
+      # más duele: la PRIMERA venta de la mañana.
+      #
+      # ── 2026-08-26, corrección ───────────────────────────────────────────
+      #
+      # 🔴 Lo de arriba se escribió el 25 y NO ARREGLÓ NADA, por dos motivos
+      # independientes:
+      #
+      # 1. Este bloque no lo leía nadie. `DataSourceConfig` construía el pool
+      #    sin `@ConfigurationProperties`, así que Hikari corría con TODOS sus
+      #    valores por defecto. Arreglado ahí; el javadoc lo cuenta.
+      # 2. Los 15 minutos de `max-lifetime` estaban mal calibrados. Medido en
+      #    Producción: hubo tráfico a las 23:21 y a las 23:28 las conexiones ya
+      #    estaban muertas. La ventana real es de MENOS DE 7 MINUTOS, así que
+      #    retirarlas a los 15 llega tarde siempre.
+      #
+      # Los valores de abajo se eligen contra esa medición, no contra un número
+      # redondo:
+      #
+      #   max-lifetime      4 min   por debajo de la ventana de 7 min observada
+      #   keepalive-time    30 s    una muerta se detecta en 30 s, no en 2 min
+      #   idle-timeout      2 min   en reposo el pool baja a `minimum-idle`
+      #   minimum-idle      2       con solo 2 ociosas, el peor caso de la
+      #                             mañana son 2 validaciones fallidas, no 9
+      #   validation-timeout 3 s    cada muerta cuesta 3 s en vez de 5
+      #
+      # El peor caso pasa de «30 s y un 500» a «6 s y la venta entra».
+      #
+      # No se toca `connection-timeout`: bajarlo haría fallar antes bajo carga
+      # real, que es un problema distinto y peor.
+      max-lifetime: 240000
+      keepalive-time: 30000
+      idle-timeout: 120000
+      validation-timeout: 3000
   jpa:
     properties:
       hibernate:
