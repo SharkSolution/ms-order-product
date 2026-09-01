@@ -94,7 +94,13 @@ class OrderHandlerTest {
                 // es el caso "no se pudo resolver el autor" — y verifica de paso
                 // que eso NO tumba la venta.
                 org.mockito.Mockito.mock(
-                        com.suresell.orders.multitenant.UsuarioDeLaPeticion.class));
+                        com.suresell.orders.multitenant.UsuarioDeLaPeticion.class),
+                // La intención de inventario: un mock que no hace nada, igual
+                // que el componente real cuando `inventario.intenciones.enabled`
+                // está apagado — que es como nace. Estas pruebas comprueban la
+                // venta, y el hecho de que sigan pasando fija algo que importa:
+                // la venta NO depende del inventario para completarse.
+                org.mockito.Mockito.mock(RegistroDeIntencionDeInventario.class));
     }
     @Test
     void getAllOrdersCallsProductServiceOncePerDistinctProductId() {
