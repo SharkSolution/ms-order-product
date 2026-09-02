@@ -118,6 +118,25 @@ class MedioDePagoObligatorioTest {
                 + "\"idempotencyKey\":\"" + clave + "\"}";
     }
 
+    /**
+     * Un momento reciente, y NO una fecha escrita a mano.
+     *
+     * <p>Aquí había {@code "2026-08-25T15:0i:00.000Z"}. La regla marca
+     * {@code muy_atrasado} lo que ocurrió hace más de 7 días, así que el test
+     * <b>caducó solo el 2026-09-01</b> y empezó a fallar sin que nadie tocara
+     * nada.
+     *
+     * <p>Un test que falla por el calendario es peor que uno que no existe:
+     * entrena a mirar hacia otro lado, y el arreglo tentador es aflojar la regla
+     * de producción para que el test pase.
+     */
+    private static String haceUnRato(int i) {
+        return java.time.OffsetDateTime.now(java.time.ZoneOffset.UTC)
+                .minusMinutes(10L + i)
+                .withNano(0)
+                .format(java.time.format.DateTimeFormatter.ISO_OFFSET_DATE_TIME);
+    }
+
     @Test
     @DisplayName("🔴 el camino del MESERO rechaza con 400 y no deja fila")
     void elMeseroSinMedioDePagoEs400() throws Exception {
@@ -185,7 +204,7 @@ class MedioDePagoObligatorioTest {
                                     + "\"unitPrice\":10000}],"
                                     + "\"idempotencyKey\":\"cadena-" + i + "\","
                                     + "\"terminalId\":\"" + terminal + "\","
-                                    + "\"ocurridoEn\":\"2026-08-25T15:0" + i + ":00.000Z\"}"))
+                                    + "\"ocurridoEn\":\"" + haceUnRato(i) + "\"}"))
                     .andReturn().getResponse().getStatus();
             assertEquals(201, estado, "la orden " + i + " con terminal fallo");
         }
