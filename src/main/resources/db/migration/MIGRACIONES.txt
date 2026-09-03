@@ -1,0 +1,80 @@
+# =====================================================================
+# MIGRACIONES DE ms-order-product-mt
+#
+# Este archivo existe por dos accidentes reales, no por burocracia.
+#
+# 1. EDITAR UNA MIGRACION YA APLICADA TUMBA EL SERVICIO
+#
+#    El 2026-09-02 se corrigio `V18` despues de que se hubiera aplicado en
+#    produccion. Flyway calcula una suma de comprobacion de cada archivo y la
+#    guarda al aplicarlo: si el archivo cambia, la validacion falla y el
+#    servicio SE NIEGA A ARRANCAR. Hace bien -- pero el sintoma es un servicio
+#    caido, no un aviso.
+#
+#    La huella de abajo detecta ese cambio EN EL BUILD, antes de desplegar.
+#
+# 2. DOS PERSONAS PUEDEN CREAR EL MISMO NUMERO SIN QUE GIT SE QUEJE
+#
+#    `V23__una_cosa.sql` y `V23__otra_cosa.sql` son archivos DISTINTOS: git los
+#    fusiona sin conflicto y todo parece bien. Flyway se niega a arrancar con
+#    "Found more than one migration with version 23", y se descubre al
+#    desplegar. Por eso hay rangos reservados y una comprobacion de duplicados.
+#
+# COMO SE ACTUALIZA
+#
+# Al anadir una migracion, el test falla y escribe el archivo corregido en
+# `build/MIGRACIONES.txt.nuevo`. Se copia encima de este. Ese paso manual es
+# a proposito: sellar una migracion tiene que ser un acto consciente.
+#
+# =====================================================================
+
+# RANGOS RESERVADOS -- no se solapan, y toda migracion cae en uno.
+# Al sumar una persona o una vertical a este servicio, se le reserva su rango
+# AQUI antes de que escriba la primera migracion.
+@rango 1-199    nucleo-ventas
+@rango 200-299  reservado-vertical-2
+@rango 300-399  reservado-vertical-3
+
+# HUELLAS -- version  sha256  archivo
+1	abddd3a86fc1c2e0f59be72b5a744ffee983421db26b07fd5a38bde12d3af2a4	V1__multitenant_baseline.sql
+2	3a3e5706a11f1d9436b05594fc75a17ae23e4f3c4d9b18bd6e3119acc217adda	V2__multitenant_remaining_tables.sql
+3	bae32fd831a56c5da0ca25aeac89e650b042606275187831621be4b734682f9a	V3__sync_outbox_infra.sql
+4	65f0a6d0e6e909cb474b71878aa4b93a5f866be3de7b2671410d5d2e62bc3f82	V4__auth.sql
+5	4d0e21d62d5a852bb2dff73970321c6e050c33e6b7a30e3f956cfb00d80a47b6	V5__id_order_per_tenant.sql
+6	0d4af433d5b9d7525bb5adc8fabc919abf5a472c760084e6d3d2fd54afaaa9a5	V6__tenant_business_profile.sql
+7	095373d6c04d4f56c647f843e982038944ba1339f800a3122fa1ad364af58e5e	V7__tenant_module_overrides.sql
+8	243db3741a2371dc01244f5bb6aa76541172ff9c1d0be4afd27911070e4057cf	V8__super_admins.sql
+9	f8d40107c29287578a1a436fc19bcdb53eac23bf8914bb1c05c5171c30c0f957	V9__password_resets.sql
+10	3193d1940573c6efe3c62f3ffc1e631cbe793553ae10f3cfefe48d790a1f95ba	V10__waiters_shifts.sql
+11	83da44beb1d1a4d56fe3d46c9b10083535d646466e2ae355775e19923e1e53f8	V11__waiter_admin.sql
+12	01ae452dfebe1da1a6c3878fe7e523e6872de6ff36b228535ac6d23396b68a58	V12__register_expenses.sql
+13	a55779e96ea93db41624850d766ade2e6287f6637f8d9be70c1e904ac355b7fb	V13__order_payments.sql
+14	6d0ad430f8ac27ea1a7e64936afe4ed7a4ba0cfd07dd9b12c2337575b35a4b15	V14__food_waste.sql
+15	26116a560e515f6e1839c40e93cd8c2cb97545e7b9682a082c014b726a06a5c6	V15__order_soft_delete.sql
+16	726355bfc56f4e46dfc91ae9a1f6a776c76e3f1cac95723c50d4eda34a44dc9f	V16__perf_indexes.sql
+17	969104b89bb4e9ada178d8e0b9e1456def73037a4c81f6575de6581531da7b5c	V17__order_idempotency_and_synced.sql
+18	a6242584bd1a2d685bb1bc3338790112b212ea75c79e1f67ef647417e87bcd2d	V18__retirar_nequi_expand.sql
+20	f401b4245098d50cc574f01b8a32242226a337e49ab591c26b27b8af74d98ff1	V20__tenant_pager_groups.sql
+21	ad10cb1a0a48966ddde9386d1c749714d0b0f84b600048fbe88639315583cad5	V21__retirar_nequi_contract.sql
+22	05d4747752ccd031400b380992d266282d3f0009f6cddeca851097d00c104df2	V22__grants_tenant_pager_groups.sql
+23	550175dea7e4ec3841cd65b87dd13a3c4ccccacfe195ecc011fca27dea53a334	V23__sites_y_pos_mode.sql
+24	7162720b5c40ab240d241575fbc5deba07372f410dedf723420aa83907580a5c	V24__restaurant_tables.sql
+25	5bdcab68cfd4caefd4d787345f59b3a71c871fba42ec9fb16e372cdd454f39b5	V25__table_sessions.sql
+26	61f1a955f352be1ffa2a9b12e3e0097559ea22d32642064b01757df543793bf8	V26__order_item_preparado.sql
+27	be2dbae08d6c913db44c4c3017b4a7f1f51289bb0ab3136f35c97969de75f177	V27__planes_en_bd.sql
+28	6a5f41dbf83829978256897658b2c94a3d5852bcc677f5404dbc4a137eea6868	V28__tablas_admin_y_numeracion_por_sede.sql
+29	a7d04e727f291699068578e361384ed000182b4d2d74eb8edbe3b786846218e6	V29__division_de_cuenta.sql
+30	a4c035114e7a4db2dc06226c12fb2fb315aee8275ad1b88115fd1c14bd4f0acf	V30__pin_de_mesero.sql
+31	b0804489926283a50979db7d48c81f0971a5e2e4a740cc5bee2f9dc54c4bab93	V31__catalogo_y_rastreadores_por_negocio.sql
+32	5e47b4f83ab1ec71a28e33a5d0b2a96a85e8ce3846dd2f1b56ac996de088607b	V32__tenant_id_por_defecto_del_negocio_en_sesion.sql
+33	f175bde37c19bf92db83704a24cee0faee11845bf276cc02347fcabc49db6239	V33__aislamiento_real_en_tablas_de_administracion.sql
+34	ce97dc661e23bd48724bdc3f78448595d1c803d259050e9b4e3c6885fb251b7c	V34__origen_y_confianza_del_qr_en_el_cierre.sql
+35	c5df0110bf4f9aacbeed33605ce954d767c73cde07340df7a353a9b468a7b524	V35__identidad_del_terminal.sql
+36	2cd86fb1fedc0252d0115326b61409b6e005c223a9d3fbad1197b7b376de4390	V36__modelo_temporal_y_procedencia_de_la_orden.sql
+37	5067641b49e717977c251eef19c14bb6107257a91ad8b5a587c8bf4628ba1bc1	V37__autoria_con_identidad_real.sql
+38	a44128077213d117e31dcda2d0706d32d92e21b818db585ee6548341211d25b2	V38__aislamiento_en_contadores_y_bitacoras.sql
+39	0e1c84061805cbf4dba81cccc96656eb07d963eb425cde4c7dfe5167cbbc52ba	V39__aislamiento_de_identidad.sql
+40	312da408a1b7ee8f8153acba10b1ec1d779d6e34453a0db5e745d61ac9728285	V40__aislamiento_de_tenant_modules.sql
+41	148e342a76baf048cdda8bb23d37b76e9a39444ca9fa28b57a69eceb7c440e20	V41__cadena_del_mesero.sql
+42	0b6a89d3781556253b5edd2b9852afba1ad2f0b0b7c0241c4d0372ab50e11529	V42__intenciones_de_inventario.sql
+43	25f1cb3d49bfb86555fad724adcda39ecdeec17b52933cb9fa3c508fdd903c06	V43__supplies_deja_de_crear_y_borrar.sql
