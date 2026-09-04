@@ -4,12 +4,12 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.suresell.orders.domain.model.Order;
 import com.suresell.orders.domain.model.OrderItem;
-import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.dao.DataAccessException;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -30,19 +30,22 @@ import org.springframework.stereotype.Service;
  * <p>Aquí el fallo tiene cuerpo: una fila {@code PENDIENTE} que envejece, que
  * se puede consultar y alarmar. Esa es la diferencia, no la latencia.
  *
- * <h2>La decisión incómoda, dicha en voz alta</h2>
+ * <h2>La decisión incómoda, y cómo se revirtió</h2>
  *
- * Este INSERT va dentro de la transacción de la venta. Si falla, <b>la venta
- * falla</b>. Se eligió a conciencia: una venta que se registra sin su intención
- * deja el inventario mintiendo para siempre, y nadie lo nota hasta el
- * inventario físico de dentro de tres meses.
+ * Este INSERT va dentro de la transacción de la venta. La primera versión
+ * decía: si falla, <b>la venta falla</b>, para que una venta sin intención no
+ * dejara el inventario mintiendo en silencio.
  *
- * <p>Para que esa elección sea defendible, el INSERT es lo más simple que
- * puede ser: una fila, con valores que ya están calculados y en memoria, sin
- * llamadas a nada. Y hay dos salidas si aun así molestara: el interruptor
- * {@code inventario.intenciones.enabled} — que nace <b>apagado</b>, así que
- * esto se despliega a oscuras — y el rebote por idempotencia, que se trata
- * como éxito y no como error.
+ * <p>El 2026-09-03 esa elección costó un día entero de órdenes de mesero: un
+ * detalle de relojes (ver {@link #registrar}) hacía rebotar el INSERT y, con
+ * él, la venta. Desde entonces la regla es la contraria: <b>la venta nunca se
+ * pierde por el inventario</b>. Un fallo aquí sale como {@code ERROR} con la
+ * etiqueta {@code [intencion-perdida]} y sin intención en la bandeja; lo que
+ * no puede es convertirse en un 500 para quien está en la mesa.
+ *
+ * <p>El INSERT sigue siendo lo más simple que puede ser: una fila, con
+ * valores en memoria, sin llamadas a nada. Y el interruptor
+ * {@code inventario.intenciones.enabled} sigue naciendo <b>apagado</b>.
  */
 @Service
 public class RegistroDeIntencionDeInventario {
@@ -100,23 +103,39 @@ public class RegistroDeIntencionDeInventario {
         String clave = "orden-" + orden.getIdOrder();
 
         // `ocurrido_en` de la orden si existe -- una venta tomada sin cobertura
-        // trae la hora del dispositivo -- y si no, el instante del registro.
-        // Que el movimiento nazca con la fecha del HECHO y no con la del
-        // procesamiento es lo que evita descontar inventario en el día
-        // equivocado.
-        OffsetDateTime ocurrido = orden.getOcurridoEn() != null
-                ? orden.getOcurridoEn()
-                : OffsetDateTime.now();
+        // trae la hora del dispositivo. Que el movimiento nazca con la fecha
+        // del HECHO y no con la del procesamiento es lo que evita descontar
+        // inventario en el día equivocado.
+        //
+        // 🔴 EL RELOJ QUE FALTA LO PONE LA BASE, NO LA JVM. Y NUNCA EL FUTURO.
+        //
+        // El 2026-09-03, al encender el interruptor, la app de meseros no pudo
+        // crear NINGUNA orden y el POS perdió cerca de la mitad. La causa:
+        // `registrado_en` es `now()` de Postgres, que es el INICIO de la
+        // transacción de la venta; aquí se ponía `OffsetDateTime.now()` de la
+        // JVM, tomado después de guardar orden, ítems y seguimiento, o sea
+        // siempre DESPUÉS de ese inicio. `ck_int_reloj` (ocurrido <= registrado)
+        // rebotaba el cien por cien de las órdenes de mesero, que llegan sin
+        // hora del dispositivo, y las del POS cada vez que el reloj del
+        // terminal iba unos segundos por delante.
+        //
+        // Un solo reloj: si no hay hora del dispositivo, `now()` de la base. Y
+        // si la hay pero está en el futuro para la base, se recorta a `now()`:
+        // un hecho no puede haber ocurrido después de registrarse. Cuánto se
+        // adelantaba ese terminal ya queda dicho en `orders.reloj_veredicto`.
+        java.sql.Timestamp ocurrido = orden.getOcurridoEn() == null
+                ? null
+                : java.sql.Timestamp.from(orden.getOcurridoEn().toInstant());
 
         try {
             jdbc.update("""
                     INSERT INTO public.inventario_intenciones
                         (orden_id, orden_uuid, ocurrido_en, usuario_id, terminal_id,
                          lineas, idempotency_key)
-                    VALUES (?, ?, ?, ?, ?, ?::jsonb, ?)""",
+                    VALUES (?, ?, LEAST(COALESCE(?, now()), now()), ?, ?, ?::jsonb, ?)""",
                     orden.getIdOrder(),
                     orden.getUuidId(),
-                    java.sql.Timestamp.from(ocurrido.toInstant()),
+                    ocurrido,
                     orden.getCreatedBy() == null ? null : String.valueOf(orden.getCreatedBy()),
                     orden.getTerminalId() == null ? null : orden.getTerminalId().toString(),
                     lineas,
@@ -126,6 +145,20 @@ public class RegistroDeIntencionDeInventario {
             // fallo: reprocesar no debe duplicar (regla 12) y tampoco debe
             // romper la venta.
             log.info("La intención de inventario de la orden {} ya estaba registrada", clave);
+        } catch (DataAccessException e) {
+            // 🔴 LA VENTA NO SE PIERDE POR EL INVENTARIO.
+            //
+            // La decisión original era la contraria: «si falla, la venta
+            // falla», para que el inventario nunca mintiera en silencio. El
+            // 2026-09-03 costó un día entero de órdenes de mesero. Un cliente
+            // en la mesa esperando vale más que una fila de la bandeja.
+            //
+            // Pero el fallo NO se traga: sale como ERROR con una etiqueta fija
+            // para buscarlo, y `v_salud_de_intenciones` cuenta las ventas sin
+            // intención. Lo que no se puede es convertirlo en un 500 al mesero.
+            log.error("[intencion-perdida] La venta {} se registró SIN su intención de "
+                    + "inventario; el stock no la descontará hasta que alguien la "
+                    + "reponga. Causa:", clave, e);
         }
     }
 }
