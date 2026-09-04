@@ -137,7 +137,11 @@ class RegistroDeIntencionDeInventarioTest {
     @Test
     @DisplayName("una venta tomada sin cobertura conserva la hora del hecho, no la del registro")
     void horaDelHecho() {
-        OffsetDateTime haceDosHoras = OffsetDateTime.now().minusHours(2);
+        // Truncado a milisegundos a propósito: en Linux `now()` trae
+        // nanosegundos y Postgres guarda microsegundos. En Mac coincidían por
+        // casualidad y el test pasaba aquí y fallaba en el CI.
+        OffsetDateTime haceDosHoras = OffsetDateTime.now().minusHours(2)
+                .truncatedTo(java.time.temporal.ChronoUnit.MILLIS);
         enUnaTransaccionQueYaLlevaUnRato(() ->
                 registro.registrar(orden(903, haceDosHoras), lineas()));
 
